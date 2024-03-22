@@ -1,0 +1,178 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecuteMsg",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/ExecuteMsg"
+    },
+    {
+      "$ref": "#/definitions/ExecuteMsg2"
+    },
+    {
+      "$ref": "#/definitions/StrategyExecuteMsg"
+    }
+  ],
+  "definitions": {
+    "ExecuteMsg": {
+      "oneOf": [
+        {
+          "description": "Transfer admin role to a new address",
+          "type": "object",
+          "required": [
+            "transfer_admin_role"
+          ],
+          "properties": {
+            "transfer_admin_role": {
+              "type": "object",
+              "required": [
+                "next_admin"
+              ],
+              "properties": {
+                "next_admin": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Complete admin role transferral",
+          "type": "object",
+          "required": [
+            "claim_admin_role"
+          ],
+          "properties": {
+            "claim_admin_role": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Cancel admin role transferral",
+          "type": "object",
+          "required": [
+            "cancel_role_transfer"
+          ],
+          "properties": {
+            "cancel_role_transfer": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ExecuteMsg2": {
+      "oneOf": [
+        {
+          "description": "Deposit native tokens into the vault, the sender receives the issued shares Responds with [DepositResponse]",
+          "type": "object",
+          "required": [
+            "deposit"
+          ],
+          "properties": {
+            "deposit": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Donate native tokens to the vault",
+          "type": "object",
+          "required": [
+            "donate"
+          ],
+          "properties": {
+            "donate": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Allow one party to burn shares so that another party may claim the underlying deposits",
+          "type": "object",
+          "required": [
+            "redeem"
+          ],
+          "properties": {
+            "redeem": {
+              "type": "object",
+              "required": [
+                "recipient"
+              ],
+              "properties": {
+                "recipient": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Attempt to start any pending unbondings",
+          "type": "object",
+          "required": [
+            "start_unbond"
+          ],
+          "properties": {
+            "start_unbond": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Claim any unclaimed unbonded underlying tokens belonging to the sender",
+          "type": "object",
+          "required": [
+            "claim"
+          ],
+          "properties": {
+            "claim": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "StrategyExecuteMsg": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "set_redemption_rate_oracle"
+          ],
+          "properties": {
+            "set_redemption_rate_oracle": {
+              "type": "object",
+              "required": [
+                "oracle"
+              ],
+              "properties": {
+                "oracle": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

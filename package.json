@@ -1,0 +1,14 @@
+{
+  "name": "amulet-contract-scripts",
+  "private": true,
+  "workspaces": [
+    "scripts/*"
+  ],
+  "dependencies": {
+    "@cosmjs/cosmwasm-stargate": "^0.32.2"
+  },
+  "devDependencies": {
+    "@cosmwasm/ts-codegen": "^0.35.7",
+    "@types/bun": "^1.0.4"
+  }
+}

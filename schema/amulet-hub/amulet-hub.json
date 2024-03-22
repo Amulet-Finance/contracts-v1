@@ -1,0 +1,1417 @@
+{
+  "contract_name": "amulet-hub",
+  "contract_version": "0.1.0",
+  "idl_version": "1.0.0",
+  "instantiate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InstantiateMsg",
+    "type": "object",
+    "required": [
+      "synthetic_mint"
+    ],
+    "properties": {
+      "synthetic_mint": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "execute": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecuteMsg",
+    "anyOf": [
+      {
+        "$ref": "#/definitions/ExecuteMsg"
+      },
+      {
+        "$ref": "#/definitions/ExecuteMsg2"
+      }
+    ],
+    "definitions": {
+      "AdminMsg": {
+        "oneOf": [
+          {
+            "description": "Register a vault, making it available for deposits",
+            "type": "object",
+            "required": [
+              "register_vault"
+            ],
+            "properties": {
+              "register_vault": {
+                "type": "object",
+                "required": [
+                  "synthetic",
+                  "vault"
+                ],
+                "properties": {
+                  "synthetic": {
+                    "description": "The synthetic to be associated with the vault",
+                    "type": "string"
+                  },
+                  "vault": {
+                    "description": "The address of the vault contract",
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the treasury",
+            "type": "object",
+            "required": [
+              "set_treasury"
+            ],
+            "properties": {
+              "set_treasury": {
+                "type": "object",
+                "required": [
+                  "address"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the enabled status of deposits for the vault",
+            "type": "object",
+            "required": [
+              "set_deposits_enabled"
+            ],
+            "properties": {
+              "set_deposits_enabled": {
+                "type": "object",
+                "required": [
+                  "enabled",
+                  "vault"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the enabled status of advance for the vault",
+            "type": "object",
+            "required": [
+              "set_advance_enabled"
+            ],
+            "properties": {
+              "set_advance_enabled": {
+                "type": "object",
+                "required": [
+                  "enabled",
+                  "vault"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the max LTV allowed for the vault",
+            "type": "object",
+            "required": [
+              "set_max_ltv"
+            ],
+            "properties": {
+              "set_max_ltv": {
+                "type": "object",
+                "required": [
+                  "bps",
+                  "vault"
+                ],
+                "properties": {
+                  "bps": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0.0
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the treasury fee to be applied to yield earned on collateral",
+            "type": "object",
+            "required": [
+              "set_collateral_yield_fee"
+            ],
+            "properties": {
+              "set_collateral_yield_fee": {
+                "type": "object",
+                "required": [
+                  "bps",
+                  "vault"
+                ],
+                "properties": {
+                  "bps": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0.0
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the treasury fee to be applied to yield earned on reserves",
+            "type": "object",
+            "required": [
+              "set_reserves_treasury_fee"
+            ],
+            "properties": {
+              "set_reserves_treasury_fee": {
+                "type": "object",
+                "required": [
+                  "bps",
+                  "vault"
+                ],
+                "properties": {
+                  "bps": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0.0
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the advance fee recipient for the vault",
+            "type": "object",
+            "required": [
+              "set_advance_fee_recipient"
+            ],
+            "properties": {
+              "set_advance_fee_recipient": {
+                "type": "object",
+                "required": [
+                  "recipient",
+                  "vault"
+                ],
+                "properties": {
+                  "recipient": {
+                    "type": "string"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the fixed advance fee to be used for the vault if no oracle is set",
+            "type": "object",
+            "required": [
+              "set_fixed_advance_fee"
+            ],
+            "properties": {
+              "set_fixed_advance_fee": {
+                "type": "object",
+                "required": [
+                  "bps",
+                  "vault"
+                ],
+                "properties": {
+                  "bps": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0.0
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the advance fee oracle for the vault",
+            "type": "object",
+            "required": [
+              "set_advance_fee_oracle"
+            ],
+            "properties": {
+              "set_advance_fee_oracle": {
+                "type": "object",
+                "required": [
+                  "oracle",
+                  "vault"
+                ],
+                "properties": {
+                  "oracle": {
+                    "type": "string"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the 'Automatic Market Operator' (AMO) for the vault",
+            "type": "object",
+            "required": [
+              "set_amo"
+            ],
+            "properties": {
+              "set_amo": {
+                "type": "object",
+                "required": [
+                  "amo",
+                  "vault"
+                ],
+                "properties": {
+                  "amo": {
+                    "type": "string"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the AMO allocation to be used for the vault",
+            "type": "object",
+            "required": [
+              "set_amo_allocation"
+            ],
+            "properties": {
+              "set_amo_allocation": {
+                "type": "object",
+                "required": [
+                  "bps",
+                  "vault"
+                ],
+                "properties": {
+                  "bps": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0.0
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set the proxy configuration to be used for the vault",
+            "type": "object",
+            "required": [
+              "set_proxy_config"
+            ],
+            "properties": {
+              "set_proxy_config": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "advance": {
+                    "description": "The advance proxy address to set, if any",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "deposit": {
+                    "description": "The deposit proxy address to set, if any",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "mint": {
+                    "description": "The mint proxy address to set, if any",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "redeem": {
+                    "description": "The redeem proxy address to set, if any",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "vault": {
+                    "description": "The vault to set the proxy configuration for",
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ExecuteMsg": {
+        "oneOf": [
+          {
+            "description": "Transfer admin role to a new address",
+            "type": "object",
+            "required": [
+              "transfer_admin_role"
+            ],
+            "properties": {
+              "transfer_admin_role": {
+                "type": "object",
+                "required": [
+                  "next_admin"
+                ],
+                "properties": {
+                  "next_admin": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Complete admin role transferral",
+            "type": "object",
+            "required": [
+              "claim_admin_role"
+            ],
+            "properties": {
+              "claim_admin_role": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Cancel admin role transferral",
+            "type": "object",
+            "required": [
+              "cancel_role_transfer"
+            ],
+            "properties": {
+              "cancel_role_transfer": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ExecuteMsg2": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/AdminMsg"
+          },
+          {
+            "$ref": "#/definitions/UserMsg"
+          }
+        ]
+      },
+      "Uint128": {
+        "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+        "type": "string"
+      },
+      "UserMsg": {
+        "oneOf": [
+          {
+            "description": "Evaluate a vault, progressing any payments Responds with [PositionResponse]",
+            "type": "object",
+            "required": [
+              "evaluate"
+            ],
+            "properties": {
+              "evaluate": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Deposit native token into a vault Responds with [PositionResponse]",
+            "type": "object",
+            "required": [
+              "deposit"
+            ],
+            "properties": {
+              "deposit": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Deposit native token into a vault on behalf of another (proxied deposit) Responds with [PositionResponse]",
+            "type": "object",
+            "required": [
+              "deposit_on_behalf"
+            ],
+            "properties": {
+              "deposit_on_behalf": {
+                "type": "object",
+                "required": [
+                  "behalf_of",
+                  "vault"
+                ],
+                "properties": {
+                  "behalf_of": {
+                    "type": "string"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Repay debt against a vault using the underlying token Responds with [PositionResponse]",
+            "type": "object",
+            "required": [
+              "repay_underlying"
+            ],
+            "properties": {
+              "repay_underlying": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Repay debt against a vault using the synthetic token Responds with [PositionResponse]",
+            "type": "object",
+            "required": [
+              "repay_synthetic"
+            ],
+            "properties": {
+              "repay_synthetic": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Request an advance against a vault deposit Responds with [PositionResponse]",
+            "type": "object",
+            "required": [
+              "advance"
+            ],
+            "properties": {
+              "advance": {
+                "type": "object",
+                "required": [
+                  "amount",
+                  "vault"
+                ],
+                "properties": {
+                  "amount": {
+                    "$ref": "#/definitions/Uint128"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Request an advance on behalf of another against their vault deposit (proxied advance) Responds with [PositionResponse]",
+            "type": "object",
+            "required": [
+              "advance_on_behalf"
+            ],
+            "properties": {
+              "advance_on_behalf": {
+                "type": "object",
+                "required": [
+                  "amount",
+                  "behalf_of",
+                  "vault"
+                ],
+                "properties": {
+                  "amount": {
+                    "$ref": "#/definitions/Uint128"
+                  },
+                  "behalf_of": {
+                    "type": "string"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Request to withdraw funds from a vault Responds with [PositionResponse]",
+            "type": "object",
+            "required": [
+              "withdraw"
+            ],
+            "properties": {
+              "withdraw": {
+                "type": "object",
+                "required": [
+                  "amount",
+                  "vault"
+                ],
+                "properties": {
+                  "amount": {
+                    "$ref": "#/definitions/Uint128"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Request to self-liquidate a vault position",
+            "type": "object",
+            "required": [
+              "self_liquidate"
+            ],
+            "properties": {
+              "self_liquidate": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Request to convert a `vault` position's credit into collateral",
+            "type": "object",
+            "required": [
+              "convert_credit"
+            ],
+            "properties": {
+              "convert_credit": {
+                "type": "object",
+                "required": [
+                  "amount",
+                  "vault"
+                ],
+                "properties": {
+                  "amount": {
+                    "$ref": "#/definitions/Uint128"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Redeem synthetics for reserve holdings",
+            "type": "object",
+            "required": [
+              "redeem"
+            ],
+            "properties": {
+              "redeem": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Redeem synthetics for reserve holdings on behalf of another (proxied mint)",
+            "type": "object",
+            "required": [
+              "redeem_on_behalf"
+            ],
+            "properties": {
+              "redeem_on_behalf": {
+                "type": "object",
+                "required": [
+                  "behalf_of",
+                  "vault"
+                ],
+                "properties": {
+                  "behalf_of": {
+                    "type": "string"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Mint synthetics for depositing native token into a vault",
+            "type": "object",
+            "required": [
+              "mint"
+            ],
+            "properties": {
+              "mint": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Mint synthetics for depositing native token into a vault on behalf of another (proxied mint)",
+            "type": "object",
+            "required": [
+              "mint_on_behalf"
+            ],
+            "properties": {
+              "mint_on_behalf": {
+                "type": "object",
+                "required": [
+                  "behalf_of",
+                  "vault"
+                ],
+                "properties": {
+                  "behalf_of": {
+                    "type": "string"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Request to claim the treasury's accumulated `vault` shares",
+            "type": "object",
+            "required": [
+              "claim_treasury"
+            ],
+            "properties": {
+              "claim_treasury": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Request to claim the AMO's accumulated `vault` shares",
+            "type": "object",
+            "required": [
+              "claim_amo"
+            ],
+            "properties": {
+              "claim_amo": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "query": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "QueryMsg",
+    "anyOf": [
+      {
+        "$ref": "#/definitions/QueryMsg"
+      },
+      {
+        "$ref": "#/definitions/QueryMsg2"
+      }
+    ],
+    "definitions": {
+      "QueryMsg": {
+        "oneOf": [
+          {
+            "description": "Returns the current admin role holder",
+            "type": "object",
+            "required": [
+              "current_admin"
+            ],
+            "properties": {
+              "current_admin": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns the pending admin role holder",
+            "type": "object",
+            "required": [
+              "pending_admin"
+            ],
+            "properties": {
+              "pending_admin": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "QueryMsg2": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "list_vaults"
+            ],
+            "properties": {
+              "list_vaults": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "vault_metadata"
+            ],
+            "properties": {
+              "vault_metadata": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "position"
+            ],
+            "properties": {
+              "position": {
+                "type": "object",
+                "required": [
+                  "account",
+                  "vault"
+                ],
+                "properties": {
+                  "account": {
+                    "type": "string"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "treasury"
+            ],
+            "properties": {
+              "treasury": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "migrate": null,
+  "sudo": null,
+  "responses": {
+    "current_admin": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "CurrentAdminResponse",
+      "type": "object",
+      "properties": {
+        "current_admin": {
+          "description": "The current admin, if None the contract creator is the admin",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "list_vaults": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ListVaultsResponse",
+      "type": "object",
+      "required": [
+        "vaults"
+      ],
+      "properties": {
+        "vaults": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/VaultMetadata"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "SumPaymentRatio": {
+          "type": "object",
+          "required": [
+            "ratio",
+            "timestamp"
+          ],
+          "properties": {
+            "ratio": {
+              "$ref": "#/definitions/Uint256"
+            },
+            "timestamp": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        },
+        "Uint256": {
+          "description": "An implementation of u256 that is using strings for JSON encoding/decoding, such that the full u256 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances out of primitive uint types or `new` to provide big endian bytes:\n\n``` # use cosmwasm_std::Uint256; let a = Uint256::from(258u128); let b = Uint256::new([ 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 2u8, ]); assert_eq!(a, b); ```",
+          "type": "string"
+        },
+        "VaultMetadata": {
+          "type": "object",
+          "required": [
+            "amo_shares",
+            "collateral_balance",
+            "collateral_shares",
+            "collateral_yield_fee_bps",
+            "fixed_advance_fee_bps",
+            "max_ltv_bps",
+            "reserve_balance",
+            "reserve_shares",
+            "reserve_yield_fee_bps",
+            "synthetic",
+            "treasury_shares",
+            "vault"
+          ],
+          "properties": {
+            "advance_fee_oracle": {
+              "description": "The advance fee rate oracle assigned to the vault, if any",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "advance_fee_recipient": {
+              "description": "The advance fee recipient associated with the vault, if any",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "amo": {
+              "description": "The AMO associated with the vault, if any",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "amo_shares": {
+              "description": "The amount of shares claimable by the AMO",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Uint128"
+                }
+              ]
+            },
+            "collateral_balance": {
+              "description": "The total amount of deposited collateral",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Uint128"
+                }
+              ]
+            },
+            "collateral_shares": {
+              "description": "The amount of vault shares representing deposited collateral",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Uint128"
+                }
+              ]
+            },
+            "collateral_yield_fee_bps": {
+              "description": "The base fee applied to yield payments in basis points",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "fixed_advance_fee_bps": {
+              "description": "The default fee applied to a requested advance amount in basis points (if there is no oracle set)",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "max_ltv_bps": {
+              "description": "The maximum Loan-To-Value (LTV) allowed in basis points",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "reserve_balance": {
+              "description": "The total amount of assets in the reserve",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Uint128"
+                }
+              ]
+            },
+            "reserve_shares": {
+              "description": "The amount of vault shares representing the reserve balance",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Uint128"
+                }
+              ]
+            },
+            "reserve_yield_fee_bps": {
+              "description": "The fee applied to reserves yield payments in basis points",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "sum_payment_ratio": {
+              "description": "The on-going sum of payments over collateral, if any",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SumPaymentRatio"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "synthetic": {
+              "description": "Denom of the associated synthetic (debt token)",
+              "type": "string"
+            },
+            "treasury_shares": {
+              "description": "The amount of shares claimable by the treasury",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Uint128"
+                }
+              ]
+            },
+            "vault": {
+              "description": "Address/Id of the vault",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "pending_admin": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PendingAdminResponse",
+      "type": "object",
+      "properties": {
+        "pending_admin": {
+          "description": "The pending admin, they will become admin if they claim the role",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "position": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PositionResponse",
+      "type": "object",
+      "required": [
+        "collateral",
+        "credit",
+        "debt"
+      ],
+      "properties": {
+        "collateral": {
+          "description": "Amount of collateral depositted in the vault",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint128"
+            }
+          ]
+        },
+        "credit": {
+          "description": "Amount of credit owed to the account",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint128"
+            }
+          ]
+        },
+        "debt": {
+          "description": "Amount of matched assets advanced against the vault",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint128"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "treasury": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TreasuryResponse",
+      "type": "object",
+      "properties": {
+        "treasury": {
+          "description": "The address authorised to claim treasury allocations",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "vault_metadata": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "VaultMetadata",
+      "type": "object",
+      "required": [
+        "amo_shares",
+        "collateral_balance",
+        "collateral_shares",
+        "collateral_yield_fee_bps",
+        "fixed_advance_fee_bps",
+        "max_ltv_bps",
+        "reserve_balance",
+        "reserve_shares",
+        "reserve_yield_fee_bps",
+        "synthetic",
+        "treasury_shares",
+        "vault"
+      ],
+      "properties": {
+        "advance_fee_oracle": {
+          "description": "The advance fee rate oracle assigned to the vault, if any",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "advance_fee_recipient": {
+          "description": "The advance fee recipient associated with the vault, if any",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "amo": {
+          "description": "The AMO associated with the vault, if any",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "amo_shares": {
+          "description": "The amount of shares claimable by the AMO",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint128"
+            }
+          ]
+        },
+        "collateral_balance": {
+          "description": "The total amount of deposited collateral",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint128"
+            }
+          ]
+        },
+        "collateral_shares": {
+          "description": "The amount of vault shares representing deposited collateral",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint128"
+            }
+          ]
+        },
+        "collateral_yield_fee_bps": {
+          "description": "The base fee applied to yield payments in basis points",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "fixed_advance_fee_bps": {
+          "description": "The default fee applied to a requested advance amount in basis points (if there is no oracle set)",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "max_ltv_bps": {
+          "description": "The maximum Loan-To-Value (LTV) allowed in basis points",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "reserve_balance": {
+          "description": "The total amount of assets in the reserve",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint128"
+            }
+          ]
+        },
+        "reserve_shares": {
+          "description": "The amount of vault shares representing the reserve balance",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint128"
+            }
+          ]
+        },
+        "reserve_yield_fee_bps": {
+          "description": "The fee applied to reserves yield payments in basis points",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "sum_payment_ratio": {
+          "description": "The on-going sum of payments over collateral, if any",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SumPaymentRatio"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "synthetic": {
+          "description": "Denom of the associated synthetic (debt token)",
+          "type": "string"
+        },
+        "treasury_shares": {
+          "description": "The amount of shares claimable by the treasury",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint128"
+            }
+          ]
+        },
+        "vault": {
+          "description": "Address/Id of the vault",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "SumPaymentRatio": {
+          "type": "object",
+          "required": [
+            "ratio",
+            "timestamp"
+          ],
+          "properties": {
+            "ratio": {
+              "$ref": "#/definitions/Uint256"
+            },
+            "timestamp": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        },
+        "Uint256": {
+          "description": "An implementation of u256 that is using strings for JSON encoding/decoding, such that the full u256 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances out of primitive uint types or `new` to provide big endian bytes:\n\n``` # use cosmwasm_std::Uint256; let a = Uint256::from(258u128); let b = Uint256::new([ 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 2u8, ]); assert_eq!(a, b); ```",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

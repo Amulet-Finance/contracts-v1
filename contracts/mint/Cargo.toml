@@ -1,0 +1,23 @@
+[package]
+name       = "amulet-mint"
+version    = "0.1.0"
+edition    = "2021"
+
+[[bin]]
+name       = "schema"
+path       = "schema.rs"
+
+[lib]
+path       = "contract.rs"
+crate-type = ["cdylib", "rlib"]
+doctest    = false
+
+[dependencies]
+anyhow.workspace          = true
+cosmwasm-std.workspace    = true
+cosmwasm-schema.workspace = true
+neutron-sdk.workspace     = true
+
+amulet-core.workspace     = true
+amulet-cw.workspace       = true
+amulet-ntrn.workspace     = true

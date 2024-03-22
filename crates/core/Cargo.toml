@@ -1,0 +1,14 @@
+[package]
+name    = "amulet-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path    = "lib.rs"
+doctest = false
+
+[dependencies]
+derive_more.workspace       = true
+static_assertions.workspace = true
+thiserror.workspace         = true
+uint.workspace              = true

@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "type": "object",
+  "required": [
+    "synthetic_mint"
+  ],
+  "properties": {
+    "synthetic_mint": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

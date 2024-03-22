@@ -1,0 +1,15 @@
+[package]
+name    = "amulet-ntrn"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path    = "lib.rs"
+doctest = false
+
+[dependencies]
+cosmwasm-std.workspace = true
+neutron-sdk.workspace  = true
+
+amulet-core.workspace  = true
+amulet-cw.workspace    = true

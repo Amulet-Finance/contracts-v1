@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UnderlyingAssetDecimalsResponse",
+  "type": "object",
+  "required": [
+    "decimals"
+  ],
+  "properties": {
+    "decimals": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
+    }
+  },
+  "additionalProperties": false
+}

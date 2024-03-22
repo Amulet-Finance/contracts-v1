@@ -1,0 +1,20 @@
+[package]
+name       = "mock-lst-oracle"
+version    = "0.1.0"
+edition    = "2021"
+
+[[bin]]
+name       = "schema"
+path       = "schema.rs"
+
+[lib]
+path       = "contract.rs"
+crate-type = ["cdylib", "rlib"]
+doctest    = false
+
+[dependencies]
+anyhow.workspace          = true
+cosmwasm-std.workspace    = true
+cosmwasm-schema.workspace = true
+
+amulet-cw.workspace       = true

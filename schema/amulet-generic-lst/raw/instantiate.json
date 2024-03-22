@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "type": "object",
+  "required": [
+    "lst_decimals",
+    "lst_denom",
+    "lst_redemption_rate_oracle",
+    "underlying_decimals"
+  ],
+  "properties": {
+    "lst_decimals": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "lst_denom": {
+      "type": "string"
+    },
+    "lst_redemption_rate_oracle": {
+      "type": "string"
+    },
+    "underlying_decimals": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
+    }
+  },
+  "additionalProperties": false
+}
