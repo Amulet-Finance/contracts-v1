@@ -62,7 +62,9 @@ pub fn handle_execute_msg(
         ExecuteMsg::TransferAdminRole { next_admin } => {
             api.addr_validate(&next_admin)?;
 
-            admin.transfer_admin_role(info.sender.into_string().into(), next_admin.into())?
+            let admin_role = admin.authorize_admin(info.sender.into_string().into())?;
+
+            admin.transfer_admin_role(admin_role, next_admin.into())?
         }
 
         ExecuteMsg::ClaimAdminRole {} => {
@@ -70,7 +72,9 @@ pub fn handle_execute_msg(
         }
 
         ExecuteMsg::CancelRoleTransfer {} => {
-            admin.cancel_next_admin(info.sender.into_string().into())?
+            let admin_role = admin.authorize_admin(info.sender.into_string().into())?;
+
+            admin.cancel_next_admin(admin_role)?
         }
     };
 
