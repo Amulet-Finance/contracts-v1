@@ -30,7 +30,7 @@ impl From<String> for Ticker {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
     Unauthorized(#[from] UnauthorizedError),
@@ -42,6 +42,7 @@ pub enum Error {
     SyntheticNotFound,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum MintCmd {
     Mint {
         synthetic: Synthetic,
@@ -54,11 +55,13 @@ pub enum MintCmd {
     },
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum ConfigCmd {
     CreateSynthetic { ticker: Ticker, decimals: Decimals },
     Whitelist { minter: Minter, enabled: bool },
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum Cmd {
     Config(ConfigCmd),
     Mint(MintCmd),
@@ -178,5 +181,241 @@ impl From<MintCmd> for Cmd {
 impl From<ConfigCmd> for Cmd {
     fn from(v: ConfigCmd) -> Self {
         Self::Config(v)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashSet;
+    use test_utils::prelude::*;
+
+    use super::{mint as make_mint, *};
+
+    #[derive(Default)]
+    struct Context {
+        tickers: HashSet<String>,
+        synthetic: HashSet<String>,
+        whitelist: HashSet<String>,
+    }
+
+    impl Context {
+        fn handle_cmd(&mut self, cmd: Cmd) {
+            match cmd {
+                Cmd::Config(config_cmd) => match config_cmd {
+                    ConfigCmd::CreateSynthetic { ticker, .. } => {
+                        if self.tickers.contains(ticker.as_str())
+                            || self.synthetic.contains(ticker.as_str())
+                        {
+                            panic!("synthetic already exisits")
+                        }
+
+                        self.tickers.insert(ticker.clone().into_string());
+                        self.synthetic.insert(ticker.into_string());
+                    }
+
+                    ConfigCmd::Whitelist { minter, enabled } => {
+                        if enabled {
+                            self.whitelist.insert(minter.into_string());
+                        } else {
+                            self.whitelist.remove(minter.as_str());
+                        }
+                    }
+                },
+                Cmd::Mint(mint_cmd) => match mint_cmd {
+                    MintCmd::Mint { synthetic, .. } | MintCmd::Burn { synthetic, .. } => {
+                        assert!(self.synthetic.contains(synthetic.as_str()))
+                    }
+                },
+            }
+        }
+
+        fn after_cmd(mut self, cmd: Cmd) -> Self {
+            self.handle_cmd(cmd);
+            self
+        }
+    }
+
+    impl Repository for Context {
+        fn ticker_exists(&self, ticker: &Ticker) -> bool {
+            self.tickers.contains(ticker.as_str())
+        }
+
+        fn synthetic_exists(&self, synthetic: &Synthetic) -> bool {
+            self.synthetic.contains(synthetic.as_str())
+        }
+
+        fn is_whitelisted(&self, minter: &Minter) -> Option<bool> {
+            self.whitelist.contains(minter.as_str()).then_some(true)
+        }
+    }
+
+    fn am_asset_ticker() -> Ticker {
+        "amASSET".to_owned().into()
+    }
+
+    fn am_asset() -> Synthetic {
+        "amasset".to_owned().into()
+    }
+
+    fn phantom_asset_ticker() -> Ticker {
+        "booASSET".to_owned().into()
+    }
+
+    fn phantom_asset() -> Synthetic {
+        "booasset".to_owned().into()
+    }
+
+    fn whitelisted_minter() -> Minter {
+        "minter".to_owned().into()
+    }
+
+    fn non_whitelisted_minter() -> Minter {
+        "non_minter".to_owned().into()
+    }
+
+    fn mint_recipient() -> Recipient {
+        "recipient".to_owned().into()
+    }
+
+    impl Cmd {
+        fn create_synthetic(ticker: Ticker, decimals: Decimals) -> Self {
+            ConfigCmd::CreateSynthetic { ticker, decimals }.into()
+        }
+
+        fn set_whitelisted(minter: Minter, enabled: bool) -> Self {
+            ConfigCmd::Whitelist { minter, enabled }.into()
+        }
+
+        fn mint(synthetic: Synthetic, amount: SyntheticAmount, recipient: Recipient) -> Self {
+            MintCmd::Mint {
+                synthetic,
+                amount,
+                recipient,
+            }
+            .into()
+        }
+
+        fn burn(synthetic: Synthetic, amount: SyntheticAmount) -> Self {
+            MintCmd::Burn { synthetic, amount }.into()
+        }
+    }
+
+    #[fixture]
+    fn admin_role() -> AdminRole {
+        AdminRole::mock()
+    }
+
+    #[fixture]
+    fn ctx() -> Context {
+        Context::default()
+            .after_cmd(Cmd::create_synthetic(am_asset_ticker(), 6))
+            .after_cmd(Cmd::set_whitelisted(whitelisted_minter(), true))
+    }
+
+    #[rstest]
+    #[case::ticker_available(
+        phantom_asset_ticker(),
+        6,
+        Ok(Cmd::create_synthetic(phantom_asset_ticker(), 6))
+    )]
+    #[case::ticker_taken(am_asset_ticker(), 6, Err(Error::TickerAlreadyExists))]
+    fn create_synthetic(
+        admin_role: AdminRole,
+        mut ctx: Context,
+        #[case] ticker: Ticker,
+        #[case] decimals: Decimals,
+        #[case] expected: Result<Cmd, Error>,
+    ) {
+        let actual = make_mint(&ctx).create_synthetic(admin_role, ticker, decimals);
+
+        assert_eq!(actual, expected);
+
+        if let Ok(cmd) = actual {
+            ctx.handle_cmd(cmd)
+        }
+    }
+
+    #[rstest]
+    #[case::set_true(
+        whitelisted_minter(),
+        true,
+        Ok(Cmd::set_whitelisted(whitelisted_minter(), true))
+    )]
+    #[case::set_false(
+        non_whitelisted_minter(),
+        false,
+        Ok(Cmd::set_whitelisted(non_whitelisted_minter(), false))
+    )]
+    fn set_whitelisted(
+        admin_role: AdminRole,
+        mut ctx: Context,
+        #[case] minter: Minter,
+        #[case] enabled: bool,
+        #[case] expected: Result<Cmd, Error>,
+    ) {
+        let actual = make_mint(&ctx).set_whitelisted(admin_role, minter, enabled);
+
+        assert_eq!(actual, expected);
+
+        if let Ok(cmd) = actual {
+            ctx.handle_cmd(cmd)
+        }
+    }
+
+    #[rstest]
+    #[case::whitelisted_minter_existing_synthetic(
+        whitelisted_minter(),
+        am_asset(),
+        1_000_000,
+        mint_recipient(),
+        Ok(Cmd::mint(am_asset(), 1_000_000, mint_recipient()))
+    )]
+    #[case::whitelisted_minter_non_existing_synthetic(
+        whitelisted_minter(),
+        phantom_asset(),
+        1_000_000,
+        mint_recipient(),
+        Err(Error::SyntheticNotFound)
+    )]
+    #[case::non_whitelisted_minter_existing_synthetic(
+        non_whitelisted_minter(),
+        am_asset(),
+        1_000_000,
+        mint_recipient(),
+        Err(UnauthorizedError.into())
+    )]
+    fn mint(
+        mut ctx: Context,
+        #[case] minter: Minter,
+        #[case] synthetic: Synthetic,
+        #[case] amount: SyntheticAmount,
+        #[case] recipient: Recipient,
+        #[case] expected: Result<Cmd, Error>,
+    ) {
+        let actual = make_mint(&ctx).mint(minter, synthetic, amount, recipient);
+
+        assert_eq!(actual, expected);
+
+        if let Ok(cmd) = actual {
+            ctx.handle_cmd(cmd)
+        }
+    }
+
+    #[rstest]
+    #[case::existing_synthetic(am_asset(), 1_000_000, Ok(Cmd::burn(am_asset(), 1_000_000)))]
+    #[case::non_existing_synthetic(phantom_asset(), 1_000_000, Err(Error::SyntheticNotFound))]
+    fn burn(
+        mut ctx: Context,
+        #[case] synthetic: Synthetic,
+        #[case] amount: SyntheticAmount,
+        #[case] expected: Result<Cmd, Error>,
+    ) {
+        let actual = make_mint(&ctx).burn(synthetic, amount);
+
+        assert_eq!(actual, expected);
+
+        if let Ok(cmd) = actual {
+            ctx.handle_cmd(cmd)
+        }
     }
 }
