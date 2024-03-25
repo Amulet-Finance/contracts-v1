@@ -3,6 +3,7 @@ members = [
   "crates/core",
   "crates/cosmwasm",
   "crates/neutron",
+  "crates/test-utils",
   "contracts/hub",
   "contracts/mint",
   "contracts/vault/*",
@@ -19,11 +20,17 @@ cosmwasm-schema   = "1.5.0"
 derive_more       = "0.99.17"
 neutron-sdk       = "0.8.0"
 static_assertions = "1.1.0"
+serde             = "1.0.197"
 
 amulet-core       = { path = "crates/core" }
 amulet-cw         = { path = "crates/cosmwasm" }
 amulet-ntrn       = { path = "crates/neutron" }
 
+#dev-deps
+expect-test       = "1.4.1"
+ron               = "0.8.1"
+rstest            = { version = "0.18.2", default-features = false }
+test-utils        = { path = "crates/test-utils" }
 
 [profile.release]
 codegen-units     = 1

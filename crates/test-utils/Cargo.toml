@@ -1,0 +1,15 @@
+[package]
+name    = "test-utils"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+path    = "lib.rs"
+doctest = false
+test    = false
+
+[dependencies]
+serde.workspace       = true
+ron.workspace         = true
+expect-test.workspace = true
+rstest.workspace      = true
