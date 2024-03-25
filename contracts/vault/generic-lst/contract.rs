@@ -12,10 +12,13 @@ use neutron_sdk::bindings::msg::NeutronMsg;
 use amulet_core::vault::Cmd as VaultCmd;
 use amulet_cw::{
     admin::{self, ExecuteMsg as AdminExecuteMsg, Repository as AdminRepository},
-    vault::{self, ExecuteMsg as VaultExecuteMsg, UnbondingLog},
+    vault::{
+        self, handle_mint_cmd, handle_unbonding_log_cmd, init_mint_msg,
+        ExecuteMsg as VaultExecuteMsg, SharesMint, UnbondingLog,
+    },
     MigrateMsg,
 };
-use amulet_ntrn::vault::{mint, Mint};
+use amulet_ntrn::token_factory::TokenFactory;
 
 use self::msg::{
     ExecuteMsg, InstantiateMsg, MetadataResponse, QueryMsg, StrategyExecuteMsg, StrategyQueryMsg,
@@ -26,7 +29,7 @@ use self::strategy::{lst_redeption_rate, Strategy};
 #[entry_point]
 pub fn instantiate(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response<NeutronMsg>, Error> {
@@ -44,7 +47,9 @@ pub fn instantiate(
     deps.storage
         .set_underlying_decimals(msg.underlying_decimals);
 
-    Ok(Response::default().add_message(mint::init_msg()))
+    let init_mint_msg = init_mint_msg(TokenFactory::new(&env));
+
+    Ok(Response::default().add_message(init_mint_msg))
 }
 
 pub fn execute_admin_msg(
@@ -74,7 +79,7 @@ pub fn execute_vault_msg(
 
     let unbonding_log = UnbondingLog::new(deps.storage);
 
-    let mint = Mint::new(deps.storage, &env);
+    let mint = SharesMint::new(deps.storage, &env);
 
     let (cmds, mut response) =
         vault::handle_execute_msg(&strategy, &unbonding_log, &mint, info, msg)?;
@@ -82,7 +87,8 @@ pub fn execute_vault_msg(
     for cmd in cmds {
         match cmd {
             VaultCmd::Mint(cmd) => {
-                let msg = mint::handle_cmd(deps.storage, &env, cmd);
+                let msg = handle_mint_cmd(deps.storage, TokenFactory::new(&env), cmd);
+
                 response.messages.push(SubMsg::new(msg));
             }
 
@@ -92,9 +98,7 @@ pub fn execute_vault_msg(
                 }
             }
 
-            VaultCmd::UnbondingLog(cmd) => {
-                amulet_cw::vault::unbonding_log::handle_cmd(deps.storage, cmd)
-            }
+            VaultCmd::UnbondingLog(cmd) => handle_unbonding_log_cmd(deps.storage, cmd),
         }
     }
 
@@ -166,7 +170,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, Error> {
                 deps.storage,
                 &Strategy::new(deps.storage, &env, redemption_rate),
                 &UnbondingLog::new(deps.storage),
-                &Mint::new(deps.storage, &env),
+                &SharesMint::new(deps.storage, &env),
                 &env,
                 vault_query,
             )?

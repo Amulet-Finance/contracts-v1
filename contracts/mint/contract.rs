@@ -1,15 +1,15 @@
 pub mod msg;
 
-use amulet_ntrn::mint::TokenFactory;
 use anyhow::Error;
 use cosmwasm_std::{entry_point, Binary, Deps, DepsMut, Env, MessageInfo, Response};
+use neutron_sdk::bindings::msg::NeutronMsg;
 
 use amulet_cw::{
     admin::{self, Repository as AdminRespository},
     mint::{self, Repository as MintRepository},
     MigrateMsg,
 };
-use neutron_sdk::bindings::msg::NeutronMsg;
+use amulet_ntrn::token_factory::TokenFactory;
 
 use self::msg::{AdminExecuteMsg, ExecuteMsg, InstantiateMsg, MintExecuteMsg, QueryMsg};
 

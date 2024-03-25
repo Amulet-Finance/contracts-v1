@@ -13,3 +13,6 @@ neutron-sdk.workspace  = true
 
 amulet-core.workspace  = true
 amulet-cw.workspace    = true
+
+[dev-dependencies]
+test-utils.workspace   = true

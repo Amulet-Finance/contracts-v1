@@ -1,5 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{to_json_binary, Api, Binary, MessageInfo, StdError, Storage, SubMsg, Uint128};
+use cosmwasm_std::{
+    to_json_binary, Api, Binary, CosmosMsg, MessageInfo, StdError, Storage, SubMsg, Uint128,
+};
 
 use amulet_core::{
     admin::Repository as AdminRepository,
@@ -12,8 +14,23 @@ use amulet_core::{
 
 use crate::{
     admin::{get_admin_role, Error as AdminError},
-    one_coin, PaymentError, StorageExt as _,
+    one_coin, PaymentError, StorageExt,
 };
+
+pub trait TokenFactory<Msg> {
+    fn denom(&self, ticker: &Ticker) -> String;
+
+    fn create(&self, ticker: Ticker, decimals: Decimals) -> CosmosMsg<Msg>;
+
+    fn mint(
+        &self,
+        denom: Synthetic,
+        amount: SyntheticAmount,
+        recipient: Recipient,
+    ) -> CosmosMsg<Msg>;
+
+    fn burn(&self, denom: Synthetic, amount: SyntheticAmount) -> CosmosMsg<Msg>;
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -54,9 +71,15 @@ pub struct WhitelistedResponse {
 }
 
 #[cw_serde]
-pub struct SyntheticMetadataResponse {
+pub struct Metadata {
+    pub denom: String,
     pub ticker: String,
     pub decimals: u32,
+}
+
+#[cw_serde]
+pub struct AllAssetsResponse {
+    pub assets: Vec<Metadata>,
 }
 
 #[cw_serde]
@@ -64,8 +87,10 @@ pub struct SyntheticMetadataResponse {
 pub enum QueryMsg {
     #[returns(WhitelistedResponse)]
     Whitelisted { minter: String },
-    #[returns(SyntheticMetadataResponse)]
-    SyntheticMetadata { synthetic: String },
+    #[returns(Metadata)]
+    Synthetic { denom: String },
+    #[returns(AllAssetsResponse)]
+    AllAssets {},
 }
 
 pub fn handle_execute_msg(
@@ -130,7 +155,7 @@ pub fn handle_query_msg(storage: &dyn Storage, msg: QueryMsg) -> Result<Binary, 
             to_json_binary(&WhitelistedResponse { whitelisted })
         }
 
-        QueryMsg::SyntheticMetadata { synthetic } => {
+        QueryMsg::Synthetic { denom: synthetic } => {
             let ticker = storage
                 .string_at(key::TICKER.with(&synthetic))
                 .ok_or(StdError::not_found("synthetic"))?;
@@ -139,7 +164,39 @@ pub fn handle_query_msg(storage: &dyn Storage, msg: QueryMsg) -> Result<Binary, 
                 .u32_at(key::DECIMALS.with(&synthetic))
                 .ok_or(StdError::not_found("synthetic"))?;
 
-            to_json_binary(&SyntheticMetadataResponse { ticker, decimals })
+            to_json_binary(&Metadata {
+                denom: synthetic,
+                ticker,
+                decimals,
+            })
+        }
+
+        QueryMsg::AllAssets {} => {
+            let count = storage.u32_at(key::COUNT).unwrap_or_default();
+
+            let mut assets = vec![];
+
+            for idx in 0..count {
+                let denom = storage
+                    .string_at(key::SYNTHETIC.with(idx))
+                    .expect("always: set during denom creation");
+
+                let ticker = storage
+                    .string_at(key::TICKER.with(&denom))
+                    .expect("always: set during denom creation");
+
+                let decimals = storage
+                    .u32_at(key::DECIMALS.with(&denom))
+                    .expect("always: set during denom creation");
+
+                assets.push(Metadata {
+                    denom,
+                    ticker,
+                    decimals,
+                });
+            }
+
+            to_json_binary(&AllAssetsResponse { assets })
         }
     }
 }
@@ -168,6 +225,7 @@ mod key {
         };
     }
 
+    pub const COUNT     : &str   = key!("count");
     pub const SYNTHETIC : MapKey = map_key!("synthetic");
     pub const TICKER    : MapKey = map_key!("ticker");
     pub const DECIMALS  : MapKey = map_key!("decimals");
@@ -188,21 +246,6 @@ impl<'a> CoreMintRepository for Repository<'a> {
     }
 }
 
-pub trait TokenFactory<Msg> {
-    fn denom(&self, ticker: &Ticker) -> String;
-
-    fn create(&self, ticker: Ticker, decimals: Decimals) -> SubMsg<Msg>;
-
-    fn mint(
-        &self,
-        synthetic: Synthetic,
-        amount: SyntheticAmount,
-        recipient: Recipient,
-    ) -> SubMsg<Msg>;
-
-    fn burn(&self, synthetic: Synthetic, amount: SyntheticAmount) -> SubMsg<Msg>;
-}
-
 pub fn handle_cmd<Msg>(
     storage: &mut dyn Storage,
     token_factory: impl TokenFactory<Msg>,
@@ -212,6 +255,12 @@ pub fn handle_cmd<Msg>(
         Cmd::Config(cfg_cmd) => match cfg_cmd {
             ConfigCmd::CreateSynthetic { ticker, decimals } => {
                 let denom = token_factory.denom(&ticker);
+
+                let count = storage.u32_at(key::COUNT).unwrap_or_default();
+
+                storage.set_string(key::SYNTHETIC.with(count), &denom);
+
+                storage.set_u32(key::COUNT, count + 1);
 
                 storage.set_string(key::SYNTHETIC.with(&ticker), &denom);
 
@@ -240,5 +289,5 @@ pub fn handle_cmd<Msg>(
         },
     };
 
-    Some(msg)
+    Some(SubMsg::new(msg))
 }

@@ -1,10 +1,12 @@
+pub mod mint;
 pub mod unbonding_log;
 
 use amulet_core::{
     vault::{
         offset_total_deposits_value, pending_batch_id, vault, ClaimableBatchIter, Cmd,
-        DepositResponse as CoreDepositResponse, Error as CoreVaultError, Mint, Strategy,
-        UnbondEpoch, UnbondingLog as CoreUnbondingLog, Vault,
+        DepositResponse as CoreDepositResponse, Error as CoreVaultError,
+        SharesMint as CoreSharesMint, Strategy, UnbondEpoch, UnbondingLog as CoreUnbondingLog,
+        Vault,
     },
     Decimals,
 };
@@ -17,7 +19,10 @@ use crate::{non_payable, one_coin, PaymentError};
 
 use self::unbonding_log::StorageExt as _;
 
-pub use self::unbonding_log::UnbondingLog;
+pub use self::{
+    mint::{handle_cmd as handle_mint_cmd, init_msg as init_mint_msg, SharesMint},
+    unbonding_log::{handle_cmd as handle_unbonding_log_cmd, UnbondingLog},
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -223,7 +228,7 @@ fn handle_vault_claim<Msg>(
 pub fn handle_execute_msg<Msg>(
     strategy: &dyn Strategy,
     unbonding_log: &dyn CoreUnbondingLog,
-    mint: &dyn Mint,
+    mint: &dyn CoreSharesMint,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
@@ -359,7 +364,7 @@ pub fn handle_query_msg(
     storage: &dyn Storage,
     strategy: &dyn Strategy,
     unbonding_log: &dyn CoreUnbondingLog,
-    mint: &dyn Mint,
+    mint: &dyn CoreSharesMint,
     env: &Env,
     msg: QueryMsg,
 ) -> Result<Binary, StdError> {

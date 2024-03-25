@@ -1,2 +1,1 @@
-pub mod mint;
-pub mod vault;
+pub mod token_factory;
