@@ -68,19 +68,32 @@
         {
           "type": "object",
           "required": [
-            "synthetic_metadata"
+            "synthetic"
           ],
           "properties": {
-            "synthetic_metadata": {
+            "synthetic": {
               "type": "object",
               "required": [
-                "synthetic"
+                "denom"
               ],
               "properties": {
-                "synthetic": {
+                "denom": {
                   "type": "string"
                 }
               },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "all_assets"
+          ],
+          "properties": {
+            "all_assets": {
+              "type": "object",
               "additionalProperties": false
             }
           },

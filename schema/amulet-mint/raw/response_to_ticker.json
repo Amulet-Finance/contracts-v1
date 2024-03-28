@@ -1,9 +1,10 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "SyntheticMetadataResponse",
+  "title": "Metadata",
   "type": "object",
   "required": [
     "decimals",
+    "denom",
     "ticker"
   ],
   "properties": {
@@ -11,6 +12,9 @@
       "type": "integer",
       "format": "uint32",
       "minimum": 0.0
+    },
+    "denom": {
+      "type": "string"
     },
     "ticker": {
       "type": "string"
