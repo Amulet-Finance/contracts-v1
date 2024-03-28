@@ -6,7 +6,14 @@
 
 export interface InstantiateMsg {}
 export type ExecuteMsg = {
-  rate: Decimal;
+  set_whitelisted: {
+    address: string;
+    whitelisted: boolean;
+  };
+} | {
+  set_redemption_rate: {
+    rate: Decimal;
+  };
 };
 export type Decimal = string;
 export type QueryMsg = {

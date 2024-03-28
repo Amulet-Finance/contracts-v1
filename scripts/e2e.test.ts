@@ -156,7 +156,7 @@ test("mint->hub->vault", async () => {
     expect(vaultMeta.synthetic).toBe(amNTRN.denom);
   }
 
-  await lstOracle.execute({ rate: "1.1" }, creator, 200000);
+  await lstOracle.execute({ set_redemption_rate: { rate: "1.1" } }, creator, 200000);
 
   console.log(`set lst redemption rate to 1.1 - 10% earned in yield`);
 
@@ -256,7 +256,7 @@ test("mint->hub->vault", async () => {
     expect(BigInt(position.debt)).toBe(BigInt(5 * 10**5));
   }
   
-  await lstOracle.execute({ rate: "1.21" }, creator, 200000);
+  await lstOracle.execute({ set_redemption_rate: { rate: "1.21" } }, creator, 200000);
 
   console.log(`set lst redemption rate to 1.21 - another 10% earned in yield`);
 
@@ -497,7 +497,7 @@ test("mint->hub->vault", async () => {
 
   console.log(`re-deposited: ${redepositAmount}`)
 
-  await lstOracle.execute({ rate: "1.815" }, creator, 200000);
+  await lstOracle.execute({ set_redemption_rate: { rate: "1.815" } }, creator, 200000);
 
   console.log(`set lst redemption rate to 1.815 - another 50% earned in yield`);
 

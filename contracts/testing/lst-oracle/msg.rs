@@ -7,7 +7,7 @@ use cosmwasm_std::Decimal;
 pub struct InstantiateMsg {}
 
 #[cw_serde]
-#[serde(untagged)]
 pub enum ExecuteMsg {
+    SetWhitelisted { address: String, whitelisted: bool },
     SetRedemptionRate { rate: Decimal },
 }
