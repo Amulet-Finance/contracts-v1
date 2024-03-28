@@ -9,7 +9,7 @@ use amulet_core::{
 };
 
 use crate::{
-    mint::{ExecuteMsg as MintExecuteMsg, QueryMsg as MintQueryMsg, SyntheticMetadataResponse},
+    mint::{ExecuteMsg as MintExecuteMsg, Metadata, QueryMsg as MintQueryMsg},
     StorageExt as _,
 };
 
@@ -59,10 +59,10 @@ impl<'a> CoreSyntheticMint for SyntheticMint<'a> {
     fn syntethic_decimals(&self, synthetic: &Synthetic) -> Option<Decimals> {
         let mint = self.storage.mint_address();
 
-        let query_result: Result<SyntheticMetadataResponse, _> = self.querier.query_wasm_smart(
+        let query_result: Result<Metadata, _> = self.querier.query_wasm_smart(
             mint,
-            &MintQueryMsg::SyntheticMetadata {
-                synthetic: synthetic.to_string(),
+            &MintQueryMsg::Synthetic {
+                denom: synthetic.to_string(),
             },
         );
 

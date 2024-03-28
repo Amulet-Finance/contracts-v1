@@ -8,6 +8,7 @@ path    = "lib.rs"
 doctest = false
 
 [dependencies]
+serde                       = { workspace = true, features = [ "derive" ] }
 derive_more.workspace       = true
 static_assertions.workspace = true
 thiserror.workspace         = true

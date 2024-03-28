@@ -24,9 +24,24 @@ where
     }
 }
 
+/// Within N
+#[macro_export]
+macro_rules! assert_wn {
+    ($n:literal, $left:expr, $right:expr $(,)?) => {
+        if !($left >= $right - $n && $left <= $right + $n) {
+            panic!("{} is not within 1 of {}", $left, $right);
+        }
+    };
+    ($n:literal, $left:expr, $right:expr, $($arg:tt)+) => {
+        if !($left >= $right - $n && $left <= $right + $n) {
+            panic!("{} is not within 1 of {}: {}", $left, $right, format_args!($($arg)+));
+        }
+    };
+}
+
 pub mod prelude {
     pub use expect_test::expect;
     pub use rstest::*;
 
-    pub use crate::{check, ToExpectInput};
+    pub use crate::{assert_wn, check, ToExpectInput};
 }

@@ -120,7 +120,7 @@ impl<'a> CoreVaults for Vaults<'a> {
             .query_wasm_smart(vault.clone(), &VaultQueryMsg::UnderlyingAssetDecimals {})
             .map_err(|err| match err {
                 err @ StdError::NotFound { .. } => err,
-                err => panic!("{err}"),
+                err => panic!("{vault}: {err}"),
             })
             .ok()?;
 

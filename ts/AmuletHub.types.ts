@@ -216,6 +216,7 @@ export interface PositionResponse {
   collateral: Uint128;
   credit: Uint128;
   debt: Uint128;
+  sum_payment_ratio: Uint256;
 }
 export interface TreasuryResponse {
   treasury?: string | null;

@@ -36,7 +36,7 @@ impl From<&Identifier> for String {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 #[error("unauthorized")]
 pub struct UnauthorizedError;
 
@@ -44,6 +44,10 @@ pub struct UnauthorizedError;
 struct Rate(FixedU256);
 
 impl Rate {
+    fn one() -> Self {
+        Self(FixedU256::from_u128(1))
+    }
+
     fn from_ratio(numer: u128, denom: u128) -> Option<Self> {
         FixedU256::from_u128(numer)
             .checked_div(FixedU256::from_u128(denom))

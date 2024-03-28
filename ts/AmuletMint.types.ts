@@ -46,19 +46,26 @@ export type QueryMsg2 = {
     minter: string;
   };
 } | {
-  synthetic_metadata: {
-    synthetic: string;
+  synthetic: {
+    denom: string;
   };
+} | {
+  all_assets: {};
 };
+export interface AllAssetsResponse {
+  assets: Metadata[];
+}
+export interface Metadata {
+  decimals: number;
+  denom: string;
+  ticker: string;
+  total_supply: Uint128;
+}
 export interface CurrentAdminResponse {
   current_admin?: string | null;
 }
 export interface PendingAdminResponse {
   pending_admin?: string | null;
-}
-export interface SyntheticMetadataResponse {
-  decimals: number;
-  ticker: string;
 }
 export interface WhitelistedResponse {
   whitelisted: boolean;

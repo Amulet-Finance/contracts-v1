@@ -1,7 +1,7 @@
 pub mod msg;
 
 use anyhow::Error;
-use cosmwasm_std::{entry_point, Binary, Deps, DepsMut, Env, MessageInfo, Response};
+use cosmwasm_std::{entry_point, Binary, Deps, DepsMut, Env, MessageInfo, Reply, Response};
 
 use amulet_cw::{
     admin::{self, Repository as AdminRespository},
@@ -85,6 +85,29 @@ pub fn execute(
         ExecuteMsg::Admin(admin_msg) => execute_admin_msg(deps, env, info, admin_msg),
         ExecuteMsg::Hub(hub_msg) => execute_hub_msg(deps, env, info, hub_msg),
     }
+}
+
+#[entry_point]
+pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Error> {
+    let vaults = &Vaults::new(deps.storage, deps.querier);
+
+    let balance_sheet = &BalanceSheet::new(deps.storage);
+
+    let advance_fee_oracle = &AdvanceFeeOracle::new(deps.querier);
+
+    let (cmds, mut response) = hub::handle_reply(
+        deps.storage,
+        vaults,
+        balance_sheet,
+        advance_fee_oracle,
+        reply,
+    )?;
+
+    for cmd in cmds {
+        hub::handle_hub_cmd(deps.storage, &env, &mut response, cmd)?;
+    }
+
+    Ok(response)
 }
 
 #[entry_point]

@@ -17,6 +17,7 @@ thiserror         = "1.0.58"
 uint              = { version = "0.9.5", default-features = false }
 cosmwasm-std      = "1.5.0"
 cosmwasm-schema   = "1.5.0"
+cw-utils          = "1.0.3"
 derive_more       = "0.99.17"
 neutron-sdk       = "0.8.0"
 static_assertions = "1.1.0"
@@ -28,7 +29,7 @@ amulet-ntrn       = { path = "crates/neutron" }
 
 #dev-deps
 expect-test       = "1.4.1"
-ron               = "0.8.1"
+ron               = { version = "0.8.1", features = [ "integer128" ] }
 rstest            = { version = "0.18.2", default-features = false }
 test-utils        = { path = "crates/test-utils" }
 

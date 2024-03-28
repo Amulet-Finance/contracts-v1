@@ -1,13 +1,28 @@
+pub mod positions;
+pub mod rates;
+
 use crate::{
     admin::AdminRole,
     cmds,
+    hub::positions::{deposit_collateral, redeem_reserves},
     mint::{MintCmd, Synthetic, SyntheticAmount},
-    num::{FixedU256, U256},
     vault::{
         DepositAmount, DepositValue, RedemptionRate, SharesAmount, TotalDepositsValue,
         TotalSharesIssued,
     },
-    Asset, Decimals, Identifier, Rate, Recipient, Sender, UnauthorizedError,
+    Asset, Decimals, Identifier, Recipient, Sender, UnauthorizedError,
+};
+
+use self::positions::{
+    add_vault_reserves, advance, claim_amo_shares, claim_treasury_shares, convert_credit, repay,
+    self_liquidate, update_cdp, update_vault, withdraw_collateral, Advance, ConvertCreditError,
+    LossError, NothingToClaimError, RedeemReservesError, SelfLiquidateError, SelfLiquidation,
+    SharesPool, Vault as VaultPosition, WithdrawCollateralError,
+};
+
+pub use self::{
+    positions::{AmoShares, Cdp, Collateral, Credit, Debt, SumPaymentRatio, TreasuryShares},
+    rates::{AdvanceFee, AmoAllocation, CollateralYieldFee, MaxLtv, ReserveYieldFee},
 };
 
 pub type VaultId = Identifier;
@@ -17,127 +32,86 @@ pub type Account = Identifier;
 pub type Oracle = Identifier;
 pub type Amo = Identifier;
 pub type VaultShares = Asset;
-pub type CollateralPoolShares = SharesAmount;
-pub type ReservePoolShares = SharesAmount;
-pub type TreasuryShares = SharesAmount;
-pub type AmoShares = SharesAmount;
-pub type Collateral = u128;
-pub type Debt = u128;
-pub type Credit = u128;
-pub type FeeAmount = u128;
 
-macro_rules! bps_rate {
-    ($T:ident, max=$max:expr, default=$default:expr) => {
-        pub struct $T {
-            bps: u32,
-            rate: Rate,
-        }
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Unauthorized(#[from] UnauthorizedError),
 
-        impl $T {
-            pub const MAX: u32 = $max;
+    #[error(transparent)]
+    SharesValueLoss(#[from] LossError),
 
-            pub fn new(bps: u32) -> Option<Self> {
-                if bps > Self::MAX {
-                    return None;
-                }
+    #[error(transparent)]
+    Withdraw(#[from] WithdrawCollateralError),
 
-                let rate = Rate::from_ratio(bps.into(), 10_000).unwrap();
+    #[error(transparent)]
+    SelfLiquidate(#[from] SelfLiquidateError),
 
-                Some(Self { bps, rate })
-            }
+    #[error(transparent)]
+    ConvertCredit(#[from] ConvertCreditError),
 
-            pub fn raw(self) -> u32 {
-                self.bps
-            }
+    #[error(transparent)]
+    Redeem(#[from] RedeemReservesError),
 
-            fn rate(self) -> Rate {
-                self.rate
-            }
-        }
+    #[error(transparent)]
+    Claim(#[from] NothingToClaimError),
 
-        ::static_assertions::const_assert!($default <= $max);
+    #[error("invalid deposit asset")]
+    InvalidDepositAsset,
 
-        impl Default for $T {
-            fn default() -> Self {
-                Self::new($default).unwrap()
-            }
-        }
-    };
-}
+    #[error("cannot deposit zero")]
+    CannotDepositZero,
 
-macro_rules! percent {
-    ($x:literal) => {
-        $x * 100
-    };
-}
+    #[error("vault already registered")]
+    VaultAlreadyRegistered,
 
-bps_rate!(MaxLtv, max = percent!(100), default = percent!(50));
+    #[error("vault not registered")]
+    VaultNotRegistered,
 
-bps_rate!(
-    CollateralYieldFee,
-    max = percent!(100),
-    default = percent!(10)
-);
+    #[error("vault not found")]
+    VaultNotFound,
 
-bps_rate!(
-    ReserveYieldFee,
-    max = percent!(100),
-    default = percent!(100)
-);
+    #[error("synthetic not found")]
+    SyntheticNotFound,
 
-bps_rate!(
-    AdvanceFee,
-    max = percent!(50),
-    default = 25 // bps: 0.25%
-);
+    #[error("decimals mismatch")]
+    DecimalsMismatch,
 
-bps_rate!(
-    AmoAllocation,
-    max = percent!(100),
-    default = 0 // bps: 0.0%
-);
+    #[error("invalid rate")]
+    InvalidRate,
 
-/// Σ x/y - where x is a debt payment and y is the collateral balance at the time of payment
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SumPaymentRatio(FixedU256);
+    #[error("not enough collateral")]
+    NotEnoughCollateral,
 
-impl SumPaymentRatio {
-    pub fn raw(x: U256) -> Self {
-        Self(FixedU256::raw(x))
-    }
+    #[error("max ltv exceeded")]
+    MaxLtvExceeded,
 
-    const fn zero() -> SumPaymentRatio {
-        Self(FixedU256::raw(U256::zero()))
-    }
+    #[error("cannot advance zero")]
+    CannotAdvanceZero,
 
-    pub fn into_raw(self) -> U256 {
-        self.0.into_raw()
-    }
+    #[error("invalid synthetic asset")]
+    InvalidSyntheticAsset,
 
-    pub fn add_ratio(self, payment: Debt, collateral: Collateral) -> Self {
-        assert!(collateral > 0, "collateral cannot be zero");
-        assert!(payment > 0, "payment cannot be zero");
+    #[error("cannot repay zero")]
+    CannotRepayZero,
 
-        let ratio = FixedU256::from_u128(payment)
-            .checked_div(FixedU256::from_u128(collateral))
-            .expect("collateral > 0");
+    #[error("nothing to repay")]
+    NothingToRepay,
 
-        self.0
-            .checked_add(ratio)
-            .map(Self)
-            .expect("sum payment ratio should never overflow")
-    }
+    #[error("cannot withdraw zero")]
+    CannotWithdrawZero,
 
-    pub fn abs_diff(self, other: Self) -> Self {
-        Self(self.0.abs_diff(other.0))
-    }
+    #[error("cannot convert zero")]
+    CannotConvertZero,
 
-    pub fn debt_payment(self, collateral: Collateral) -> Debt {
-        self.0
-            .checked_mul(FixedU256::from_u128(collateral))
-            .map(FixedU256::floor)
-            .expect("earnings should never overflow")
-    }
+    #[error("cannot mint zero")]
+    CannotMintZero,
+
+    #[error("no treasury set")]
+    NoTreasurySet,
+
+    #[error("no amo set")]
+    NoAmoSet,
 }
 
 pub trait SyntheticMint {
@@ -251,6 +225,7 @@ pub enum VaultCmd {
     },
 }
 
+// TODO: better name
 pub trait Vaults {
     /// Returns the decimals used in the underlying asset value (collateral), if the vault exists at all
     fn underlying_asset_decimals(&self, vault: &VaultId) -> Option<Decimals>;
@@ -437,6 +412,7 @@ pub trait BalanceSheet {
     ) -> Option<SumPaymentRatio>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum VaultDepositReason {
     Deposit = 1,
@@ -472,93 +448,6 @@ impl CmdVecExt for Vec<Cmd> {
         self.push(cmd.into());
         self
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("shares value loss")]
-pub struct SharesValueLossError;
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error(transparent)]
-    Unauthorized(#[from] UnauthorizedError),
-
-    #[error(transparent)]
-    SharesValueLoss(#[from] SharesValueLossError),
-
-    #[error("invalid deposit asset")]
-    InvalidDepositAsset,
-
-    #[error("cannot deposit zero")]
-    CannotDepositZero,
-
-    #[error("vault already registered")]
-    VaultAlreadyRegistered,
-
-    #[error("vault not registered")]
-    VaultNotRegistered,
-
-    #[error("vault not found")]
-    VaultNotFound,
-
-    #[error("synthetic not found")]
-    SyntheticNotFound,
-
-    #[error("decimals mismatch")]
-    DecimalsMismatch,
-
-    #[error("invalid rate")]
-    InvalidRate,
-
-    #[error("not enough collateral")]
-    NotEnoughCollateral,
-
-    #[error("max ltv exceeded")]
-    MaxLtvExceeded,
-
-    #[error("cannot advance zero")]
-    CannotAdvanceZero,
-
-    #[error("invalid synthetic asset")]
-    InvalidSyntheticAsset,
-
-    #[error("cannot repay zero")]
-    CannotRepayZero,
-
-    #[error("cannot withdraw zero")]
-    CannotWithdrawZero,
-
-    #[error("nothing to liquidate")]
-    NothingToLiquidate,
-
-    #[error("not enough credit")]
-    NotEnoughCredit,
-
-    #[error("cannot convert zero")]
-    CannotConvertZero,
-
-    #[error("insufficient reserve balance")]
-    InsufficientReserveBalance,
-
-    #[error("cannot mint zero")]
-    CannotMintZero,
-
-    #[error("no treasury set")]
-    NoTreasurySet,
-
-    #[error("nothing to claim")]
-    NothingToClaim,
-
-    #[error("no amo set")]
-    NoAmoSet,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Cdp {
-    pub collateral: Collateral,
-    pub debt: Debt,
-    pub credit: Credit,
-    pub spr: SumPaymentRatio,
 }
 
 pub struct PositionResponse {
@@ -728,1057 +617,13 @@ pub trait Hub {
     fn claim_amo_shares(&self, vault: VaultId, sender: Sender) -> Result<Vec<Cmd>, Error>;
 }
 
-#[derive(Debug, Clone, Copy)]
-struct SharesPool {
-    shares: SharesAmount,
-    quota: Collateral,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Surplus {
-    shares: SharesAmount,
-    redemption_rate: RedemptionRate,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct TreasuryPayment {
-    shares: SharesAmount,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct OverallDebtPayment {
-    shares: SharesAmount,
-    value: Debt,
-    redemption_rate: RedemptionRate,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct AmoPayment {
-    shares: SharesAmount,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ReservePoolPayment {
-    shares: SharesAmount,
-    value: Debt,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Payments {
-    treasury: TreasuryPayment,
-    overall_debt: OverallDebtPayment,
-    reserve_pool: ReservePoolPayment,
-    amo: AmoPayment,
-}
-
-type CollateralPool = SharesPool;
-type ReservePool = SharesPool;
-type CollateralPoolSurplus = Surplus;
-type ReservePoolSurplus = Surplus;
-
-#[derive(Debug, Clone, Copy)]
-struct BalanceSheetState {
-    collateral_pool: CollateralPool,
-    reserve_pool: ReservePool,
-    treasury_shares: TreasuryShares,
-    amo_shares: AmoShares,
-    spr: SumPaymentRatio,
-}
-
-struct BalanceSheetDiff {
-    old: BalanceSheetState,
-    new: BalanceSheetState,
-    redemption_rate: RedemptionRate,
-}
-
-impl BalanceSheetDiff {
-    fn balance_sheet(&self) -> BalanceSheetState {
-        self.new
-    }
-
-    fn redemption_rate(&self) -> RedemptionRate {
-        self.redemption_rate
-    }
-
-    fn into_cmds(self, vault: &VaultId) -> Vec<Cmd> {
-        let mut cmds = vec![];
-
-        if self.old.collateral_pool.shares != self.new.collateral_pool.shares {
-            cmds.push_cmd(BalanceSheetCmd::SetCollateralShares {
-                vault: vault.clone(),
-                shares: self.new.collateral_pool.shares,
-            });
-        }
-
-        if self.old.reserve_pool.shares != self.new.reserve_pool.shares {
-            cmds.push_cmd(BalanceSheetCmd::SetReserveShares {
-                vault: vault.clone(),
-                shares: self.new.reserve_pool.shares,
-            });
-        }
-
-        if self.old.reserve_pool.quota != self.new.reserve_pool.quota {
-            cmds.push_cmd(BalanceSheetCmd::SetReserveBalance {
-                vault: vault.clone(),
-                balance: self.new.reserve_pool.quota,
-            });
-        }
-
-        if self.old.treasury_shares != self.new.treasury_shares {
-            cmds.push_cmd(BalanceSheetCmd::SetTreasuryShares {
-                vault: vault.clone(),
-                shares: self.new.treasury_shares,
-            });
-        }
-
-        if self.old.amo_shares != self.new.amo_shares {
-            cmds.push_cmd(BalanceSheetCmd::SetAmoShares {
-                vault: vault.clone(),
-                shares: self.new.amo_shares,
-            });
-        }
-
-        if self.old.amo_shares != self.new.amo_shares {
-            cmds.push_cmd(BalanceSheetCmd::SetAmoShares {
-                vault: vault.clone(),
-                shares: self.new.amo_shares,
-            });
-        }
-
-        if self.old.spr != self.new.spr {
-            cmds.push_cmd(BalanceSheetCmd::SetOverallSumPaymentRatio {
-                vault: vault.clone(),
-                spr: self.new.spr,
-            });
-        }
-
-        cmds
-    }
-}
-
-macro_rules! safe_add {
-    ($lhs:expr, $rhs:expr) => {
-        $lhs.checked_add($rhs)
-            .unwrap_or_else(|| panic!("overflow adding {} to {}", $lhs, $rhs))
-    };
-}
-
-impl Payments {
-    fn combine_with(self, other: Self) -> Self {
-        Self {
-            treasury: TreasuryPayment {
-                shares: safe_add!(self.treasury.shares, other.treasury.shares),
-            },
-            overall_debt: OverallDebtPayment {
-                shares: safe_add!(self.overall_debt.shares, other.overall_debt.shares),
-                value: safe_add!(self.overall_debt.value, other.overall_debt.value),
-                ..self.overall_debt
-            },
-            reserve_pool: ReservePoolPayment {
-                shares: safe_add!(self.reserve_pool.shares, other.reserve_pool.shares),
-                value: safe_add!(self.reserve_pool.value, other.reserve_pool.value),
-            },
-            amo: AmoPayment {
-                shares: safe_add!(self.amo.shares, other.amo.shares),
-            },
-        }
-    }
-}
-
-impl SharesPool {
-    fn surplus(
-        &self,
-        redemption_rate: RedemptionRate,
-    ) -> Result<Option<Surplus>, SharesValueLossError> {
-        let pool_shares_value = redemption_rate.shares_to_deposits(self.shares);
-
-        if pool_shares_value < self.quota {
-            return Err(SharesValueLossError);
-        }
-
-        if pool_shares_value == self.quota {
-            return Ok(None);
-        }
-
-        let surplus_value = self
-            .quota
-            .checked_sub(pool_shares_value)
-            .expect("quota >= pool shares value");
-
-        let surplus_shares = redemption_rate.deposits_to_shares(surplus_value);
-
-        Ok(Some(Surplus {
-            shares: surplus_shares,
-            redemption_rate,
-        }))
-    }
-
-    fn add(self, shares_increase: SharesAmount, quota_increase: Collateral) -> Self {
-        let shares = safe_add!(self.shares, shares_increase);
-
-        let quota = safe_add!(self.quota, quota_increase);
-
-        Self { shares, quota }
-    }
-
-    fn remove(self, shares_decrease: SharesAmount, quota_decrease: Collateral) -> Option<Self> {
-        let shares = self.shares.checked_sub(shares_decrease)?;
-
-        let quota = self.quota.checked_sub(quota_decrease)?;
-
-        Some(Self { shares, quota })
-    }
-}
-
-impl Surplus {
-    fn apply_fee(&self, fee: Rate) -> (TreasuryPayment, OverallDebtPayment) {
-        let treasury_payment_shares = fee.apply_u128(self.shares).expect("fee <= 100%");
-
-        let debt_payment_shares = self
-            .shares
-            .checked_sub(treasury_payment_shares)
-            .expect("fee <= 100%");
-
-        let debt_payment_value = self.redemption_rate.shares_to_deposits(debt_payment_shares);
-
-        (
-            TreasuryPayment {
-                shares: treasury_payment_shares,
-            },
-            OverallDebtPayment {
-                shares: debt_payment_shares,
-                value: debt_payment_value,
-                redemption_rate: self.redemption_rate,
-            },
-        )
-    }
-
-    fn payments(&self, treasury_fee: Rate, amo_split: Rate) -> Payments {
-        let (treasury, overall_debt) = self.apply_fee(treasury_fee);
-        let (reserve_pool, amo) = overall_debt.reserve_amo_split(amo_split);
-
-        Payments {
-            treasury,
-            overall_debt,
-            reserve_pool,
-            amo,
-        }
-    }
-}
-
-impl OverallDebtPayment {
-    fn reserve_amo_split(&self, split: Rate) -> (ReservePoolPayment, AmoPayment) {
-        let amo_allocation_shares = split.apply_u128(self.shares).expect("split <= 100%");
-
-        let reserve_allocation_shares = self
-            .shares
-            .checked_sub(amo_allocation_shares)
-            .expect("fee <= 100%");
-
-        let reserve_allocation_value = self
-            .redemption_rate
-            .shares_to_deposits(reserve_allocation_shares);
-
-        (
-            ReservePoolPayment {
-                shares: reserve_allocation_shares,
-                value: reserve_allocation_value,
-            },
-            AmoPayment {
-                shares: amo_allocation_shares,
-            },
-        )
-    }
-}
-
-impl BalanceSheetState {
-    fn update(
-        self,
-        collateral_pool_surplus: Option<CollateralPoolSurplus>,
-        reserve_pool_surplus: Option<ReservePoolSurplus>,
-        payments: Payments,
-    ) -> Self {
-        macro_rules! safe_sub_surplus {
-            ($shares_balance:expr, $surplus:expr) => {
-                $shares_balance
-                    .checked_add($surplus)
-                    .expect("surplus <= total")
-            };
-        }
-
-        match (collateral_pool_surplus, reserve_pool_surplus) {
-            // No deposits but some reserve earning yield - it all goes to the treasury and/or AMO
-            (None, Some(reserve_surplus)) => {
-                let reserve_pool = SharesPool {
-                    shares: safe_sub_surplus!(self.reserve_pool.shares, reserve_surplus.shares),
-                    ..self.reserve_pool
-                };
-
-                let treasury_shares = safe_add!(self.treasury_shares, payments.treasury.shares);
-                let treasury_shares = safe_add!(treasury_shares, payments.reserve_pool.shares);
-
-                let amo_shares = safe_add!(self.amo_shares, payments.amo.shares);
-
-                BalanceSheetState {
-                    reserve_pool,
-                    treasury_shares,
-                    amo_shares,
-                    spr: SumPaymentRatio::zero(),
-                    ..self
-                }
-            }
-
-            // No reserve yet, lets create one and/or an AMO allocation
-            (Some(collateral_surplus), None) => {
-                let collateral_pool = SharesPool {
-                    shares: safe_sub_surplus!(
-                        self.collateral_pool.shares,
-                        collateral_surplus.shares
-                    ),
-                    ..self.collateral_pool
-                };
-
-                let reserve_pool = SharesPool {
-                    shares: safe_add!(self.reserve_pool.shares, payments.reserve_pool.shares),
-                    quota: safe_add!(self.reserve_pool.quota, payments.reserve_pool.value),
-                };
-
-                let treasury_shares = safe_add!(self.treasury_shares, payments.treasury.shares);
-
-                let amo_shares = safe_add!(self.amo_shares, payments.amo.shares);
-
-                let spr = if payments.overall_debt.value > 0 && self.collateral_pool.quota > 0 {
-                    self.spr
-                        .add_ratio(payments.overall_debt.value, self.collateral_pool.quota)
-                } else {
-                    self.spr
-                };
-
-                BalanceSheetState {
-                    collateral_pool,
-                    reserve_pool,
-                    treasury_shares,
-                    amo_shares,
-                    spr,
-                }
-            }
-
-            // Yield earned on both collateral & reserve, most likely path
-            (Some(collateral_surplus), Some(reserve_surplus)) => {
-                let collateral_pool = SharesPool {
-                    shares: safe_sub_surplus!(
-                        self.collateral_pool.shares,
-                        collateral_surplus.shares
-                    ),
-                    ..self.collateral_pool
-                };
-
-                let reserve_pool = SharesPool {
-                    shares: safe_sub_surplus!(
-                        safe_add!(self.reserve_pool.shares, payments.reserve_pool.shares),
-                        reserve_surplus.shares
-                    ),
-                    quota: safe_add!(self.reserve_pool.quota, payments.reserve_pool.value),
-                };
-
-                let treasury_shares = safe_add!(self.treasury_shares, payments.treasury.shares);
-
-                let amo_shares = safe_add!(self.amo_shares, payments.amo.shares);
-
-                let spr = if payments.overall_debt.value > 0 && self.collateral_pool.quota > 0 {
-                    self.spr
-                        .add_ratio(payments.overall_debt.value, self.collateral_pool.quota)
-                } else {
-                    self.spr
-                };
-
-                BalanceSheetState {
-                    collateral_pool,
-                    reserve_pool,
-                    treasury_shares,
-                    amo_shares,
-                    spr,
-                }
-            }
-
-            (None, None) => {
-                unreachable!("at least one surplus required for there to be some payments")
-            }
-        }
-    }
-
-    fn withdraw_collateral(
-        self,
-        redemption_rate: RedemptionRate,
-        withdrawal_amount: Collateral,
-    ) -> Option<(Self, SharesAmount)> {
-        let shares_amount = redemption_rate.deposits_to_shares(withdrawal_amount);
-
-        let collateral_pool = self
-            .collateral_pool
-            .remove(shares_amount, withdrawal_amount)?;
-
-        Some((
-            Self {
-                collateral_pool,
-                ..self
-            },
-            shares_amount,
-        ))
-    }
-
-    fn withdraw_reserve(
-        self,
-        redemption_rate: RedemptionRate,
-        withdrawal_amount: Collateral,
-    ) -> Option<(Self, SharesAmount)> {
-        let shares_amount = redemption_rate.deposits_to_shares(withdrawal_amount);
-
-        let reserve_pool = self.reserve_pool.remove(shares_amount, withdrawal_amount)?;
-
-        Some((
-            Self {
-                reserve_pool,
-                ..self
-            },
-            shares_amount,
-        ))
-    }
-
-    fn move_collateral_to_reserve(
-        self,
-        redemption_rate: RedemptionRate,
-        collateral: Collateral,
-    ) -> Option<Self> {
-        let shares_amount = redemption_rate.deposits_to_shares(collateral);
-
-        let collateral_pool = self.collateral_pool.remove(shares_amount, collateral)?;
-
-        let reserve_pool = self.reserve_pool.add(shares_amount, collateral);
-
-        Some(Self {
-            collateral_pool,
-            reserve_pool,
-            ..self
-        })
-    }
-
-    fn move_reserves_to_collateral(
-        self,
-        redemption_rate: RedemptionRate,
-        collateral: Collateral,
-    ) -> Option<Self> {
-        let shares_amount = redemption_rate.deposits_to_shares(collateral);
-
-        let reserve_pool = self.reserve_pool.remove(shares_amount, collateral)?;
-
-        let collateral_pool = self.collateral_pool.add(shares_amount, collateral);
-
-        Some(Self {
-            collateral_pool,
-            reserve_pool,
-            ..self
-        })
-    }
-}
-
-struct DebtIncreaseRequired {
-    cdp: Cdp,
-    amount: Debt,
-}
-
-struct IssueDebt {
-    cdp: Cdp,
-    amount: Debt,
-    fee: Option<FeeAmount>,
-}
-
-enum AdvanceKind {
-    CoveredByCredit(Cdp),
-    DebtIncreaseRequired(DebtIncreaseRequired),
-}
-
-struct SelfLiquidation {
-    credit: Option<Credit>,
-    withdrawal: Option<Collateral>,
-    repayment: Option<Debt>,
-}
-
-impl Cdp {
-    const fn zero() -> Self {
-        Self {
-            collateral: 0,
-            debt: 0,
-            credit: 0,
-            spr: SumPaymentRatio::zero(),
-        }
-    }
-
-    fn update(mut self, overall_spr: SumPaymentRatio) -> Self {
-        let debt_payment = overall_spr.abs_diff(self.spr).debt_payment(self.collateral);
-
-        self.spr = overall_spr;
-
-        if debt_payment == 0 {
-            return self;
-        }
-
-        if self.debt == 0 {
-            self.credit = safe_add!(self.credit, debt_payment);
-
-            return self;
-        }
-
-        let debt_diff = debt_payment.abs_diff(self.debt);
-
-        self.debt = self.debt.saturating_sub(debt_payment);
-
-        if self.debt > 0 {
-            return self;
-        }
-
-        self.credit = safe_add!(self.credit, debt_diff);
-
-        self
-    }
-
-    fn advance(self, amount: Debt) -> Option<AdvanceKind> {
-        if self.credit >= amount {
-            let credit = self
-                .credit
-                .checked_sub(amount)
-                .expect("checked: credit >= amount");
-
-            return Some(AdvanceKind::CoveredByCredit(Self { credit, ..self }));
-        }
-
-        if self.collateral == 0 {
-            return None;
-        }
-
-        let debt_increase = DebtIncreaseRequired {
-            cdp: Cdp { credit: 0, ..self },
-            amount: self.credit.abs_diff(amount),
-        };
-
-        Some(AdvanceKind::DebtIncreaseRequired(debt_increase))
-    }
-
-    fn repay(self, amount: Debt) -> Cdp {
-        if self.debt == 0 {
-            let credit = safe_add!(self.credit, amount);
-
-            return Cdp { credit, ..self };
-        }
-
-        if amount <= self.debt {
-            let debt = self.debt.saturating_sub(amount);
-
-            return Cdp { debt, ..self };
-        }
-
-        let credit_increase = self.debt.abs_diff(amount);
-
-        let credit = safe_add!(self.credit, credit_increase);
-
-        Cdp {
-            credit,
-            debt: 0,
-            ..self
-        }
-    }
-
-    fn withdraw(self, max_ltv: MaxLtv, amount: Collateral) -> Option<Self> {
-        if amount > self.collateral {
-            return None;
-        }
-
-        let collateral = self
-            .collateral
-            .checked_sub(amount)
-            .expect("checked: amount <= collateral balance");
-
-        if self.debt == 0 {
-            return Some(Self { collateral, ..self });
-        }
-
-        if collateral == 0 {
-            return None;
-        }
-
-        let proposed_ltv =
-            Rate::from_ratio(self.debt, collateral).expect("checked: collateral > 0");
-
-        if proposed_ltv > max_ltv.rate() {
-            return None;
-        }
-
-        Some(Cdp { collateral, ..self })
-    }
-
-    fn self_liquidate(self) -> Option<(Self, SelfLiquidation)> {
-        if self.collateral == 0 && self.debt == 0 && self.credit == 0 {
-            return None;
-        }
-
-        let withdrawal = if self.debt > 0 {
-            self.collateral
-                .checked_sub(self.debt)
-                .expect("always: collateral >= debt")
-        } else {
-            self.collateral
-        };
-
-        let self_liquidation = SelfLiquidation {
-            credit: (self.credit != 0).then_some(self.credit),
-            withdrawal: (withdrawal != 0).then_some(withdrawal),
-            repayment: (self.debt != 0).then_some(self.debt),
-        };
-
-        Some((Self::zero(), self_liquidation))
-    }
-
-    fn convert_credit(self, credit_amount: u128) -> Option<Self> {
-        let credit = self.credit.checked_sub(credit_amount)?;
-
-        let collateral = safe_add!(self.collateral, credit_amount);
-
-        Some(Self {
-            collateral,
-            credit,
-            ..self
-        })
-    }
-
-    fn deposit(self, deposit: Collateral) -> Self {
-        let collateral = safe_add!(self.collateral, deposit);
-        Self { collateral, ..self }
-    }
-}
-
-impl DebtIncreaseRequired {
-    fn try_with_fee(self, max_ltv: MaxLtv, fee: Option<AdvanceFee>) -> Option<IssueDebt> {
-        let max_debt = max_ltv
-            .rate()
-            .apply_u128(self.cdp.collateral)
-            .expect("max ltv <= 100%");
-
-        let debt = self
-            .cdp
-            .debt
-            .checked_add(self.amount)
-            .expect("debt balance should never overflow");
-
-        if debt > max_debt {
-            return None;
-        }
-
-        let Some(fee) = fee else {
-            return Some(IssueDebt {
-                cdp: Cdp { debt, ..self.cdp },
-                amount: self.amount,
-                fee: None,
-            });
-        };
-
-        let fee_amount = fee
-            .rate()
-            .apply_u128(self.amount)
-            .expect("advance fee <= 100%");
-
-        let max_debt_buffer = max_debt.abs_diff(debt);
-
-        if max_debt_buffer >= fee_amount {
-            let debt = debt.checked_add(fee_amount).expect("debt <= max debt");
-
-            return Some(IssueDebt {
-                cdp: Cdp { debt, ..self.cdp },
-                amount: self.amount,
-                fee: Some(fee_amount),
-            });
-        }
-
-        let amount = self
-            .amount
-            .checked_sub(max_debt_buffer.abs_diff(fee_amount))
-            .expect("debt increase >= fee");
-
-        Some(IssueDebt {
-            cdp: Cdp {
-                debt: max_debt,
-                ..self.cdp
-            },
-            amount,
-            fee: Some(fee_amount),
-        })
-    }
-}
-
 pub struct ConfigureHubImpl<'a> {
     vaults: &'a dyn Vaults,
     mint: &'a dyn SyntheticMint,
 }
 
-pub struct HubImpl<'a> {
-    vaults: &'a dyn Vaults,
-    balance_sheet: &'a dyn BalanceSheet,
-    advance_fee_oracle: &'a dyn AdvanceFeeOracle,
-}
-
 pub fn configure<'a>(vaults: &'a dyn Vaults, mint: &'a dyn SyntheticMint) -> ConfigureHubImpl<'a> {
     ConfigureHubImpl { vaults, mint }
-}
-
-pub fn hub<'a>(
-    vaults: &'a dyn Vaults,
-    balance_sheet: &'a dyn BalanceSheet,
-    advance_fee_oracle: &'a dyn AdvanceFeeOracle,
-) -> HubImpl<'a> {
-    HubImpl {
-        vaults,
-        balance_sheet,
-        advance_fee_oracle,
-    }
-}
-
-struct Response {
-    cmds: Vec<Cmd>,
-    vault: VaultId,
-    account: Account,
-    cdp: Cdp,
-    updated_cdp: Option<Cdp>,
-    balance_sheet: Option<BalanceSheetDiff>,
-}
-
-impl Response {
-    fn new(vault: &VaultId, account: &Account, cdp: Cdp) -> Self {
-        Self {
-            cmds: vec![],
-            vault: vault.clone(),
-            account: account.clone(),
-            cdp,
-            updated_cdp: None,
-            balance_sheet: None,
-        }
-    }
-
-    fn cdp(&self) -> Cdp {
-        self.updated_cdp.unwrap_or(self.cdp)
-    }
-
-    fn balance_sheet(&self) -> Option<BalanceSheetState> {
-        self.balance_sheet
-            .as_ref()
-            .map(BalanceSheetDiff::balance_sheet)
-    }
-
-    fn redemption_rate(&self) -> Option<RedemptionRate> {
-        self.balance_sheet
-            .as_ref()
-            .map(BalanceSheetDiff::redemption_rate)
-    }
-
-    fn push_cmd(&mut self, cmd: impl Into<Cmd>) -> &mut Self {
-        self.cmds.push(cmd.into());
-        self
-    }
-
-    fn set_cdp(&mut self, updated_cdp: Cdp) -> &mut Self {
-        self.updated_cdp = Some(updated_cdp);
-        self
-    }
-
-    fn with_balance_sheet_diff(&mut self, balance_sheet: BalanceSheetDiff) -> &mut Self {
-        self.balance_sheet = Some(balance_sheet);
-        self
-    }
-
-    fn set_balance_sheet(&mut self, balance_sheet: BalanceSheetState) -> &mut Self {
-        self.balance_sheet.as_mut().unwrap().new = balance_sheet;
-        self
-    }
-
-    fn add_mint_synthetic(
-        &mut self,
-        synthetic: &Synthetic,
-        recipient: &Recipient,
-        amount: SyntheticAmount,
-    ) -> &mut Self {
-        self.push_cmd(MintCmd::Mint {
-            synthetic: synthetic.clone(),
-            amount,
-            recipient: recipient.clone(),
-        })
-    }
-
-    fn add_burn_synthetic(&mut self, synthetic: &Synthetic, amount: SyntheticAmount) -> &mut Self {
-        self.push_cmd(MintCmd::Burn {
-            synthetic: synthetic.clone(),
-            amount,
-        })
-    }
-
-    fn add_vault_deposit(
-        &mut self,
-        vault: &VaultId,
-        asset: &Asset,
-        amount: DepositAmount,
-        callback_recipient: &Recipient,
-        callback_reason: VaultDepositReason,
-    ) -> &mut Self {
-        self.push_cmd(VaultCmd::Deposit {
-            vault: vault.clone(),
-            asset: asset.clone(),
-            amount,
-            callback_recipient: callback_recipient.clone(),
-            callback_reason,
-        })
-    }
-
-    fn add_vault_redeem(
-        &mut self,
-        vault: &VaultId,
-        shares: &Asset,
-        recipient: &Recipient,
-        amount: SharesAmount,
-    ) -> &mut Self {
-        self.push_cmd(VaultCmd::Redeem {
-            vault: vault.clone(),
-            shares: shares.clone(),
-            recipient: recipient.clone(),
-            amount,
-        })
-    }
-
-    fn done(self) -> (Cdp, Vec<Cmd>) {
-        let mut cmds = self.cmds;
-
-        if let Some(balance_sheet_diff) = self.balance_sheet {
-            cmds.extend(balance_sheet_diff.into_cmds(&self.vault));
-        }
-
-        let cdp = if let Some(updated_cdp) = self.updated_cdp {
-            if updated_cdp.collateral != self.cdp.collateral {
-                cmds.push_cmd(BalanceSheetCmd::SetAccountCollateral {
-                    vault: self.vault.clone(),
-                    account: self.account.clone(),
-                    collateral: updated_cdp.collateral,
-                });
-            }
-
-            if updated_cdp.debt != self.cdp.debt {
-                cmds.push_cmd(BalanceSheetCmd::SetAccountDebt {
-                    vault: self.vault.clone(),
-                    account: self.account.clone(),
-                    debt: updated_cdp.debt,
-                });
-            }
-
-            if updated_cdp.credit != self.cdp.credit {
-                cmds.push_cmd(BalanceSheetCmd::SetAccountCredit {
-                    vault: self.vault.clone(),
-                    account: self.account.clone(),
-                    credit: updated_cdp.credit,
-                });
-            }
-
-            if updated_cdp.spr != self.cdp.spr {
-                cmds.push_cmd(BalanceSheetCmd::SetAccountSumPaymentRatio {
-                    vault: self.vault.clone(),
-                    account: self.account.clone(),
-                    spr: updated_cdp.spr,
-                });
-            }
-
-            updated_cdp
-        } else {
-            self.cdp
-        };
-
-        (cdp, cmds)
-    }
-}
-
-impl<'a> HubImpl<'a> {
-    fn collateral_shares_pool(&self, vault: &VaultId) -> SharesPool {
-        SharesPool {
-            shares: self
-                .balance_sheet
-                .collateral_shares(vault)
-                .unwrap_or_default(),
-            quota: self
-                .balance_sheet
-                .collateral_balance(vault)
-                .unwrap_or_default(),
-        }
-    }
-
-    fn reserve_shares_pool(&self, vault: &VaultId) -> SharesPool {
-        SharesPool {
-            shares: self.balance_sheet.reserve_shares(vault).unwrap_or_default(),
-            quota: self
-                .balance_sheet
-                .reserve_balance(vault)
-                .unwrap_or_default(),
-        }
-    }
-
-    fn redemption_rate(&self, vault: &VaultId) -> Option<RedemptionRate> {
-        let total_shares_issued = self.vaults.total_shares_issued(vault);
-        let total_deposit_value = self.vaults.total_deposits_value(vault);
-
-        RedemptionRate::new(total_shares_issued, total_deposit_value)
-    }
-
-    fn collateral_yield_fee(&self, vault: &VaultId) -> CollateralYieldFee {
-        self.vaults.collateral_yield_fee(vault).unwrap_or_default()
-    }
-
-    fn reserve_yield_fee(&self, vault: &VaultId) -> ReserveYieldFee {
-        self.vaults.reserve_yield_fee(vault).unwrap_or_default()
-    }
-
-    fn amo_allocation(&self, vault: &VaultId) -> AmoAllocation {
-        self.vaults.amo_allocation(vault).unwrap_or_default()
-    }
-
-    fn treasury_shares(&self, vault: &VaultId) -> TreasuryShares {
-        self.balance_sheet
-            .treasury_shares(vault)
-            .unwrap_or_default()
-    }
-
-    fn amo_shares(&self, vault: &VaultId) -> AmoShares {
-        self.balance_sheet.amo_shares(vault).unwrap_or_default()
-    }
-
-    fn overall_sum_payment_ratio(&self, vault: &VaultId) -> SumPaymentRatio {
-        self.balance_sheet
-            .overall_sum_payment_ratio(vault)
-            .unwrap_or_else(SumPaymentRatio::zero)
-    }
-
-    fn balance_sheet_state(
-        &self,
-        vault: &VaultId,
-        collateral_pool: CollateralPool,
-        reserve_pool: ReservePool,
-    ) -> BalanceSheetState {
-        BalanceSheetState {
-            collateral_pool,
-            reserve_pool,
-            treasury_shares: self.treasury_shares(vault),
-            amo_shares: self.amo_shares(vault),
-            spr: self.overall_sum_payment_ratio(vault),
-        }
-    }
-
-    fn max_ltv(&self, vault: &VaultId) -> MaxLtv {
-        self.vaults.max_ltv(vault).unwrap_or_default()
-    }
-
-    fn advance_fee(&self, vault: &VaultId, recipient: &Recipient) -> AdvanceFee {
-        let Some(oracle) = self.vaults.advance_fee_oracle(vault) else {
-            return self.vaults.fixed_advance_fee(vault).unwrap_or_default();
-        };
-
-        self.advance_fee_oracle
-            .advance_fee(&oracle, recipient)
-            .unwrap_or_default()
-    }
-
-    fn cdp(&self, vault: &VaultId, account: &Account) -> Cdp {
-        let collateral = self
-            .balance_sheet
-            .account_collateral(vault, account)
-            .unwrap_or_default();
-
-        let debt = self
-            .balance_sheet
-            .account_debt(vault, account)
-            .unwrap_or_default();
-
-        let credit = self
-            .balance_sheet
-            .account_credit(vault, account)
-            .unwrap_or_default();
-
-        let spr = self
-            .balance_sheet
-            .account_sum_payment_ratio(vault, account)
-            .unwrap_or_else(SumPaymentRatio::zero);
-
-        Cdp {
-            collateral,
-            debt,
-            credit,
-            spr,
-        }
-    }
-
-    fn update_balance_sheet(&self, vault: &VaultId) -> Result<Option<BalanceSheetDiff>, Error> {
-        let collateral_pool = self.collateral_shares_pool(vault);
-        let reserve_pool = self.reserve_shares_pool(vault);
-
-        let Some(redemption_rate) = self.redemption_rate(vault) else {
-            return Ok(None);
-        };
-
-        let collateral_pool_surplus = collateral_pool.surplus(redemption_rate)?;
-
-        let collateral_pool_payments = collateral_pool_surplus.map(|surplus| {
-            surplus.payments(
-                self.collateral_yield_fee(vault).rate(),
-                self.amo_allocation(vault).rate(),
-            )
-        });
-
-        let reserve_pool_surplus = reserve_pool.surplus(redemption_rate)?;
-
-        let reserve_pool_payments = reserve_pool_surplus.map(|surplus| {
-            surplus.payments(
-                self.reserve_yield_fee(vault).rate(),
-                self.amo_allocation(vault).rate(),
-            )
-        });
-
-        let payments = match (collateral_pool_payments, reserve_pool_payments) {
-            (Some(payments), None) => payments,
-            (None, Some(payments)) => payments,
-            (Some(cpp), Some(rpp)) => cpp.combine_with(rpp),
-
-            // nothing to do if no payments
-            (None, None) => return Ok(None),
-        };
-
-        let old = self.balance_sheet_state(vault, collateral_pool, reserve_pool);
-
-        let new = old.update(collateral_pool_surplus, reserve_pool_surplus, payments);
-
-        Ok(Some(BalanceSheetDiff {
-            old,
-            new,
-            redemption_rate,
-        }))
-    }
-
-    fn _evaluate(&self, vault: &VaultId, account: &Account) -> Result<Response, Error> {
-        let cdp = self.cdp(vault, account);
-
-        let mut response = Response::new(vault, account, cdp);
-
-        let Some(balance_sheet_diff) = self.update_balance_sheet(vault)? else {
-            return Ok(response);
-        };
-
-        let updated_cdp = response.cdp.update(balance_sheet_diff.balance_sheet().spr);
-
-        response
-            .set_cdp(updated_cdp)
-            .with_balance_sheet_diff(balance_sheet_diff);
-
-        Ok(response)
-    }
 }
 
 macro_rules! issue_cmd {
@@ -1804,7 +649,7 @@ impl<'a> ConfigureHub for ConfigureHubImpl<'a> {
 
         let underlying_asset_decimals = self
             .vaults
-            .underlying_asset_decimals(&synthetic)
+            .underlying_asset_decimals(&vault)
             .ok_or(Error::VaultNotFound)?;
 
         let synthetic_decimals = self
@@ -1989,11 +834,340 @@ impl<'a> ConfigureHub for ConfigureHubImpl<'a> {
     }
 }
 
-impl<'a> Hub for HubImpl<'a> {
-    fn evaluate(&self, vault: VaultId, sender: Sender) -> Result<PositionResponse, Error> {
-        let (cdp, cmds) = self._evaluate(&vault, &sender)?.done();
+pub struct HubImpl<'a> {
+    vaults: &'a dyn Vaults,
+    balance_sheet: &'a dyn BalanceSheet,
+    advance_fee_oracle: &'a dyn AdvanceFeeOracle,
+}
 
-        Ok(PositionResponse { cmds, cdp })
+pub fn hub<'a>(
+    vaults: &'a dyn Vaults,
+    balance_sheet: &'a dyn BalanceSheet,
+    advance_fee_oracle: &'a dyn AdvanceFeeOracle,
+) -> HubImpl<'a> {
+    HubImpl {
+        vaults,
+        balance_sheet,
+        advance_fee_oracle,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Updated {
+    vault: VaultPosition,
+    cdp: Cdp,
+}
+
+#[derive(Debug, Clone)]
+struct Evaluation {
+    prev_vault: VaultPosition,
+    prev_cdp: Cdp,
+    redemption_rate: Option<RedemptionRate>,
+    updated: Option<Updated>,
+}
+
+impl Evaluation {
+    fn previous_vault(&self) -> &VaultPosition {
+        &self.prev_vault
+    }
+
+    fn latest_vault(&self) -> VaultPosition {
+        self.updated
+            .as_ref()
+            .map_or(self.prev_vault.clone(), |updated| updated.vault.clone())
+    }
+
+    fn updated_vault(&self) -> Option<&VaultPosition> {
+        self.updated.as_ref().map(|u| &u.vault)
+    }
+
+    fn previous_cdp(&self) -> &Cdp {
+        &self.prev_cdp
+    }
+
+    fn into_previous_cdp(self) -> Cdp {
+        self.prev_cdp
+    }
+
+    fn latest_cdp(&self) -> Cdp {
+        self.updated
+            .as_ref()
+            .map_or(self.prev_cdp.clone(), |updated| updated.cdp.clone())
+    }
+
+    fn updated_cdp(&self) -> Option<&Cdp> {
+        self.updated.as_ref().map(|u| &u.cdp)
+    }
+
+    fn updated_positions(&self) -> Option<(&VaultPosition, &Cdp)> {
+        self.updated_vault().zip(self.updated_cdp())
+    }
+}
+
+fn push_update_vault_position_cmds(
+    id: &VaultId,
+    old: &VaultPosition,
+    new: &VaultPosition,
+    cmds: &mut Vec<Cmd>,
+) {
+    if old.collateral_pool.shares != new.collateral_pool.shares {
+        cmds.push_cmd(BalanceSheetCmd::SetCollateralShares {
+            vault: id.clone(),
+            shares: new.collateral_pool.shares,
+        });
+    }
+
+    if old.collateral_pool.quota != new.collateral_pool.quota {
+        cmds.push_cmd(BalanceSheetCmd::SetCollateralBalance {
+            vault: id.clone(),
+            balance: new.collateral_pool.quota,
+        });
+    }
+
+    if old.reserve_pool.shares != new.reserve_pool.shares {
+        cmds.push_cmd(BalanceSheetCmd::SetReserveShares {
+            vault: id.clone(),
+            shares: new.reserve_pool.shares,
+        });
+    }
+
+    if old.reserve_pool.quota != new.reserve_pool.quota {
+        cmds.push_cmd(BalanceSheetCmd::SetReserveBalance {
+            vault: id.clone(),
+            balance: new.reserve_pool.quota,
+        });
+    }
+
+    if old.treasury_shares != new.treasury_shares {
+        cmds.push_cmd(BalanceSheetCmd::SetTreasuryShares {
+            vault: id.clone(),
+            shares: new.treasury_shares,
+        });
+    }
+
+    if old.amo_shares != new.amo_shares {
+        cmds.push_cmd(BalanceSheetCmd::SetAmoShares {
+            vault: id.clone(),
+            shares: new.amo_shares,
+        });
+    }
+
+    if old.amo_shares != new.amo_shares {
+        cmds.push_cmd(BalanceSheetCmd::SetAmoShares {
+            vault: id.clone(),
+            shares: new.amo_shares,
+        });
+    }
+
+    if old.spr != new.spr {
+        cmds.push_cmd(BalanceSheetCmd::SetOverallSumPaymentRatio {
+            vault: id.clone(),
+            spr: new.spr,
+        });
+    }
+}
+
+fn push_update_cdp_cmds(
+    vault: &VaultId,
+    account: &Account,
+    old: &Cdp,
+    new: &Cdp,
+    cmds: &mut Vec<Cmd>,
+) {
+    if old.collateral != new.collateral {
+        cmds.push_cmd(BalanceSheetCmd::SetAccountCollateral {
+            vault: vault.clone(),
+            account: account.clone(),
+            collateral: new.collateral,
+        });
+    }
+
+    if old.debt != new.debt {
+        cmds.push_cmd(BalanceSheetCmd::SetAccountDebt {
+            vault: vault.clone(),
+            account: account.clone(),
+            debt: new.debt,
+        });
+    }
+
+    if old.credit != new.credit {
+        cmds.push_cmd(BalanceSheetCmd::SetAccountCredit {
+            vault: vault.clone(),
+            account: account.clone(),
+            credit: new.credit,
+        });
+    }
+
+    if old.spr != new.spr {
+        cmds.push_cmd(BalanceSheetCmd::SetAccountSumPaymentRatio {
+            vault: vault.clone(),
+            account: account.clone(),
+            spr: new.spr,
+        });
+    }
+}
+
+impl<'a> HubImpl<'a> {
+    fn current_vault_position(&self, vault: &VaultId) -> VaultPosition {
+        VaultPosition {
+            collateral_pool: {
+                let shares = self
+                    .balance_sheet
+                    .collateral_shares(vault)
+                    .unwrap_or_default();
+
+                let quota = self
+                    .balance_sheet
+                    .collateral_balance(vault)
+                    .unwrap_or_default();
+
+                SharesPool { shares, quota }
+            },
+            reserve_pool: {
+                let shares = self.balance_sheet.reserve_shares(vault).unwrap_or_default();
+
+                let quota = self
+                    .balance_sheet
+                    .reserve_balance(vault)
+                    .unwrap_or_default();
+
+                SharesPool { shares, quota }
+            },
+            treasury_shares: self
+                .balance_sheet
+                .treasury_shares(vault)
+                .unwrap_or_default(),
+            amo_shares: self.balance_sheet.amo_shares(vault).unwrap_or_default(),
+            spr: self
+                .balance_sheet
+                .overall_sum_payment_ratio(vault)
+                .unwrap_or(SumPaymentRatio::zero()),
+        }
+    }
+
+    pub fn current_cdp(&self, vault: &VaultId, account: &Account) -> Cdp {
+        let collateral = self
+            .balance_sheet
+            .account_collateral(vault, account)
+            .unwrap_or_default();
+
+        let debt = self
+            .balance_sheet
+            .account_debt(vault, account)
+            .unwrap_or_default();
+
+        let credit = self
+            .balance_sheet
+            .account_credit(vault, account)
+            .unwrap_or_default();
+
+        let spr = self
+            .balance_sheet
+            .account_sum_payment_ratio(vault, account)
+            .unwrap_or(SumPaymentRatio::zero());
+
+        Cdp {
+            collateral,
+            debt,
+            credit,
+            spr,
+        }
+    }
+
+    fn redemption_rate(&self, id: &VaultId) -> Option<RedemptionRate> {
+        let total_shares_issued = self.vaults.total_shares_issued(id);
+        let total_deposit_value = self.vaults.total_deposits_value(id);
+
+        RedemptionRate::new(total_shares_issued, total_deposit_value)
+    }
+
+    fn max_ltv(&self, vault: &VaultId) -> MaxLtv {
+        self.vaults.max_ltv(vault).unwrap_or_default()
+    }
+
+    fn advance_fee(&self, vault: &VaultId, recipient: &Recipient) -> AdvanceFee {
+        // check if a fee oracle is set
+        let Some(oracle) = self.vaults.advance_fee_oracle(vault) else {
+            // if not, use the fixed fee
+            return self.vaults.fixed_advance_fee(vault).unwrap_or_default();
+        };
+
+        // request fee for the recipient from the oracle
+        self.advance_fee_oracle
+            .advance_fee(&oracle, recipient)
+            .unwrap_or_default()
+    }
+
+    fn _evaluate(&self, vault_id: &VaultId, account: &Account) -> Result<Evaluation, Error> {
+        let current_vault = self.current_vault_position(vault_id);
+
+        let current_cdp = self.current_cdp(vault_id, account);
+
+        let redemption_rate = self.redemption_rate(vault_id);
+
+        let Some(vault) = update_vault(
+            current_vault.clone(),
+            redemption_rate,
+            || self.vaults.amo_allocation(vault_id).unwrap_or_default(),
+            || {
+                self.vaults
+                    .collateral_yield_fee(vault_id)
+                    .unwrap_or_default()
+            },
+            || self.vaults.reserve_yield_fee(vault_id).unwrap_or_default(),
+        )?
+        else {
+            return Ok(Evaluation {
+                prev_vault: current_vault,
+                prev_cdp: current_cdp,
+                redemption_rate,
+                updated: None,
+            });
+        };
+
+        let cdp = update_cdp(&vault, current_cdp.clone());
+
+        Ok(Evaluation {
+            prev_vault: current_vault,
+            prev_cdp: current_cdp,
+            redemption_rate,
+            updated: Some(Updated { vault, cdp }),
+        })
+    }
+}
+
+impl<'a> Hub for HubImpl<'a> {
+    fn evaluate(&self, vault_id: VaultId, sender: Sender) -> Result<PositionResponse, Error> {
+        let evaluation = self._evaluate(&vault_id, &sender)?;
+
+        let Some((updated_vault, updated_cdp)) = evaluation.updated_positions() else {
+            return Ok(PositionResponse {
+                cmds: vec![],
+                cdp: evaluation.into_previous_cdp(),
+            });
+        };
+
+        let mut cmds = vec![];
+
+        push_update_vault_position_cmds(
+            &vault_id,
+            evaluation.previous_vault(),
+            updated_vault,
+            &mut cmds,
+        );
+
+        push_update_cdp_cmds(
+            &vault_id,
+            &sender,
+            evaluation.previous_cdp(),
+            updated_cdp,
+            &mut cmds,
+        );
+
+        Ok(PositionResponse {
+            cmds,
+            cdp: updated_cdp.clone(),
+        })
     }
 
     fn deposit(
@@ -2024,29 +1198,27 @@ impl<'a> Hub for HubImpl<'a> {
             return Err(Error::InvalidDepositAsset);
         }
 
-        let mut response = self._evaluate(&vault, &recipient)?;
+        let PositionResponse { mut cmds, .. } = self.evaluate(vault.clone(), recipient.clone())?;
 
-        response.add_vault_deposit(
-            &vault,
-            &deposit_asset,
-            deposit_amount,
-            &recipient,
-            VaultDepositReason::Deposit,
-        );
-
-        let (_, cmds) = response.done();
+        cmds.push_cmd(VaultCmd::Deposit {
+            vault,
+            asset: deposit_asset,
+            amount: deposit_amount,
+            callback_recipient: recipient,
+            callback_reason: VaultDepositReason::Deposit,
+        });
 
         Ok(cmds)
     }
 
     fn advance(
         &self,
-        vault: VaultId,
+        vault_id: VaultId,
         sender: Sender,
         advance_amount: Debt,
         recipient: Recipient,
     ) -> Result<Vec<Cmd>, Error> {
-        if !self.vaults.is_registered(&vault) {
+        if !self.vaults.is_registered(&vault_id) {
             return Err(Error::VaultNotRegistered);
         }
 
@@ -2056,52 +1228,66 @@ impl<'a> Hub for HubImpl<'a> {
 
         if self
             .vaults
-            .deposit_proxy(&vault)
+            .deposit_proxy(&vault_id)
             .is_some_and(|proxy| sender != proxy)
         {
             return Err(UnauthorizedError.into());
         }
 
-        let mut response = self._evaluate(&vault, &recipient)?;
+        let evaluation = self._evaluate(&vault_id, &recipient)?;
 
-        let advance_kind = response
-            .cdp()
-            .advance(advance_amount)
-            .ok_or(Error::NotEnoughCollateral)?;
+        let advance_fee_recipient = self.vaults.advance_fee_recipient(&vault_id);
 
-        let synthetic = self.vaults.synthetic_asset(&vault);
-
-        match advance_kind {
-            AdvanceKind::CoveredByCredit(cdp) => {
-                response
-                    .set_cdp(cdp)
-                    .add_mint_synthetic(&synthetic, &recipient, advance_amount);
-            }
-
-            AdvanceKind::DebtIncreaseRequired(debt_increase) => {
-                let fee_recipient = self.vaults.advance_fee_recipient(&vault);
-
-                let max_ltv = self.max_ltv(&vault);
-
-                let advance_fee = fee_recipient
+        let Advance {
+            cdp: updated_cdp,
+            amount,
+            fee,
+        } = advance(
+            evaluation.latest_cdp(),
+            advance_amount,
+            || self.max_ltv(&vault_id),
+            || {
+                advance_fee_recipient
                     .is_some()
-                    .then(|| self.advance_fee(&vault, &recipient));
+                    .then(|| self.advance_fee(&vault_id, &recipient))
+            },
+        )
+        .ok_or(Error::NotEnoughCollateral)?;
 
-                let IssueDebt { cdp, amount, fee } = debt_increase
-                    .try_with_fee(max_ltv, advance_fee)
-                    .ok_or(Error::MaxLtvExceeded)?;
+        let synthetic = self.vaults.synthetic_asset(&vault_id);
 
-                response
-                    .set_cdp(cdp)
-                    .add_mint_synthetic(&synthetic, &recipient, amount);
+        let mut cmds = vec![];
 
-                if let Some((fee_recipient, fee_amount)) = fee_recipient.zip(fee) {
-                    response.add_mint_synthetic(&synthetic, &fee_recipient, fee_amount);
-                }
-            }
+        push_update_cdp_cmds(
+            &vault_id,
+            &sender,
+            evaluation.previous_cdp(),
+            &updated_cdp,
+            &mut cmds,
+        );
+
+        if let Some(updated_vault) = evaluation.updated_vault() {
+            push_update_vault_position_cmds(
+                &vault_id,
+                evaluation.previous_vault(),
+                updated_vault,
+                &mut cmds,
+            );
         }
 
-        let (_, cmds) = response.done();
+        cmds.push_cmd(MintCmd::Mint {
+            synthetic: synthetic.clone(),
+            amount,
+            recipient,
+        });
+
+        if let Some((fee, recipient)) = fee.zip(advance_fee_recipient) {
+            cmds.push_cmd(MintCmd::Mint {
+                synthetic: synthetic.clone(),
+                amount: fee,
+                recipient,
+            });
+        }
 
         Ok(cmds)
     }
@@ -2125,33 +1311,31 @@ impl<'a> Hub for HubImpl<'a> {
             return Err(Error::InvalidDepositAsset);
         }
 
-        let mut response = self._evaluate(&vault, &sender)?;
+        let PositionResponse { mut cmds, cdp } = self.evaluate(vault.clone(), sender.clone())?;
 
-        if response.cdp().debt == 0 {
-            return Err(Error::CannotRepayZero);
+        if cdp.debt == 0 {
+            return Err(Error::NothingToRepay);
         }
 
-        response.add_vault_deposit(
-            &vault,
-            &deposit_asset,
-            deposit_amount,
-            &sender,
-            VaultDepositReason::RepayUnderlying,
-        );
-
-        let (_, cmds) = response.done();
+        cmds.push_cmd(VaultCmd::Deposit {
+            vault,
+            asset: deposit_asset,
+            amount: deposit_amount,
+            callback_recipient: sender,
+            callback_reason: VaultDepositReason::RepayUnderlying,
+        });
 
         Ok(cmds)
     }
 
     fn repay_synthetic(
         &self,
-        vault: VaultId,
+        vault_id: VaultId,
         sender: Sender,
         synthetic_asset: Synthetic,
         synthetic_amount: SyntheticAmount,
     ) -> Result<PositionResponse, Error> {
-        if !self.vaults.is_registered(&vault) {
+        if !self.vaults.is_registered(&vault_id) {
             return Err(Error::VaultNotRegistered);
         }
 
@@ -2159,34 +1343,55 @@ impl<'a> Hub for HubImpl<'a> {
             return Err(Error::CannotRepayZero);
         }
 
-        if synthetic_asset != self.vaults.synthetic_asset(&vault) {
+        if synthetic_asset != self.vaults.synthetic_asset(&vault_id) {
             return Err(Error::InvalidSyntheticAsset);
         }
 
-        let mut response = self._evaluate(&vault, &sender)?;
+        let evaluation = self._evaluate(&vault_id, &sender)?;
 
-        if response.cdp().debt == 0 {
-            return Err(Error::CannotRepayZero);
+        if evaluation.latest_cdp().debt == 0 {
+            return Err(Error::NothingToRepay);
         }
 
-        let cdp = response.cdp().repay(synthetic_amount);
+        let updated_cdp = repay(evaluation.latest_cdp(), synthetic_amount);
 
-        response
-            .set_cdp(cdp)
-            .add_burn_synthetic(&synthetic_asset, synthetic_amount);
+        let mut cmds = vec![];
 
-        let (cdp, cmds) = response.done();
+        push_update_cdp_cmds(
+            &vault_id,
+            &sender,
+            evaluation.previous_cdp(),
+            &updated_cdp,
+            &mut cmds,
+        );
 
-        Ok(PositionResponse { cmds, cdp })
+        if let Some(updated_vault) = evaluation.updated_vault() {
+            push_update_vault_position_cmds(
+                &vault_id,
+                evaluation.previous_vault(),
+                updated_vault,
+                &mut cmds,
+            );
+        }
+
+        cmds.push_cmd(MintCmd::Burn {
+            synthetic: synthetic_asset,
+            amount: synthetic_amount,
+        });
+
+        Ok(PositionResponse {
+            cmds,
+            cdp: updated_cdp,
+        })
     }
 
     fn withdraw_collateral(
         &self,
-        vault: VaultId,
+        vault_id: VaultId,
         sender: Sender,
         collateral_amount: Collateral,
     ) -> Result<PositionResponse, Error> {
-        if !self.vaults.is_registered(&vault) {
+        if !self.vaults.is_registered(&vault_id) {
             return Err(Error::VaultNotRegistered);
         }
 
@@ -2194,91 +1399,116 @@ impl<'a> Hub for HubImpl<'a> {
             return Err(Error::CannotWithdrawZero);
         }
 
-        let mut response = self._evaluate(&vault, &sender)?;
+        let evaluation = self._evaluate(&vault_id, &sender)?;
 
-        let max_ltv = self.max_ltv(&vault);
+        let max_ltv = self.max_ltv(&vault_id);
 
-        let cdp = response
-            .cdp()
-            .withdraw(max_ltv, collateral_amount)
-            .ok_or(Error::NotEnoughCollateral)?;
+        let (updated_vault, updated_cdp, shares_amount) = withdraw_collateral(
+            evaluation.latest_vault(),
+            evaluation.latest_cdp(),
+            collateral_amount,
+            max_ltv,
+            evaluation.redemption_rate,
+        )?;
 
-        let (balance_sheet, redemption_rate) = response
-            .balance_sheet()
-            .zip(response.redemption_rate())
-            .expect("checked: witdrawal available");
+        let mut cmds = vec![];
 
-        let (balance_sheet, shares_amount) = balance_sheet
-            .withdraw_collateral(redemption_rate, collateral_amount)
-            .expect("checked: withdrawal available");
+        push_update_vault_position_cmds(
+            &vault_id,
+            evaluation.previous_vault(),
+            &updated_vault,
+            &mut cmds,
+        );
 
-        let shares_asset = self.vaults.shares_asset(&vault);
+        push_update_cdp_cmds(
+            &vault_id,
+            &sender,
+            evaluation.previous_cdp(),
+            &updated_cdp,
+            &mut cmds,
+        );
 
-        response
-            .set_cdp(cdp)
-            .set_balance_sheet(balance_sheet)
-            .add_vault_redeem(&vault, &shares_asset, &sender, shares_amount);
+        let shares_asset = self.vaults.shares_asset(&vault_id);
 
-        let (cdp, cmds) = response.done();
+        cmds.push_cmd(VaultCmd::Redeem {
+            vault: vault_id,
+            shares: shares_asset,
+            amount: shares_amount,
+            recipient: sender,
+        });
 
-        Ok(PositionResponse { cmds, cdp })
+        Ok(PositionResponse {
+            cmds,
+            cdp: updated_cdp,
+        })
     }
 
-    fn self_liquidate_position(&self, vault: VaultId, sender: Sender) -> Result<Vec<Cmd>, Error> {
-        if !self.vaults.is_registered(&vault) {
+    fn self_liquidate_position(
+        &self,
+        vault_id: VaultId,
+        sender: Sender,
+    ) -> Result<Vec<Cmd>, Error> {
+        if !self.vaults.is_registered(&vault_id) {
             return Err(Error::VaultNotRegistered);
         }
 
-        let mut response = self._evaluate(&vault, &sender)?;
+        let evaluation = self._evaluate(&vault_id, &sender)?;
 
-        let (cdp, self_liquidation) = response
-            .cdp()
-            .self_liquidate()
-            .ok_or(Error::NothingToLiquidate)?;
+        let SelfLiquidation {
+            vault: updated_vault,
+            cdp: updated_cdp,
+            mint_credit,
+            redeem_shares,
+        } = self_liquidate(
+            evaluation.latest_vault(),
+            evaluation.latest_cdp(),
+            evaluation.redemption_rate,
+        )?;
 
-        response.set_cdp(cdp);
+        let mut cmds = vec![];
 
-        if self_liquidation.withdrawal.is_some() || self_liquidation.repayment.is_some() {
-            let (mut balance_sheet, redemption_rate) = response
-                .balance_sheet()
-                .zip(response.redemption_rate())
-                .expect("checked: self liquidation repayment available");
+        push_update_vault_position_cmds(
+            &vault_id,
+            evaluation.previous_vault(),
+            &updated_vault,
+            &mut cmds,
+        );
 
-            if let Some(repayment) = self_liquidation.repayment {
-                balance_sheet = balance_sheet
-                    .move_collateral_to_reserve(redemption_rate, repayment)
-                    .expect("checked: self liquidation repayment available");
-            }
+        push_update_cdp_cmds(
+            &vault_id,
+            &sender,
+            evaluation.previous_cdp(),
+            &updated_cdp,
+            &mut cmds,
+        );
 
-            if let Some(withdrawal) = self_liquidation.withdrawal {
-                let (updated_balance_sheet, shares_amount) = balance_sheet
-                    .withdraw_collateral(redemption_rate, withdrawal)
-                    .expect("checked: self liquidation withdrawal available");
+        if let Some(amount) = mint_credit {
+            let synthetic = self.vaults.synthetic_asset(&vault_id);
 
-                let shares = self.vaults.shares_asset(&vault);
-
-                response.add_vault_redeem(&vault, &shares, &sender, shares_amount);
-
-                balance_sheet = updated_balance_sheet;
-            }
-
-            response.set_balance_sheet(balance_sheet);
+            cmds.push_cmd(MintCmd::Mint {
+                synthetic,
+                amount,
+                recipient: sender.clone(),
+            });
         }
 
-        if let Some(credit) = self_liquidation.credit {
-            let synthetic = self.vaults.synthetic_asset(&vault);
+        if let Some(amount) = redeem_shares {
+            let shares_asset = self.vaults.shares_asset(&vault_id);
 
-            response.add_mint_synthetic(&synthetic, &sender, credit);
+            cmds.push_cmd(VaultCmd::Redeem {
+                vault: vault_id,
+                shares: shares_asset,
+                amount,
+                recipient: sender,
+            });
         }
-
-        let (_, cmds) = response.done();
 
         Ok(cmds)
     }
 
     fn convert_credit(
         &self,
-        vault: VaultId,
+        vault_id: VaultId,
         sender: Sender,
         credit_amount: Credit,
     ) -> Result<PositionResponse, Error> {
@@ -2286,40 +1516,45 @@ impl<'a> Hub for HubImpl<'a> {
             return Err(Error::CannotConvertZero);
         }
 
-        if !self.vaults.is_registered(&vault) {
+        if !self.vaults.is_registered(&vault_id) {
             return Err(Error::VaultNotRegistered);
         }
 
-        let mut response = self._evaluate(&vault, &sender)?;
+        let evaluation = self._evaluate(&vault_id, &sender)?;
 
-        if credit_amount > response.cdp().credit {
-            return Err(Error::NotEnoughCredit);
-        }
+        let (updated_vault, updated_cdp) = convert_credit(
+            evaluation.latest_vault(),
+            evaluation.latest_cdp(),
+            credit_amount,
+            evaluation.redemption_rate,
+        )?;
 
-        let (balance_sheet, redemption_rate) = response
-            .balance_sheet()
-            .zip(response.redemption_rate())
-            .expect("checked: credit available");
+        let mut cmds = vec![];
 
-        let balance_sheet = balance_sheet
-            .move_reserves_to_collateral(redemption_rate, credit_amount)
-            .ok_or(Error::InsufficientReserveBalance)?;
+        push_update_vault_position_cmds(
+            &vault_id,
+            evaluation.previous_vault(),
+            &updated_vault,
+            &mut cmds,
+        );
 
-        let cdp = response
-            .cdp()
-            .convert_credit(credit_amount)
-            .expect("checked: credit available");
+        push_update_cdp_cmds(
+            &vault_id,
+            &sender,
+            evaluation.previous_cdp(),
+            &updated_cdp,
+            &mut cmds,
+        );
 
-        response.set_cdp(cdp).set_balance_sheet(balance_sheet);
-
-        let (cdp, cmds) = response.done();
-
-        Ok(PositionResponse { cmds, cdp })
+        Ok(PositionResponse {
+            cmds,
+            cdp: updated_cdp,
+        })
     }
 
     fn redeem_synthetic(
         &self,
-        vault: VaultId,
+        vault_id: VaultId,
         sender: Sender,
         synthetic_asset: Synthetic,
         synthetic_amount: SyntheticAmount,
@@ -2329,41 +1564,61 @@ impl<'a> Hub for HubImpl<'a> {
             return Err(Error::CannotMintZero);
         }
 
-        if !self.vaults.is_registered(&vault) {
+        if !self.vaults.is_registered(&vault_id) {
             return Err(Error::VaultNotRegistered);
         }
 
-        if synthetic_asset != self.vaults.synthetic_asset(&vault) {
+        if synthetic_asset != self.vaults.synthetic_asset(&vault_id) {
             return Err(Error::InvalidSyntheticAsset);
         }
 
         if self
             .vaults
-            .redeem_proxy(&vault)
+            .redeem_proxy(&vault_id)
             .is_some_and(|proxy| sender != proxy)
         {
             return Err(UnauthorizedError.into());
         }
 
-        let mut response = self._evaluate(&vault, &sender)?;
+        let evaluation = self._evaluate(&vault_id, &sender)?;
 
-        let (balance_sheet, redemption_rate) = response
-            .balance_sheet()
-            .zip(response.redemption_rate())
-            .ok_or(Error::InsufficientReserveBalance)?;
+        let (updated_vault, shares_amount) = redeem_reserves(
+            evaluation.latest_vault(),
+            synthetic_amount,
+            evaluation.redemption_rate,
+        )?;
 
-        let (balance_sheet, shares_amount) = balance_sheet
-            .withdraw_reserve(redemption_rate, synthetic_amount)
-            .ok_or(Error::InsufficientReserveBalance)?;
+        let mut cmds = vec![];
 
-        let shares_asset = self.vaults.shares_asset(&vault);
+        push_update_vault_position_cmds(
+            &vault_id,
+            evaluation.previous_vault(),
+            &updated_vault,
+            &mut cmds,
+        );
 
-        response
-            .set_balance_sheet(balance_sheet)
-            .add_vault_redeem(&vault, &shares_asset, &recipient, shares_amount)
-            .add_burn_synthetic(&synthetic_asset, synthetic_amount);
+        if let Some(updated_cdp) = evaluation.updated_cdp() {
+            push_update_cdp_cmds(
+                &vault_id,
+                &recipient,
+                evaluation.previous_cdp(),
+                updated_cdp,
+                &mut cmds,
+            );
+        }
 
-        let (_, cmds) = response.done();
+        let shares_asset = self.vaults.shares_asset(&vault_id);
+
+        cmds.push_cmd(VaultCmd::Redeem {
+            vault: vault_id,
+            shares: shares_asset,
+            amount: shares_amount,
+            recipient,
+        })
+        .push_cmd(MintCmd::Burn {
+            synthetic: synthetic_asset,
+            amount: synthetic_amount,
+        });
 
         Ok(cmds)
     }
@@ -2396,120 +1651,102 @@ impl<'a> Hub for HubImpl<'a> {
             return Err(Error::InvalidDepositAsset);
         }
 
-        let mut response = self._evaluate(&vault, &sender)?;
+        let PositionResponse { mut cmds, .. } = self.evaluate(vault.clone(), recipient.clone())?;
 
-        response.add_vault_deposit(
-            &vault,
-            &deposit_asset,
-            deposit_amount,
-            &recipient,
-            VaultDepositReason::Mint,
-        );
-
-        let (_, cmds) = response.done();
+        cmds.push_cmd(VaultCmd::Deposit {
+            vault,
+            asset: deposit_asset,
+            amount: deposit_amount,
+            callback_recipient: recipient,
+            callback_reason: VaultDepositReason::Mint,
+        });
 
         Ok(cmds)
     }
 
     fn vault_deposit_callback(
         &self,
-        vault: VaultId,
+        vault_id: VaultId,
         recipient: Recipient,
         reason: VaultDepositReason,
         issued_shares: SharesAmount,
         deposit_value: DepositValue,
     ) -> Result<Vec<Cmd>, Error> {
-        assert!(self.vaults.is_registered(&vault));
+        assert!(self.vaults.is_registered(&vault_id));
 
-        let cmds = match reason {
+        let mut cmds = vec![];
+
+        match reason {
             VaultDepositReason::Deposit => {
-                let SharesPool { shares, quota } = self
-                    .collateral_shares_pool(&vault)
-                    .add(issued_shares, deposit_value);
+                let current_vault = self.current_vault_position(&vault_id);
 
-                let Cdp { collateral, .. } = self.cdp(&vault, &recipient).deposit(deposit_value);
+                let current_cdp = self.current_cdp(&vault_id, &recipient);
 
-                cmds![
-                    BalanceSheetCmd::SetCollateralShares {
-                        vault: vault.clone(),
-                        shares
-                    },
-                    BalanceSheetCmd::SetCollateralBalance {
-                        vault: vault.clone(),
-                        balance: quota
-                    },
-                    BalanceSheetCmd::SetAccountCollateral {
-                        vault: vault.clone(),
-                        account: recipient.clone(),
-                        collateral
-                    }
-                ]
+                let (updated_vault, updated_cdp) = deposit_collateral(
+                    current_vault.clone(),
+                    current_cdp.clone(),
+                    deposit_value,
+                    issued_shares,
+                );
+
+                push_update_vault_position_cmds(
+                    &vault_id,
+                    &current_vault,
+                    &updated_vault,
+                    &mut cmds,
+                );
+
+                push_update_cdp_cmds(&vault_id, &recipient, &current_cdp, &updated_cdp, &mut cmds);
             }
 
             VaultDepositReason::RepayUnderlying => {
-                let SharesPool { shares, quota } = self
-                    .reserve_shares_pool(&vault)
-                    .add(issued_shares, deposit_value);
+                let current_vault = self.current_vault_position(&vault_id);
 
-                let Cdp { debt, credit, .. } = self.cdp(&vault, &recipient).repay(deposit_value);
+                let current_cdp = self.current_cdp(&vault_id, &recipient);
 
-                let mut cmds = cmds![
-                    BalanceSheetCmd::SetReserveShares {
-                        vault: vault.clone(),
-                        shares
-                    },
-                    BalanceSheetCmd::SetReserveBalance {
-                        vault: vault.clone(),
-                        balance: quota
-                    },
-                    BalanceSheetCmd::SetAccountDebt {
-                        vault: vault.clone(),
-                        account: recipient.clone(),
-                        debt
-                    }
-                ];
+                let updated_vault =
+                    add_vault_reserves(current_vault.clone(), deposit_value, issued_shares);
 
-                if credit > 0 {
-                    cmds.push_cmd(BalanceSheetCmd::SetAccountCredit {
-                        vault: vault.clone(),
-                        account: recipient.clone(),
-                        credit,
-                    });
-                }
+                let updated_cdp = repay(current_cdp.clone(), deposit_value);
 
-                cmds
+                push_update_vault_position_cmds(
+                    &vault_id,
+                    &current_vault,
+                    &updated_vault,
+                    &mut cmds,
+                );
+
+                push_update_cdp_cmds(&vault_id, &recipient, &current_cdp, &updated_cdp, &mut cmds);
             }
 
             VaultDepositReason::Mint => {
-                let SharesPool { shares, quota } = self
-                    .reserve_shares_pool(&vault)
-                    .add(issued_shares, deposit_value);
+                let current_vault = self.current_vault_position(&vault_id);
 
-                let synthetic = self.vaults.synthetic_asset(&vault);
+                let updated_vault =
+                    add_vault_reserves(current_vault.clone(), deposit_value, issued_shares);
 
-                cmds![
-                    BalanceSheetCmd::SetReserveShares {
-                        vault: vault.clone(),
-                        shares
-                    },
-                    BalanceSheetCmd::SetReserveBalance {
-                        vault,
-                        balance: quota
-                    },
-                    MintCmd::Mint {
-                        synthetic,
-                        amount: deposit_value,
-                        recipient
-                    }
-                ]
+                push_update_vault_position_cmds(
+                    &vault_id,
+                    &current_vault,
+                    &updated_vault,
+                    &mut cmds,
+                );
+
+                let synthetic = self.vaults.synthetic_asset(&vault_id);
+
+                cmds.push_cmd(MintCmd::Mint {
+                    synthetic,
+                    amount: deposit_value,
+                    recipient,
+                });
             }
         };
 
         Ok(cmds)
     }
 
-    fn claim_treasury_shares(&self, vault: VaultId, sender: Sender) -> Result<Vec<Cmd>, Error> {
-        if !self.vaults.is_registered(&vault) {
+    fn claim_treasury_shares(&self, vault_id: VaultId, sender: Sender) -> Result<Vec<Cmd>, Error> {
+        if !self.vaults.is_registered(&vault_id) {
             return Err(Error::VaultNotRegistered);
         }
 
@@ -2519,51 +1756,79 @@ impl<'a> Hub for HubImpl<'a> {
             return Err(UnauthorizedError.into());
         }
 
-        let response = self._evaluate(&vault, &sender)?;
+        let evaluation = self._evaluate(&vault_id, &sender)?;
 
-        let balance_sheet = response.balance_sheet().ok_or(Error::NothingToClaim)?;
+        let (updated_vault, treasury_shares) = claim_treasury_shares(evaluation.latest_vault())?;
 
-        if balance_sheet.treasury_shares == 0 {
-            return Err(Error::NothingToClaim);
+        let mut cmds = vec![];
+
+        push_update_vault_position_cmds(
+            &vault_id,
+            evaluation.previous_vault(),
+            &updated_vault,
+            &mut cmds,
+        );
+
+        if let Some(updated_cdp) = evaluation.updated_cdp() {
+            push_update_cdp_cmds(
+                &vault_id,
+                &sender,
+                evaluation.previous_cdp(),
+                updated_cdp,
+                &mut cmds,
+            );
         }
 
-        let shares = self.vaults.shares_asset(&vault);
+        let shares_asset = self.vaults.shares_asset(&vault_id);
 
-        Ok(cmds![
-            BalanceSheetCmd::SetTreasuryShares { vault, shares: 0 },
-            BalanceSheetCmd::SendShares {
-                shares,
-                amount: balance_sheet.treasury_shares,
-                recipient: treasury
-            }
-        ])
+        cmds.push_cmd(BalanceSheetCmd::SendShares {
+            shares: shares_asset,
+            amount: treasury_shares,
+            recipient: treasury,
+        });
+
+        Ok(cmds)
     }
 
-    fn claim_amo_shares(&self, vault: VaultId, sender: Sender) -> Result<Vec<Cmd>, Error> {
-        if !self.vaults.is_registered(&vault) {
+    fn claim_amo_shares(&self, vault_id: VaultId, sender: Sender) -> Result<Vec<Cmd>, Error> {
+        if !self.vaults.is_registered(&vault_id) {
             return Err(Error::VaultNotRegistered);
         }
 
-        let amo = self.vaults.amo(&vault).ok_or(Error::NoAmoSet)?;
+        let amo = self.vaults.amo(&vault_id).ok_or(Error::NoAmoSet)?;
 
-        let response = self._evaluate(&vault, &sender)?;
+        let evaluation = self._evaluate(&vault_id, &sender)?;
 
-        let balance_sheet = response.balance_sheet().ok_or(Error::NothingToClaim)?;
+        let (updated_vault, amo_shares) = claim_amo_shares(evaluation.latest_vault())?;
 
-        if balance_sheet.amo_shares == 0 {
-            return Err(Error::NothingToClaim);
+        let mut cmds = vec![];
+
+        push_update_vault_position_cmds(
+            &vault_id,
+            evaluation.previous_vault(),
+            &updated_vault,
+            &mut cmds,
+        );
+
+        if let Some(updated_cdp) = evaluation.updated_cdp() {
+            push_update_cdp_cmds(
+                &vault_id,
+                &sender,
+                evaluation.previous_cdp(),
+                updated_cdp,
+                &mut cmds,
+            );
         }
 
-        let shares = self.vaults.shares_asset(&vault);
+        let shares_asset = self.vaults.shares_asset(&vault_id);
 
-        Ok(cmds![
-            BalanceSheetCmd::SetAmoShares { vault, shares: 0 },
-            BalanceSheetCmd::SendShares {
-                shares,
-                amount: balance_sheet.treasury_shares,
-                recipient: amo
-            }
-        ])
+        cmds.push_cmd(BalanceSheetCmd::SendShares {
+            shares: shares_asset,
+            amount: amo_shares,
+            recipient: amo,
+        });
+
+        Ok(cmds)
     }
 }
 
@@ -2582,5 +1847,475 @@ impl From<VaultCmd> for Cmd {
 impl From<BalanceSheetCmd> for Cmd {
     fn from(v: BalanceSheetCmd) -> Self {
         Self::BalanceSheet(v)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use test_utils::prelude::*;
+
+    use crate::num::FixedU256;
+
+    use super::*;
+
+    #[derive(Debug, Default, PartialEq, Eq)]
+    struct Balances {
+        collateral_pool_shares: Option<SharesAmount>,
+        collateral_pool_balance: Option<Collateral>,
+        reserve_pool_shares: Option<SharesAmount>,
+        reserve_pool_balance: Option<Collateral>,
+        treasury_shares: Option<SharesAmount>,
+        amo_shares: Option<SharesAmount>,
+        overall_spr: Option<SumPaymentRatio>,
+        account_collateral: Option<Collateral>,
+        account_debt: Option<Debt>,
+        account_credit: Option<Credit>,
+        account_spr: Option<SumPaymentRatio>,
+    }
+
+    #[derive(Default)]
+    struct Context {
+        enable_advance_fee: bool,
+        enable_advance_fee_oracle: bool,
+        enable_treasury: bool,
+        enable_amo: bool,
+        total_shares_issued: TotalSharesIssued,
+        total_deposit_value: TotalDepositsValue,
+        balances: Balances,
+    }
+
+    fn user() -> Recipient {
+        "user".to_owned().into()
+    }
+
+    fn synthetic_asset() -> Asset {
+        "amASSET".to_owned().into()
+    }
+
+    fn deposit_asset() -> Asset {
+        "ASSET".to_owned().into()
+    }
+
+    fn shares_asset() -> Asset {
+        "shares".to_owned().into()
+    }
+
+    fn vault_id() -> VaultId {
+        "vault".to_owned().into()
+    }
+
+    fn advance_fee_recipient() -> Recipient {
+        "advance_fee_recipient".to_owned().into()
+    }
+
+    fn advance_fee_oracle() -> Oracle {
+        "advance_fee_oracle".to_owned().into()
+    }
+
+    fn treasury() -> Treasury {
+        "treasury".to_owned().into()
+    }
+
+    fn amo() -> Amo {
+        "amo".to_owned().into()
+    }
+
+    const INIT_DEPOSIT_AMOUNT: u128 = 10u128.pow(6);
+    const INIT_SHARES_ISSUED: u128 = 10u128.pow(18);
+
+    #[test]
+    fn initial_deposit() {
+        let mut ctx = Context::default();
+
+        let hub = hub(&ctx, &ctx, &ctx);
+
+        let cmds = hub
+            .deposit(
+                vault_id(),
+                user(),
+                deposit_asset(),
+                INIT_DEPOSIT_AMOUNT,
+                user(),
+            )
+            .unwrap();
+
+        assert_eq!(cmds.len(), 1);
+
+        let Cmd::Vault(VaultCmd::Deposit {
+            vault,
+            asset,
+            amount,
+            callback_recipient,
+            callback_reason,
+        }) = cmds.into_iter().next().unwrap()
+        else {
+            unreachable!()
+        };
+
+        assert_eq!(vault, vault_id());
+        assert_eq!(asset, deposit_asset());
+        assert_eq!(amount, INIT_DEPOSIT_AMOUNT);
+        assert_eq!(callback_recipient, user());
+        assert_eq!(callback_reason, VaultDepositReason::Deposit);
+
+        let cmds = hub
+            .vault_deposit_callback(
+                vault_id(),
+                callback_recipient,
+                callback_reason,
+                INIT_SHARES_ISSUED,
+                INIT_DEPOSIT_AMOUNT,
+            )
+            .unwrap();
+
+        for cmd in cmds {
+            ctx.handle_cmd(cmd);
+        }
+
+        assert_eq!(
+            ctx.balances,
+            Balances {
+                collateral_pool_shares: Some(INIT_SHARES_ISSUED),
+                collateral_pool_balance: Some(INIT_DEPOSIT_AMOUNT),
+                account_collateral: Some(INIT_DEPOSIT_AMOUNT),
+                ..Default::default()
+            }
+        )
+    }
+
+    fn with_init_deposit() -> Context {
+        Context {
+            total_shares_issued: INIT_SHARES_ISSUED,
+            total_deposit_value: INIT_DEPOSIT_AMOUNT,
+            balances: Balances {
+                collateral_pool_shares: Some(INIT_SHARES_ISSUED),
+                collateral_pool_balance: Some(INIT_DEPOSIT_AMOUNT),
+                account_collateral: Some(INIT_DEPOSIT_AMOUNT),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    fn spr(numer: u128, denom: u128) -> SumPaymentRatio {
+        FixedU256::from_u128(numer)
+            .checked_div(FixedU256::from_u128(denom))
+            .map(FixedU256::into_raw)
+            .map(SumPaymentRatio::raw)
+            .unwrap()
+    }
+
+    #[test]
+    fn evaluate() {
+        const YIELD_EARNED: u128 = 10u128.pow(5);
+
+        let mut ctx = with_init_deposit();
+
+        ctx.total_deposit_value += YIELD_EARNED;
+
+        let PositionResponse { cmds, cdp } =
+            hub(&ctx, &ctx, &ctx).evaluate(vault_id(), user()).unwrap();
+
+        for cmd in cmds {
+            ctx.handle_cmd(cmd);
+        }
+
+        let treasury_payment = YIELD_EARNED / 10;
+
+        let debt_payment = YIELD_EARNED - treasury_payment;
+
+        let redemption_rate =
+            RedemptionRate::new(ctx.total_shares_issued, ctx.total_deposit_value).unwrap();
+
+        let expected_spr = spr(debt_payment, INIT_DEPOSIT_AMOUNT);
+
+        assert_eq!(cdp.collateral, INIT_DEPOSIT_AMOUNT);
+        assert_wn!(1, cdp.credit, debt_payment);
+        assert_eq!(cdp.debt, 0);
+        assert_eq!(cdp.spr, expected_spr);
+
+        let balances = ctx.balances;
+
+        assert_eq!(balances.collateral_pool_balance, Some(INIT_DEPOSIT_AMOUNT));
+        assert_wn!(1, balances.reserve_pool_balance.unwrap(), debt_payment);
+        assert_wn!(
+            1,
+            balances.collateral_pool_shares.unwrap(),
+            redemption_rate.deposits_to_shares(INIT_DEPOSIT_AMOUNT)
+        );
+        assert_wn!(
+            1,
+            balances.reserve_pool_shares.unwrap(),
+            redemption_rate.deposits_to_shares(debt_payment)
+        );
+        assert_wn!(
+            1,
+            balances.treasury_shares.unwrap(),
+            redemption_rate.deposits_to_shares(treasury_payment)
+        );
+        assert_eq!(
+            balances.collateral_pool_shares.unwrap()
+                + balances.reserve_pool_shares.unwrap()
+                + balances.treasury_shares.unwrap(),
+            INIT_SHARES_ISSUED
+        );
+        assert_eq!(
+            balances.overall_spr.unwrap(),
+            spr(debt_payment, INIT_DEPOSIT_AMOUNT)
+        );
+        assert_eq!(balances.account_collateral.unwrap(), INIT_DEPOSIT_AMOUNT);
+        assert_wn!(1, balances.account_credit.unwrap(), debt_payment);
+        assert_eq!(
+            balances.account_spr.unwrap(),
+            spr(debt_payment, INIT_DEPOSIT_AMOUNT)
+        );
+    }
+
+    #[test]
+    fn advance() {}
+
+    impl Context {
+        fn handle_balance_sheet_cmd(&mut self, cmd: BalanceSheetCmd) {
+            match cmd {
+                BalanceSheetCmd::SetCollateralShares { vault, shares } => {
+                    assert!(vault == vault_id());
+                    self.balances.collateral_pool_shares = Some(shares);
+                }
+                BalanceSheetCmd::SetCollateralBalance { vault, balance } => {
+                    assert!(vault == vault_id());
+                    self.balances.collateral_pool_balance = Some(balance);
+                }
+                BalanceSheetCmd::SetReserveShares { vault, shares } => {
+                    assert!(vault == vault_id());
+                    self.balances.reserve_pool_shares = Some(shares);
+                }
+                BalanceSheetCmd::SetReserveBalance { vault, balance } => {
+                    assert!(vault == vault_id());
+                    self.balances.reserve_pool_balance = Some(balance);
+                }
+                BalanceSheetCmd::SetTreasuryShares { vault, shares } => {
+                    assert!(vault == vault_id());
+                    self.balances.treasury_shares = Some(shares);
+                }
+                BalanceSheetCmd::SetAmoShares { vault, shares } => {
+                    assert!(vault == vault_id());
+                    self.balances.amo_shares = Some(shares);
+                }
+                BalanceSheetCmd::SetOverallSumPaymentRatio { vault, spr } => {
+                    assert!(vault == vault_id());
+                    self.balances.overall_spr = Some(spr);
+                }
+                BalanceSheetCmd::SetAccountCollateral {
+                    vault,
+                    account,
+                    collateral,
+                } => {
+                    assert!(vault == vault_id() && account == user());
+                    self.balances.account_collateral = Some(collateral);
+                }
+                BalanceSheetCmd::SetAccountDebt {
+                    vault,
+                    account,
+                    debt,
+                } => {
+                    assert!(vault == vault_id() && account == user());
+                    self.balances.account_debt = Some(debt);
+                }
+                BalanceSheetCmd::SetAccountCredit {
+                    vault,
+                    account,
+                    credit,
+                } => {
+                    assert!(vault == vault_id() && account == user());
+                    self.balances.account_credit = Some(credit);
+                }
+                BalanceSheetCmd::SetAccountSumPaymentRatio {
+                    vault,
+                    account,
+                    spr,
+                } => {
+                    assert!(vault == vault_id() && account == user());
+                    self.balances.account_spr = Some(spr);
+                }
+                _ => {}
+            }
+        }
+
+        fn handle_cmd(&mut self, cmd: Cmd) {
+            if let Cmd::BalanceSheet(cmd) = cmd {
+                self.handle_balance_sheet_cmd(cmd)
+            }
+        }
+    }
+
+    impl BalanceSheet for Context {
+        fn treasury(&self) -> Option<Treasury> {
+            self.enable_treasury.then_some(treasury())
+        }
+
+        fn collateral_shares(&self, vault: &VaultId) -> Option<SharesAmount> {
+            assert!(vault == &vault_id());
+            self.balances.collateral_pool_shares
+        }
+
+        fn collateral_balance(&self, vault: &VaultId) -> Option<Collateral> {
+            assert!(vault == &vault_id());
+            self.balances.collateral_pool_balance
+        }
+
+        fn reserve_shares(&self, vault: &VaultId) -> Option<SharesAmount> {
+            assert!(vault == &vault_id());
+            self.balances.reserve_pool_shares
+        }
+
+        fn reserve_balance(&self, vault: &VaultId) -> Option<Collateral> {
+            assert!(vault == &vault_id());
+            self.balances.reserve_pool_balance
+        }
+
+        fn treasury_shares(&self, vault: &VaultId) -> Option<TreasuryShares> {
+            assert!(vault == &vault_id());
+            self.balances.treasury_shares
+        }
+
+        fn amo_shares(&self, vault: &VaultId) -> Option<AmoShares> {
+            assert!(vault == &vault_id());
+            self.balances.amo_shares
+        }
+
+        fn overall_sum_payment_ratio(&self, vault: &VaultId) -> Option<SumPaymentRatio> {
+            assert!(vault == &vault_id());
+            self.balances.overall_spr
+        }
+
+        fn account_collateral(&self, vault: &VaultId, account: &Account) -> Option<Collateral> {
+            assert!(vault == &vault_id() && account == &user());
+            self.balances.account_collateral
+        }
+
+        fn account_debt(&self, vault: &VaultId, account: &Account) -> Option<Debt> {
+            assert!(vault == &vault_id() && account == &user());
+            self.balances.account_debt
+        }
+
+        fn account_credit(&self, vault: &VaultId, account: &Account) -> Option<Credit> {
+            assert!(vault == &vault_id() && account == &user());
+            self.balances.account_credit
+        }
+
+        fn account_sum_payment_ratio(
+            &self,
+            vault: &VaultId,
+            account: &Account,
+        ) -> Option<SumPaymentRatio> {
+            assert!(vault == &vault_id() && account == &user());
+            self.balances.account_spr
+        }
+    }
+
+    impl AdvanceFeeOracle for Context {
+        fn advance_fee(&self, oracle: &Oracle, recipient: &Recipient) -> Option<AdvanceFee> {
+            assert!(oracle == &advance_fee_oracle());
+            assert!(recipient == &user());
+            None
+        }
+    }
+
+    impl SyntheticMint for Context {
+        fn syntethic_decimals(&self, synthetic: &Synthetic) -> Option<Decimals> {
+            (synthetic == &synthetic_asset()).then_some(6)
+        }
+    }
+
+    impl Vaults for Context {
+        fn underlying_asset_decimals(&self, vault: &VaultId) -> Option<Decimals> {
+            (vault == &vault_id()).then_some(6)
+        }
+
+        fn is_registered(&self, vault: &VaultId) -> bool {
+            vault == &vault_id()
+        }
+
+        fn deposits_enabled(&self, vault: &VaultId) -> bool {
+            vault == &vault_id()
+        }
+
+        fn advance_enabled(&self, vault: &VaultId) -> bool {
+            vault == &vault_id()
+        }
+
+        fn max_ltv(&self, _vault: &VaultId) -> Option<MaxLtv> {
+            None
+        }
+
+        fn collateral_yield_fee(&self, _vault: &VaultId) -> Option<CollateralYieldFee> {
+            None
+        }
+
+        fn reserve_yield_fee(&self, _vault: &VaultId) -> Option<ReserveYieldFee> {
+            None
+        }
+
+        fn fixed_advance_fee(&self, _vault: &VaultId) -> Option<AdvanceFee> {
+            None
+        }
+
+        fn advance_fee_recipient(&self, _vault: &VaultId) -> Option<Recipient> {
+            self.enable_advance_fee.then_some(advance_fee_recipient())
+        }
+
+        fn advance_fee_oracle(&self, _vault: &VaultId) -> Option<Oracle> {
+            self.enable_advance_fee_oracle
+                .then_some(advance_fee_oracle())
+        }
+
+        fn amo(&self, _vault: &VaultId) -> Option<Amo> {
+            self.enable_amo.then_some(amo())
+        }
+
+        fn amo_allocation(&self, _vault: &VaultId) -> Option<AmoAllocation> {
+            None
+        }
+
+        fn deposit_proxy(&self, _vault: &VaultId) -> Option<Proxy> {
+            None
+        }
+
+        fn advance_proxy(&self, _vault: &VaultId) -> Option<Proxy> {
+            None
+        }
+
+        fn redeem_proxy(&self, _vault: &VaultId) -> Option<Proxy> {
+            None
+        }
+
+        fn mint_proxy(&self, _vault: &VaultId) -> Option<Proxy> {
+            None
+        }
+
+        fn deposit_asset(&self, vault: &VaultId) -> Asset {
+            assert!(vault == &vault_id());
+            deposit_asset()
+        }
+
+        fn shares_asset(&self, vault: &VaultId) -> Asset {
+            assert!(vault == &vault_id());
+            shares_asset()
+        }
+
+        fn synthetic_asset(&self, vault: &VaultId) -> Synthetic {
+            assert!(vault == &vault_id());
+            synthetic_asset()
+        }
+
+        fn total_shares_issued(&self, vault: &VaultId) -> TotalSharesIssued {
+            assert!(vault == &vault_id());
+            self.total_shares_issued
+        }
+
+        fn total_deposits_value(&self, vault: &VaultId) -> TotalDepositsValue {
+            assert!(vault == &vault_id());
+            self.total_deposit_value
+        }
     }
 }

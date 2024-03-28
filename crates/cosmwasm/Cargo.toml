@@ -9,7 +9,8 @@ doctest = false
 
 [dependencies]
 thiserror.workspace       = true
-cosmwasm-std.workspace    = true
+cosmwasm-std              = { workspace = true, features = [ "cosmwasm_1_1" ] }
 cosmwasm-schema.workspace = true
+cw-utils.workspace        = true
 
 amulet-core.workspace     = true

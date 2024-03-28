@@ -20,14 +20,19 @@
   in {
     devShells.${system}.default = pkgs.mkShell {
       packages = [
+        # required
         toolchain
-        pkgs.rust-analyzer-unwrapped
         pkgs.just
         pkgs.nushell
         pkgs.ripgrep
         pkgs.binaryen
         pkgs.coreutils
         pkgs.bun
+        # nice to have
+        pkgs.nodePackages_latest.typescript-language-server
+        pkgs.rust-analyzer-unwrapped
+        pkgs.cargo-nextest
+        pkgs.tokei
       ];
 
       RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";    

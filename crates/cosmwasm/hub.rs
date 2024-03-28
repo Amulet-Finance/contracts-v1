@@ -3,6 +3,8 @@ pub mod balance_sheet;
 pub mod synthetic_mint;
 pub mod vaults;
 
+use core::panic;
+
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{
     from_json, to_json_binary, Addr, Api, Binary, Env, MessageInfo, Reply, Response, StdError,
@@ -18,12 +20,11 @@ use amulet_core::{
         Vaults as CoreVaults,
     },
 };
+use cw_utils::{one_coin, parse_reply_execute_data, ParseReplyError, PaymentError};
 
 use crate::{
     admin::{get_admin_role, Error as AdminError},
-    one_coin,
     vault::DepositResponse as VaultDepositResponse,
-    PaymentError,
 };
 
 use self::{
@@ -48,8 +49,8 @@ pub enum Error {
     Payment(#[from] PaymentError),
     #[error(transparent)]
     Admin(#[from] AdminError),
-    #[error("{0}")]
-    Reply(String),
+    #[error(transparent)]
+    Reply(#[from] ParseReplyError),
 }
 
 #[cw_serde]
@@ -163,6 +164,8 @@ pub struct PositionResponse {
     pub debt: Uint128,
     /// Amount of credit owed to the account
     pub credit: Uint128,
+    /// The Sum Payment Ratio at the time of position evaluation
+    pub sum_payment_ratio: Uint256,
 }
 
 #[cw_serde]
@@ -231,18 +234,24 @@ pub enum QueryMsg {
     Treasury {},
 }
 
+impl From<Cdp> for PositionResponse {
+    fn from(cdp: Cdp) -> Self {
+        Self {
+            collateral: cdp.collateral.into(),
+            debt: cdp.debt.into(),
+            credit: cdp.credit.into(),
+            sum_payment_ratio: Uint256::from_be_bytes(cdp.spr.into_raw().to_be_bytes()),
+        }
+    }
+}
+
 trait ResponseExt: Sized {
     fn from_cdp(cdp: Cdp) -> Self;
 }
 
 impl<Msg> ResponseExt for Response<Msg> {
     fn from_cdp(cdp: Cdp) -> Self {
-        let data = to_json_binary(&PositionResponse {
-            collateral: cdp.collateral.into(),
-            debt: cdp.debt.into(),
-            credit: cdp.credit.into(),
-        })
-        .expect("infallible serialization");
+        let data = to_json_binary(&PositionResponse::from(cdp)).expect("infallible serialization");
 
         Self::default().set_data(data)
     }
@@ -613,11 +622,9 @@ pub fn handle_reply<Msg>(
 
     let recipient = storage.vault_callback_recipient();
 
-    let sub_msg_response = reply.result.into_result().map_err(Error::Reply)?;
-
-    let reply_data = sub_msg_response
+    let reply_data = parse_reply_execute_data(reply)?
         .data
-        .expect("always: vault deposit returns a response");
+        .expect("always: a deposit response from the vault");
 
     let response: VaultDepositResponse = from_json(reply_data)?;
 
@@ -749,11 +756,7 @@ fn position(
 ) -> Result<PositionResponse, Error> {
     let response = hub(vaults, balance_sheet, advance_fee_oracle).evaluate(vault, account)?;
 
-    Ok(PositionResponse {
-        collateral: response.cdp.collateral.into(),
-        debt: response.cdp.debt.into(),
-        credit: response.cdp.credit.into(),
-    })
+    Ok(PositionResponse::from(response.cdp))
 }
 
 pub fn handle_query_msg(

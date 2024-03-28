@@ -84,9 +84,7 @@ pub fn handle_cmd<Msg>(
         MintCmd::Mint { amount, recipient } => {
             increase_total_shares_issued(storage, amount);
 
-            let denom = factory.denom(&SHARES_DENOM.to_owned().into()).into();
-
-            factory.mint(denom, amount, recipient)
+            factory.mint(full_denom, amount, recipient)
         }
 
         MintCmd::Burn { amount } => {

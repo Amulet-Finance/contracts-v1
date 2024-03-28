@@ -1,7 +1,15 @@
+set dotenv-load := true
+
 dist: dist-clean build-contracts generate-schemas generate-ts
 
 dist-clean:
 	rm -rf arifacts schema ts
+
+on-chain-test test:
+	bun test scripts/{{test}}.test.ts --timeout 600000
+
+update-expect package:
+	UPDATE_EXPECT=1 cargo test --package {{package}}
 
 build-contracts:
 	#!/usr/bin/env nu

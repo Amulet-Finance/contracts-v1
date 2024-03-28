@@ -1,40 +1,12 @@
 use amulet_core::num::U256;
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Coin, MessageInfo, Storage};
+use cosmwasm_std::Storage;
 
 pub mod admin;
 pub mod hub;
 pub mod mint;
 pub mod strategy;
 pub mod vault;
-
-#[derive(Debug, thiserror::Error)]
-pub enum PaymentError {
-    #[error("non payable - received unexpected funds")]
-    NonPayable,
-    #[error("payable - did not receive any funds")]
-    Payable,
-    #[error("more than one asset sent")]
-    MoreThanOneAssetSent,
-}
-
-pub fn non_payable(info: &MessageInfo) -> Result<(), PaymentError> {
-    if info.funds.is_empty() {
-        return Ok(());
-    };
-
-    Err(PaymentError::NonPayable)
-}
-
-pub fn one_coin(info: &MessageInfo) -> Result<Coin, PaymentError> {
-    match info.funds.as_slice() {
-        [] => Err(PaymentError::Payable),
-
-        [coin] => Ok(coin.clone()),
-
-        _ => Err(PaymentError::MoreThanOneAssetSent),
-    }
-}
 
 pub trait StorageExt: Storage {
     /// Returns true if there is something stored at the `key`

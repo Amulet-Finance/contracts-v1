@@ -1,4 +1,4 @@
-use crate::{Asset, Decimals, Rate, Recipient, cmds};
+use crate::{cmds, Asset, Decimals, Rate, Recipient};
 
 // TODO: Newtype candidates
 /// An amount of deposit assets
@@ -20,6 +20,7 @@ pub type BatchId = u64;
 
 pub const SHARES_DECIMAL_PLACES: Decimals = 18;
 
+#[derive(Debug, Clone, Copy)]
 pub enum UnbondReadyStatus {
     /// Unbonding is ready to be started
     Ready {
@@ -33,11 +34,13 @@ pub enum UnbondReadyStatus {
     Later(Option<Hint>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnbondEpoch {
     pub start: Instant,
     pub end: Instant,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum MintCmd {
     /// Instructs the mint to create an `amount` of shares to be received by the `recipient`, increasing the number of total issued shares
     Mint {
@@ -50,7 +53,7 @@ pub enum MintCmd {
     Burn { amount: SharesAmount },
 }
 
-pub trait Mint {
+pub trait SharesMint {
     /// Returns the total issued shares
     fn total_shares_issued(&self) -> TotalSharesIssued;
 
@@ -58,6 +61,7 @@ pub trait Mint {
     fn shares_asset(&self) -> Asset;
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum StrategyCmd {
     /// Deposit an `amount` of deposit assets into the strategy
     Deposit { amount: DepositAmount },
@@ -95,6 +99,7 @@ pub trait Strategy {
     fn unbond(&self, value: DepositValue) -> UnbondReadyStatus;
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum UnbondingLogSet {
     /// Set the last committed batch ID
     LastCommittedBatchId(BatchId),
@@ -202,18 +207,15 @@ impl RedemptionRate {
             .and_then(|rate| rate.apply_u128(self.total_deposits_value))
     }
 
-    pub fn checked_deposits_to_shares(
-        &self,
-        deposit_amount: DepositAmount,
-    ) -> Option<SharesAmount> {
-        Rate::from_ratio(deposit_amount, self.total_deposits_value)
+    pub fn checked_deposits_to_shares(&self, deposit_value: DepositValue) -> Option<SharesAmount> {
+        Rate::from_ratio(deposit_value, self.total_deposits_value)
             .and_then(|rate| rate.apply_u128(self.total_shares_issued))
     }
 
     fn overflow_panic(self, shares_or_deposits: &str, amount: u128) -> ! {
         panic!(
             "overflow converting {amount} to {shares_or_deposits}. total_shares_issued = {}, total_deposit_value = {}", 
-            self.total_shares_issued, 
+            self.total_shares_issued,
             self.total_deposits_value
         );
     }
@@ -224,7 +226,7 @@ impl RedemptionRate {
     }
 
     pub fn deposits_to_shares(&self, deposit_amount: DepositAmount) -> SharesAmount {
-        self.checked_shares_to_deposits(deposit_amount)
+        self.checked_deposits_to_shares(deposit_amount)
             .unwrap_or_else(|| self.overflow_panic("shares", deposit_amount))
     }
 }
@@ -253,6 +255,7 @@ pub fn offset_total_deposits_value(
         .expect("pending unbond <= total deposits")
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum Cmd {
     Mint(MintCmd),
     Strategy(StrategyCmd),
@@ -271,7 +274,7 @@ impl CmdVecExt for Vec<Cmd> {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
     #[error("invalid deposit asset")]
     InvalidDepositAsset,
@@ -331,6 +334,7 @@ pub enum Error {
     UnbondNotReady,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct DepositResponse {
     pub cmds: Vec<Cmd>,
     pub deposit_value: DepositValue,
@@ -368,13 +372,13 @@ pub trait Vault {
 pub struct VaultImpl<'a> {
     strategy: &'a dyn Strategy,
     unbonding_log: &'a dyn UnbondingLog,
-    mint: &'a dyn Mint,
+    mint: &'a dyn SharesMint,
 }
 
 pub fn vault<'a>(
     strategy: &'a dyn Strategy,
     unbonding_log: &'a dyn UnbondingLog,
-    mint: &'a dyn Mint,
+    mint: &'a dyn SharesMint,
 ) -> VaultImpl<'a> {
     VaultImpl {
         strategy,
@@ -834,4 +838,547 @@ impl From<UnbondingLogSet> for Cmd {
     fn from(v: UnbondingLogSet) -> Self {
         Self::UnbondingLog(v)
     }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::{BTreeMap, HashMap};
+
+    use test_utils::prelude::*;
+
+    use crate::num::{FixedU256, U256};
+
+    use super::*;
+
+    #[derive(Debug, Default, Clone)]
+    struct RecipientBatchMetadata {
+        next_batch: Option<BatchId>,
+        unbonding: DepositValue,
+    }
+
+    #[derive(Debug, Default, Clone)]
+    struct RecipientMetadata {
+        first_entered: BatchId,
+        last_entered: BatchId,
+        last_claimed: Option<BatchId>,
+        batches: BTreeMap<BatchId, RecipientBatchMetadata>,
+    }
+
+    #[derive(Debug, Default, Clone)]
+    struct Batch {
+        total_unbonding: DepositValue,
+        total_claimable: ClaimAmount,
+        hint: Option<Hint>,
+        epoch: Option<UnbondEpoch>,
+    }
+
+    #[derive(Debug, Clone)]
+    struct Context {
+        now: Now,
+        total_shares_issued: TotalSharesIssued,
+        total_deposits: DepositAmount,
+        redemption_rate: Rate,
+        unbond_ready: bool,
+        unbonding_period: u64,
+        last_committed_batch: Option<BatchId>,
+        batches: BTreeMap<BatchId, Batch>,
+        recipients: HashMap<String, RecipientMetadata>,
+    }
+
+    fn shares_asset() -> Asset {
+        "shares".to_owned().into()
+    }
+
+    fn deposit_asset() -> Asset {
+        "dAsset".to_owned().into()
+    }
+
+    impl SharesMint for Context {
+        fn total_shares_issued(&self) -> TotalSharesIssued {
+            self.total_shares_issued
+        }
+
+        fn shares_asset(&self) -> Asset {
+            shares_asset()
+        }
+    }
+
+    impl Rate {
+        fn invert(self) -> Self {
+            FixedU256::from_u128(1)
+                .checked_div(self.0)
+                .map(Self)
+                .unwrap()
+        }
+    }
+
+    impl Strategy for Context {
+        fn now(&self) -> Now {
+            self.now
+        }
+
+        fn deposit_asset(&self) -> Asset {
+            deposit_asset()
+        }
+
+        fn underlying_asset_decimals(&self) -> Decimals {
+            6
+        }
+
+        fn total_deposits_value(&self) -> TotalDepositsValue {
+            let unbonded_value: DepositValue = self
+                .batches
+                .values()
+                .filter(|b| b.epoch.is_some())
+                .map(|b| b.total_unbonding)
+                .sum();
+
+            self.redemption_rate
+                .apply_u128(self.total_deposits)
+                .unwrap()
+                - unbonded_value
+        }
+
+        fn deposit_value(&self, amount: DepositAmount) -> DepositValue {
+            self.redemption_rate.apply_u128(amount).unwrap()
+        }
+
+        fn unbond(&self, value: DepositValue) -> UnbondReadyStatus {
+            if self.unbond_ready {
+                UnbondReadyStatus::Ready {
+                    amount: self.redemption_rate.invert().apply_u128(value).unwrap(),
+                    epoch: UnbondEpoch {
+                        start: self.now,
+                        end: self.now + self.unbonding_period,
+                    },
+                }
+            } else {
+                UnbondReadyStatus::Later(None)
+            }
+        }
+    }
+
+    impl UnbondingLog for Context {
+        fn last_committed_batch_id(&self) -> Option<BatchId> {
+            self.last_committed_batch
+        }
+
+        fn batch_unbond_value(&self, batch: BatchId) -> Option<DepositValue> {
+            self.batches.get(&batch).map(|b| b.total_unbonding)
+        }
+
+        fn batch_claimable_amount(&self, batch: BatchId) -> Option<ClaimAmount> {
+            self.batches.get(&batch).map(|b| b.total_claimable)
+        }
+
+        fn pending_batch_hint(&self, batch: BatchId) -> Option<Hint> {
+            self.batches.get(&batch).and_then(|b| b.hint)
+        }
+
+        fn committed_batch_epoch(&self, batch: BatchId) -> Option<UnbondEpoch> {
+            self.batches.get(&batch).and_then(|b| b.epoch)
+        }
+
+        fn first_entered_batch(&self, recipient: &str) -> Option<BatchId> {
+            self.recipients.get(recipient).map(|m| m.first_entered)
+        }
+
+        fn last_entered_batch(&self, recipient: &str) -> Option<BatchId> {
+            self.recipients.get(recipient).map(|m| m.last_entered)
+        }
+
+        fn next_entered_batch(&self, recipient: &str, batch: BatchId) -> Option<BatchId> {
+            self.recipients
+                .get(recipient)
+                .and_then(|m| m.batches.get(&batch))
+                .and_then(|b| b.next_batch)
+        }
+
+        fn last_claimed_batch(&self, recipient: &str) -> Option<BatchId> {
+            self.recipients.get(recipient).and_then(|m| m.last_claimed)
+        }
+
+        fn unbonded_value_in_batch(&self, recipient: &str, batch: BatchId) -> Option<DepositValue> {
+            self.recipients
+                .get(recipient)
+                .and_then(|m| m.batches.get(&batch))
+                .map(|b| b.unbonding)
+        }
+    }
+
+    impl Context {
+        fn handle_cmd(&mut self, cmd: Cmd) {
+            match cmd {
+                Cmd::Mint(cmd) => match cmd {
+                    MintCmd::Mint { amount, .. } => self.total_shares_issued += amount,
+                    MintCmd::Burn { amount } => self.total_shares_issued -= amount,
+                },
+                Cmd::Strategy(cmd) => {
+                    if let StrategyCmd::Deposit { amount } = cmd {
+                        self.total_deposits += amount
+                    }
+                }
+                Cmd::UnbondingLog(cmd) => match cmd {
+                    UnbondingLogSet::LastCommittedBatchId(batch_id) => {
+                        self.last_committed_batch = Some(batch_id)
+                    }
+                    UnbondingLogSet::BatchTotalUnbondValue { batch, value } => {
+                        self.batches.entry(batch).or_default().total_unbonding = value;
+                    }
+                    UnbondingLogSet::BatchClaimableAmount { batch, amount } => {
+                        self.batches.entry(batch).or_default().total_claimable = amount;
+                    }
+                    UnbondingLogSet::BatchHint { batch, hint } => {
+                        self.batches.entry(batch).or_default().hint = Some(hint);
+                    }
+                    UnbondingLogSet::BatchEpoch { batch, epoch } => {
+                        self.batches.entry(batch).or_default().epoch = Some(epoch);
+                    }
+                    UnbondingLogSet::FirstEnteredBatch { recipient, batch } => {
+                        self.recipients
+                            .entry(recipient.into_string())
+                            .or_default()
+                            .first_entered = batch;
+                    }
+                    UnbondingLogSet::LastEnteredBatch { recipient, batch } => {
+                        self.recipients
+                            .entry(recipient.into_string())
+                            .or_default()
+                            .first_entered = batch;
+                    }
+                    UnbondingLogSet::NextEnteredBatch {
+                        recipient,
+                        previous,
+                        next,
+                    } => {
+                        self.recipients
+                            .entry(recipient.into_string())
+                            .or_default()
+                            .batches
+                            .get_mut(&previous)
+                            .unwrap()
+                            .next_batch = Some(next);
+                    }
+                    UnbondingLogSet::LastClaimedBatch { recipient, batch } => {
+                        self.recipients
+                            .entry(recipient.into_string())
+                            .or_default()
+                            .last_claimed = Some(batch);
+                    }
+                    UnbondingLogSet::UnbondedValueInBatch {
+                        recipient,
+                        batch,
+                        value,
+                    } => {
+                        self.recipients
+                            .entry(recipient.into_string())
+                            .or_default()
+                            .batches
+                            .entry(batch)
+                            .or_default()
+                            .unbonding = value;
+                    }
+                },
+            }
+        }
+    }
+
+    fn prior_deposits() -> Context {
+        Context {
+            now: 42,
+            total_shares_issued: 10u128.pow(18),
+            total_deposits: 10u128.pow(6),
+            // Inital deposit at 1.0, since increased to 1.5
+            redemption_rate: Rate::from_ratio(3, 2).unwrap(),
+            unbond_ready: false,
+            unbonding_period: 10,
+            last_committed_batch: None,
+            batches: BTreeMap::new(),
+            recipients: HashMap::new(),
+        }
+    }
+
+    fn no_prior_deposits() -> Context {
+        Context {
+            now: 0,
+            total_shares_issued: 0,
+            total_deposits: 0,
+            redemption_rate: Rate::from_ratio(1, 1).unwrap(),
+            unbond_ready: false,
+            unbonding_period: 10,
+            last_committed_batch: None,
+            batches: BTreeMap::new(),
+            recipients: HashMap::new(),
+        }
+    }
+
+    fn high_decimal_underlying() -> Context {
+        Context {
+            now: 42,
+            total_shares_issued: 10u128.pow(18),
+            total_deposits: 10u128.pow(18),
+            redemption_rate: Rate::from_ratio(1, 1).unwrap(),
+            unbond_ready: false,
+            unbonding_period: 10,
+            last_committed_batch: None,
+            batches: BTreeMap::new(),
+            recipients: HashMap::new(),
+        }
+    }
+
+    fn total_deposit_loss() -> Context {
+        Context {
+            now: 42,
+            total_shares_issued: 10u128.pow(18),
+            total_deposits: 10u128.pow(6),
+            redemption_rate: Rate(FixedU256::raw(U256::zero())),
+            unbond_ready: false,
+            unbonding_period: 10,
+            last_committed_batch: None,
+            batches: BTreeMap::new(),
+            recipients: HashMap::new(),
+        }
+    }
+
+    fn invalid_deposit_asset() -> Asset {
+        "invalid_deposit_asset".to_owned().into()
+    }
+
+    fn alice() -> Recipient {
+        "alice".to_owned().into()
+    }
+
+    fn successful_deposit_response(
+        ctx: Context,
+        amount: DepositAmount,
+        recipient: Recipient,
+    ) -> DepositResponse {
+        let total_deposits_value = ctx.total_deposits_value();
+        let deposit_value = ctx.redemption_rate.apply_u128(amount).unwrap();
+        let issued_shares = if total_deposits_value > 0 {
+            (deposit_value * ctx.total_shares_issued) / total_deposits_value
+        } else {
+            deposit_value * 10u128.pow(SHARES_DECIMAL_PLACES - ctx.underlying_asset_decimals())
+        };
+
+        DepositResponse {
+            cmds: cmds![
+                StrategyCmd::Deposit { amount },
+                MintCmd::Mint {
+                    amount: issued_shares,
+                    recipient
+                }
+            ],
+            deposit_value,
+            issued_shares,
+            total_shares_issued: ctx.total_shares_issued + issued_shares,
+            total_deposits_value: total_deposits_value + deposit_value,
+        }
+    }
+
+    #[rstest]
+    #[case::non_zero_valid_deposit_asset(
+        prior_deposits(),
+        deposit_asset(),
+        1_000_000,
+        alice(),
+        Ok(successful_deposit_response(prior_deposits(), 1_000_000, alice()))
+    )]
+    #[case::first_non_zero_valid_deposit_asset(
+        no_prior_deposits(),
+        deposit_asset(),
+        1_000_000,
+        alice(),
+        Ok(successful_deposit_response(no_prior_deposits(), 1_000_000, alice()))
+    )]
+    #[case::non_zero_invalid_deposit_asset(
+        prior_deposits(),
+        invalid_deposit_asset(),
+        1_000_000,
+        alice(),
+        Err(Error::InvalidDepositAsset)
+    )]
+    #[case::zero_valid_deposit_asset(
+        prior_deposits(),
+        deposit_asset(),
+        0,
+        alice(),
+        Err(Error::CannotDepositZero)
+    )]
+    #[case::very_large_deposit(
+        prior_deposits(),
+        deposit_asset(),
+        // e.g >226 quintillion ETH in wei units (18 decimals)
+        226_854_911_280_625_630_000_000_000_000_000_000_000,
+        alice(),
+        Err(Error::DepositTooLarge)
+    )]
+    #[case::very_small_deposit(
+        high_decimal_underlying(),
+        deposit_asset(),
+        1,
+        alice(),
+        Err(Error::DepositTooSmall)
+    )]
+    #[case::total_deposit_loss(
+        total_deposit_loss(),
+        deposit_asset(),
+        1_000_000,
+        alice(),
+        Err(Error::CannotDepositInTotalLossState)
+    )]
+    fn deposit(
+        #[case] deposit_ctx: Context,
+        #[case] deposit_asset: Asset,
+        #[case] deposit_amount: DepositAmount,
+        #[case] mint_recipient: Recipient,
+        #[case] expected: Result<DepositResponse, Error>,
+    ) {
+        let ctx = &deposit_ctx;
+        assert_eq!(
+            vault(ctx, ctx, ctx).deposit(deposit_asset, deposit_amount, mint_recipient),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case::non_zero_valid_deposit_asset(
+        prior_deposits(),
+        deposit_asset(),
+        1_000_000,
+        Ok(StrategyCmd::Deposit { amount: 1_000_000 })
+    )]
+    #[case::first_non_zero_valid_deposit_asset(
+        no_prior_deposits(),
+        deposit_asset(),
+        1_000_000,
+        Ok(StrategyCmd::Deposit { amount: 1_000_000 })
+    )]
+    #[case::non_zero_invalid_deposit_asset(
+        prior_deposits(),
+        invalid_deposit_asset(),
+        1_000_000,
+        Err(Error::InvalidDonationAsset)
+    )]
+    #[case::zero_valid_deposit_asset(
+        prior_deposits(),
+        deposit_asset(),
+        0,
+        Err(Error::CannotDonateZero)
+    )]
+    fn donate(
+        #[case] donate_ctx: Context,
+        #[case] donate_asset: Asset,
+        #[case] donate_amount: DepositAmount,
+        #[case] expected: Result<StrategyCmd, Error>,
+    ) {
+        let ctx = &donate_ctx;
+        assert_eq!(
+            vault(ctx, ctx, ctx).donate(donate_asset, donate_amount),
+            expected
+        );
+    }
+
+    fn unbond_ready_ctx() -> Context {
+        Context {
+            now: 42,
+            total_shares_issued: 10u128.pow(18),
+            total_deposits: 10u128.pow(6),
+            // Inital deposit at 1.0, since increased to 1.5
+            redemption_rate: Rate::from_ratio(3, 2).unwrap(),
+            unbond_ready: true,
+            unbonding_period: 10,
+            last_committed_batch: None,
+            batches: BTreeMap::new(),
+            recipients: HashMap::new(),
+        }
+    }
+
+    fn first_redemption_unbond_ready_success(
+        ctx_before: Context,
+        shares_amount: SharesAmount,
+        recipient: Recipient,
+        result: Result<Vec<Cmd>, Error>,
+    ) {
+        let cmds = result.unwrap();
+
+        let mut ctx_after = ctx_before.clone();
+
+        for cmd in cmds {
+            ctx_after.handle_cmd(cmd);
+        }
+
+        assert_eq!(
+            ctx_after.total_shares_issued,
+            ctx_before.total_shares_issued - shares_amount
+        );
+
+        assert_eq!(
+            ctx_after.last_committed_batch,
+            Some(ctx_before.last_committed_batch.map_or(0, |b| b + 1))
+        );
+
+        let expected_total_unbonding =
+            (shares_amount * ctx_before.total_deposits_value()) / ctx_before.total_shares_issued;
+
+        let expected_total_claimable = ctx_before
+            .redemption_rate
+            .invert()
+            .apply_u128(expected_total_unbonding)
+            .unwrap();
+
+        assert!(matches!(
+            ctx_after.batches[&ctx_after.last_committed_batch.unwrap()],
+            Batch {
+                total_unbonding,
+                total_claimable,
+                epoch,
+                ..
+            } if total_unbonding == expected_total_unbonding
+            && total_claimable == expected_total_claimable
+            && epoch.is_some()
+        ));
+
+        let just_committed_batch = ctx_after.last_committed_batch.unwrap();
+
+        assert!(matches!(
+            ctx_after.recipients.get(recipient.as_str()).unwrap(),
+            RecipientMetadata {
+                last_entered,
+                batches,
+                ..
+            } if *last_entered == just_committed_batch
+            && batches[&just_committed_batch].unbonding == expected_total_unbonding
+        ));
+    }
+
+    #[rstest]
+    #[case::first_redemption_unbond_ready(
+        unbond_ready_ctx(),
+        shares_asset(),
+        unbond_ready_ctx().total_shares_issued / 2,
+        alice(),
+        first_redemption_unbond_ready_success
+    )]
+    fn redeem(
+        #[case] redeem_ctx: Context,
+        #[case] shares_asset: Asset,
+        #[case] shares_amount: SharesAmount,
+        #[case] recipient: Recipient,
+        #[case] check: impl Fn(Context, SharesAmount, Recipient, Result<Vec<Cmd>, Error>),
+    ) {
+        let ctx = &redeem_ctx;
+
+        let result = vault(ctx, ctx, ctx).redeem(shares_asset, shares_amount, recipient.clone());
+
+        check(redeem_ctx, shares_amount, recipient, result);
+    }
+
+    // fn claim(recipient: Recipient, expected: Result<Vec<Cmd>, Error>) {
+    //     todo!()
+    // }
+
+    // fn start_unbond(expected: Result<Vec<Cmd>, Error>) {
+    //     todo!()
+    // }
 }

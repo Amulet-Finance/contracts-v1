@@ -35,6 +35,15 @@ impl From<U256> for U512 {
     }
 }
 
+impl serde::Serialize for U256 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_newtype_struct("U256", self.to_string().as_str())
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct OverflowError;
 
@@ -54,11 +63,11 @@ impl TryFrom<U512> for U256 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub struct FixedU256(U256);
 
 impl FixedU256 {
-    const FRAC_BITS: u32 = 128;
+    pub const FRAC_BITS: u32 = 128;
 
     pub const fn raw(x: U256) -> Self {
         Self(x)

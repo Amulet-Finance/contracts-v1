@@ -14,8 +14,7 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
     to_json_binary, Binary, Env, MessageInfo, Response, StdError, Storage, Uint128,
 };
-
-use crate::{non_payable, one_coin, PaymentError};
+use cw_utils::{nonpayable, one_coin, PaymentError};
 
 use self::unbonding_log::StorageExt as _;
 
@@ -207,7 +206,7 @@ fn handle_vault_start_unbond<Msg>(
     info: MessageInfo,
     vault: &dyn Vault,
 ) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
-    non_payable(&info)?;
+    nonpayable(&info)?;
 
     let cmds = vault.start_unbond()?;
 
@@ -218,7 +217,7 @@ fn handle_vault_claim<Msg>(
     info: MessageInfo,
     vault: &dyn Vault,
 ) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
-    non_payable(&info)?;
+    nonpayable(&info)?;
 
     let cmds = vault.claim(info.sender.into_string().into())?;
 
