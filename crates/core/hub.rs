@@ -112,6 +112,12 @@ pub enum Error {
 
     #[error("no amo set")]
     NoAmoSet,
+
+    #[error("deposits disabled")]
+    DepositsDisabled,
+
+    #[error("advance disabled")]
+    AdvanceDisabled,
 }
 
 pub trait SyntheticMint {
@@ -1182,6 +1188,10 @@ impl<'a> Hub for HubImpl<'a> {
             return Err(Error::VaultNotRegistered);
         }
 
+        if !self.vaults.deposits_enabled(&vault) {
+            return Err(Error::DepositsDisabled);
+        }
+
         if self
             .vaults
             .deposit_proxy(&vault)
@@ -1220,6 +1230,10 @@ impl<'a> Hub for HubImpl<'a> {
     ) -> Result<Vec<Cmd>, Error> {
         if !self.vaults.is_registered(&vault_id) {
             return Err(Error::VaultNotRegistered);
+        }
+
+        if !self.vaults.advance_enabled(&vault_id) {
+            return Err(Error::AdvanceDisabled);
         }
 
         if advance_amount == 0 {
