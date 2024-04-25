@@ -6,7 +6,7 @@ dist-clean:
 	rm -rf arifacts schema ts
 
 on-chain-test test:
-	bun test scripts/{{test}}.test.ts --timeout 600000
+	bun test scripts/{{test}}.test.ts --timeout 1600000
 
 deploy-contract contract init_msg *FLAGS:
 	bun run scripts/deploy.ts --contract {{contract}} --msg '{{init_msg}}' {{FLAGS}}

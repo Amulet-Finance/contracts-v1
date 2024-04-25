@@ -22,6 +22,9 @@ const { values } = parseArgs({
     code: {
       type: 'string',
     },
+    funds: {
+      type: 'string',
+    },
     store_only: {
       type: 'boolean',
       default: false,
@@ -67,11 +70,13 @@ else
   }
 }
 
+const funds = values.funds ? +values.funds : undefined;
+
 const [contract] = await hostChain.initContract(
   codeId, 
   JSON.parse(values.msg), 
   values.contract,
-  undefined,
+  funds,
   admin
 );
 

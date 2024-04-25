@@ -239,7 +239,7 @@ class ConnectedCosmWasmChain extends ConnectedChain implements CosmWasmChain {
     codeId: number,
     msg: any,
     label: string,
-    funds?: number,
+    funds?: number | null,
     admin?: string,
   ): Promise<[Contract, InstantiateResult]> {
     const sender = await this.accountAddress();
