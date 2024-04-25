@@ -1242,7 +1242,7 @@ impl<'a> Hub for HubImpl<'a> {
 
         if self
             .vaults
-            .deposit_proxy(&vault_id)
+            .advance_proxy(&vault_id)
             .is_some_and(|proxy| sender != proxy)
         {
             return Err(UnauthorizedError.into());
@@ -1868,7 +1868,7 @@ impl From<BalanceSheetCmd> for Cmd {
 mod test {
     use test_utils::prelude::*;
 
-    use crate::num::FixedU256;
+    use num::FixedU256;
 
     use super::*;
 
@@ -2086,7 +2086,36 @@ mod test {
     }
 
     #[test]
-    fn advance() {}
+    fn evaluate_2() {
+        let mut ctx = Context {
+            total_shares_issued: 7532270999999999999,
+            total_deposit_value: 7532271,
+            balances: Balances {
+                collateral_pool_shares: Some(6276892999999999999),
+                collateral_pool_balance: Some(6276893),
+                account_collateral: Some(6276893),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let PositionResponse { cmds, cdp } =
+            hub(&ctx, &ctx, &ctx).evaluate(vault_id(), user()).unwrap();
+
+        for cmd in cmds {
+            ctx.handle_cmd(cmd);
+        }
+
+        assert_eq!(
+            cdp,
+            Cdp {
+                collateral: 6276892999999999999,
+                debt: 0,
+                credit: 0,
+                spr: SumPaymentRatio::zero(),
+            }
+        )
+    }
 
     impl Context {
         fn handle_balance_sheet_cmd(&mut self, cmd: BalanceSheetCmd) {

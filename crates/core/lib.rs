@@ -1,7 +1,6 @@
 pub mod admin;
 pub mod hub;
 pub mod mint;
-pub mod num;
 pub mod vault;
 
 use num::FixedU256;

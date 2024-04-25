@@ -599,6 +599,8 @@ impl<'a> Vault for VaultImpl<'a> {
             return Err(Error::DepositTooSmall);
         }
 
+        let mint_shares_value = redemption_rate.shares_to_deposits(mint_shares);
+
         let total_shares_issued = total_shares_issued
             .checked_add(mint_shares)
             .ok_or(Error::DepositTooLarge)?;
@@ -611,7 +613,7 @@ impl<'a> Vault for VaultImpl<'a> {
                     recipient: mint_recipient,
                 }
             ],
-            deposit_value,
+            deposit_value: mint_shares_value,
             issued_shares: mint_shares,
             total_shares_issued,
             total_deposits_value,
@@ -846,7 +848,7 @@ mod test {
 
     use test_utils::prelude::*;
 
-    use crate::num::{FixedU256, U256};
+    use num::{FixedU256, U256};
 
     use super::*;
 

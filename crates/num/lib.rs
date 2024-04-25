@@ -9,6 +9,8 @@ mod uint {
     }
 }
 
+use std::fmt::Write;
+
 pub use uint::{U256, U512};
 
 impl U256 {
@@ -63,7 +65,7 @@ impl TryFrom<U512> for U256 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FixedU256(U256);
 
 impl FixedU256 {
@@ -104,12 +106,12 @@ impl FixedU256 {
     }
 
     pub fn checked_div(self, rhs: Self) -> Option<Self> {
-        if self.0.is_zero() {
-            return Some(Self(U256::zero()));
-        }
-
         if rhs.0.is_zero() {
             return None;
+        }
+
+        if self.0.is_zero() {
+            return Some(Self(U256::zero()));
         }
 
         let lhs = U512::from(self.0);
@@ -129,6 +131,51 @@ impl FixedU256 {
 
     pub fn abs_diff(self, other: Self) -> Self {
         Self(self.0.abs_diff(other.0))
+    }
+}
+
+impl serde::Serialize for FixedU256 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_newtype_struct("FixedU256", self.to_string().as_str())
+    }
+}
+
+impl std::fmt::Display for FixedU256 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let integer = self.floor();
+
+        let FixedU256(U256([f0, f1, ..])) = self;
+
+        let mut fractional = U256([*f0, *f1, 0, 0]);
+
+        write!(f, "{integer}.")?;
+
+        let mut digit_count = 0;
+
+        let mut fractional_str = String::with_capacity(32);
+
+        while fractional > U256::zero() && digit_count < 32 {
+            let U256([f0, f1, i0, ..]) = fractional * 10;
+
+            let digit = u32::try_from(i0).unwrap();
+
+            fractional_str.push(char::from_digit(digit, 10).unwrap());
+
+            digit_count += 1;
+
+            fractional = U256([f0, f1, 0, 0]);
+        }
+
+        let fractional_str = fractional_str.trim_end_matches('0');
+
+        if fractional_str.is_empty() {
+            f.write_char('0')
+        } else {
+            f.write_str(fractional_str)
+        }
     }
 }
 
@@ -226,5 +273,30 @@ mod test {
         assert_eq!(u128_max.checked_div(one).unwrap(), u128_max);
 
         assert!(u128_max.checked_div(zero).is_none());
+        assert!(zero.checked_div(zero).is_none());
+    }
+
+    #[test]
+    fn fixed256_display() {
+        let numer = FixedU256::from_u128(1_500);
+        let denom = FixedU256::from_u128(1_000);
+
+        let x = numer.checked_div(denom).unwrap();
+
+        assert_eq!(x.to_string(), "1.5");
+
+        let numer = FixedU256::from_u128(1);
+        let denom = FixedU256::from_u128(3);
+
+        let x = numer.checked_div(denom).unwrap();
+
+        assert_eq!(x.to_string(), "0.33333333333333333333333333333333");
+
+        let numer = FixedU256::from_u128(1);
+        let denom = FixedU256::from_u128(1);
+
+        let x = numer.checked_div(denom).unwrap();
+
+        assert_eq!(x.to_string(), "1.0");
     }
 }

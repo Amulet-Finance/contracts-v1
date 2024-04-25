@@ -8,11 +8,12 @@ path    = "lib.rs"
 doctest = false
 
 [dependencies]
-cosmwasm-std.workspace = true
-neutron-sdk.workspace  = true
+cosmwasm-std.workspace    = true
+cosmwasm-schema.workspace = true
+neutron-sdk.workspace     = true
 
-amulet-core.workspace  = true
-amulet-cw.workspace    = true
+amulet-core.workspace     = true
+amulet-cw.workspace       = true
 
 [dev-dependencies]
-test-utils.workspace   = true
+test-utils.workspace      = true

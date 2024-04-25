@@ -17,7 +17,7 @@ where
         to_string_pretty(
             self,
             PrettyConfig::new()
-                .compact_arrays(true)
+                .compact_arrays(false)
                 .indentor("  ".to_owned()),
         )
         .unwrap()

@@ -12,7 +12,7 @@ serde                       = { workspace = true, features = [ "derive" ] }
 derive_more.workspace       = true
 static_assertions.workspace = true
 thiserror.workspace         = true
-uint.workspace              = true
+num.workspace               = true
 
 [dev-dependencies]
 test-utils.workspace        = true

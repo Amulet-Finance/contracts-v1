@@ -1,5 +1,6 @@
+use num::{FixedU256, U256};
+
 use crate::{
-    num::{FixedU256, U256},
     vault::{RedemptionRate, SharesAmount},
     Rate,
 };
@@ -552,12 +553,9 @@ fn withdraw_vault_collateral(
 ) -> Option<(Vault, SharesAmount)> {
     let shares = redemption_rate.checked_deposits_to_shares(amount)?;
 
-    // vault.collateral_pool.shares = vault.collateral_pool.shares.checked_sub(shares)?;
+    vault.collateral_pool.shares = vault.collateral_pool.shares.checked_sub(shares)?;
 
-    // vault.collateral_pool.quota = vault.collateral_pool.quota.checked_sub(amount)?;
-    vault.collateral_pool.shares = dbg!(vault.collateral_pool.shares).checked_sub(dbg!(shares))?;
-
-    vault.collateral_pool.quota = dbg!(vault.collateral_pool.quota).checked_sub(dbg!(amount))?;
+    vault.collateral_pool.quota = vault.collateral_pool.quota.checked_sub(amount)?;
 
     Some((vault, shares))
 }
@@ -690,13 +688,9 @@ pub fn self_liquidate(
     // the amount to withdraw is the difference between collateral and debt
     let withdraw_amount = cdp.collateral.abs_diff(cdp.debt);
 
-    dbg!();
-
     // withdraw an equivalent amount of collateral as there is debt from the vault collateral pool
     let (vault, shares) =
         withdraw_vault_collateral(vault, redemption_rate, cdp.debt).ok_or(LossError)?;
-
-    dbg!();
 
     // add the shares/amount to the reserve pool
     let vault = add_vault_reserves(vault, cdp.debt, shares);
