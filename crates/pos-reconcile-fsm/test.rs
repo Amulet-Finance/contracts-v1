@@ -472,3 +472,86 @@ fn withdraw_rewards_only() {
             )"#]]
     );
 }
+
+#[test]
+fn pending_unbond_only() {
+    let mut ctx = Context {
+        phase: Some(Phase::StartReconcile),
+        state: Some(State::Idle),
+        last_reconcile_height: Some(LastReconcileHeight(0)),
+        delegated: Some(Delegated(1_000_000)),
+        pending_unbond: Some(PendingUnbond(500_000)),
+        ..Default::default()
+    };
+
+    progress_fsm!(
+        ctx,
+        expect![[r#"
+            (
+              cmds: [
+                InflightUnbond((500000)),
+                MsgSuccessCount((0)),
+                MsgIssuedCount((5)),
+                Phase(Undelegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Undelegate((0), 100004),
+                  Undelegate((1), 99999),
+                  Undelegate((2), 99999),
+                  Undelegate((3), 99999),
+                  Undelegate((4), 99999),
+                ],
+              )),
+              tx_skip_count: 0,
+            )"#]]
+    );
+
+    progress_fsm!(
+        ctx,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((500000)),
+                PendingUnbond((0)),
+                InflightUnbond((0)),
+                MsgSuccessCount((0)),
+                MsgIssuedCount((5)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [
+                UnbondComplete(500000),
+              ],
+              tx_msgs: Some((
+                msgs: [
+                  WithdrawRewards((0)),
+                  WithdrawRewards((1)),
+                  WithdrawRewards((2)),
+                  WithdrawRewards((3)),
+                  WithdrawRewards((4)),
+                ],
+              )),
+              tx_skip_count: 2,
+            )"#]]
+    );
+
+    progress_fsm!(
+        ctx,
+        expect![[r#"
+            (
+              cmds: [
+                MsgSuccessCount((0)),
+                MsgIssuedCount((0)),
+                LastReconcileHeight((0)),
+                Phase(StartReconcile),
+                State(Idle),
+              ],
+              events: [],
+              tx_msgs: None,
+              tx_skip_count: 0,
+            )"#]]
+    );
+}
