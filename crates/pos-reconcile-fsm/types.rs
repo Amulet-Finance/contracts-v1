@@ -235,6 +235,7 @@ pub enum Phase {
     SetupRewardsAddress = 0,
     #[display(fmt = "setup_authz")]
     SetupAuthz = 1,
+    #[display(fmt = "start_reconcile")]
     StartReconcile = 2,
     Undelegate = 3,
     #[display(fmt = "transfer_undelegated")]
