@@ -34,7 +34,10 @@ pub fn handle_main_ica_registered(
     }
 
     if deps.storage.delegations_icq().is_none() {
-        let msg = icq::main_ica_delegations_registration_msg(deps.storage);
+        let msg = icq::main_ica_current_delegations_registration_msg(
+            deps.storage,
+            deps.storage.validators(),
+        );
 
         response.messages.push(msg);
     }

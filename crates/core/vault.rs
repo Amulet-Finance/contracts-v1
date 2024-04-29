@@ -523,7 +523,7 @@ impl<'a> Vault for VaultImpl<'a> {
 
         let previous_total_deposits_value = self.offset_total_deposits_value();
 
-        // Deposit the assets, getting their actual value in terms of the underlying strategy token
+        // Value the deposit in terms of the underlying strategy token
         let deposit_value = self.strategy.deposit_value(deposit_amount);
 
         let total_shares_issued = self.mint.total_shares_issued();

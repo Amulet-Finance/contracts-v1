@@ -249,6 +249,14 @@ pub fn execute_strategy_msg(
 
         StrategyExecuteMsg::ReceiveUndelegated {} => strategy::handle_receive_unbonded(deps, info),
 
+        StrategyExecuteMsg::RedelegateSlot { slot, validator } => {
+            let repository = AdminRepository::new(deps.storage);
+
+            admin::get_admin_role(&repository, &info)?;
+
+            strategy::handle_redelegate_slot(deps, info, slot, validator)
+        }
+
         StrategyExecuteMsg::RestoreIca { id } => {
             let Some(ica) = Ica::from_id(&id) else {
                 bail!("unrecognised ica id: {id}");
@@ -289,7 +297,7 @@ pub fn execute_strategy_msg(
         } => {
             let repository = AdminRepository::new(deps.storage);
 
-            admin::get_admin_role(&repository, info)?;
+            admin::get_admin_role(&repository, &info)?;
 
             if let Some(v) = estimated_block_interval_seconds {
                 deps.storage.set_estimated_block_interval_seconds(v);
@@ -453,7 +461,13 @@ pub fn reply(deps: DepsMut, _env: Env, reply: Reply) -> Result<Response<NeutronM
     let ReplyState { kind, ica } = ReplyState::from(reply.id);
 
     match kind {
-        ReplyKind::RegisterDelegationIcq => reply::handle_register_delegations_icq(deps, reply),
+        ReplyKind::RegisterCurrentSetDelegationsIcq => {
+            reply::handle_register_current_set_delegations_icq(deps, reply)
+        }
+
+        ReplyKind::RegisterNextSetDelegationsIcq => {
+            reply::handle_register_next_set_delegations_icq(deps, reply)
+        }
 
         ReplyKind::RegisterBalanceIcq => reply::handle_register_balance_icq(deps, ica, reply),
     }

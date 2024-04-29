@@ -102,10 +102,10 @@ pub fn handle_query_msg(
 
 pub fn get_admin_role(
     repository: &dyn CoreRepository,
-    info: MessageInfo,
+    info: &MessageInfo,
 ) -> Result<AdminRole, Error> {
     admin(repository)
-        .authorize_admin(info.sender.into_string().into())
+        .authorize_admin(info.sender.clone().into_string().into())
         .map_err(Error::from)
 }
 

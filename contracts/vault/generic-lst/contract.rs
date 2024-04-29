@@ -115,7 +115,7 @@ pub fn execute_strategy_msg(
         StrategyExecuteMsg::SetRedemptionRateOracle { oracle } => {
             let repository = AdminRepository::new(deps.storage);
 
-            let _ = admin::get_admin_role(&repository, info)?;
+            let _ = admin::get_admin_role(&repository, &info)?;
 
             deps.storage.set_lst_redemption_rate_oracle(&oracle);
         }

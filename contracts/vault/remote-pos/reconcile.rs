@@ -3,7 +3,7 @@ use cosmos_sdk_proto::cosmos::{
     authz::v1beta1::{GenericAuthorization, Grant, MsgExec, MsgGrant},
     bank::v1beta1::MsgSend,
     distribution::v1beta1::{MsgSetWithdrawAddress, MsgWithdrawDelegatorReward},
-    staking::v1beta1::{MsgDelegate, MsgUndelegate},
+    staking::v1beta1::{MsgBeginRedelegate, MsgDelegate, MsgUndelegate},
 };
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
@@ -32,14 +32,15 @@ use pos_reconcile_fsm::{
         InflightDelegation, InflightDeposit, InflightFeePayable, InflightRewardsReceivable,
         InflightUnbond, LastReconcileHeight, MaxFeeBps, MaxMsgCount, MsgIssuedCount,
         MsgSuccessCount, Now as ReconcilePosNow, PendingDeposit, PendingUnbond, Phase,
-        ReconcilerFee, RemoteBalance, RemoteBalanceReport, RewardsReceivable, State,
-        UnbondingTimeSecs, UndelegatedBalanceReport, ValidatorSetSize, ValidatorSetSlot, Weights,
+        ReconcilerFee, RedelegationSlot, RemoteBalance, RemoteBalanceReport, RewardsReceivable,
+        State, UnbondingTimeSecs, UndelegatedBalanceReport, ValidatorSetSize, ValidatorSetSlot,
+        Weights,
     },
     AuthzMsg, Cmd as ReconcileCmd, Config, Env as FsmEnv, Event, Fsm, Repository,
     Response as FsmResponse, TxMsg,
 };
 
-use crate::{msg::StrategyExecuteMsg, state::StorageExt as _, types::Ica};
+use crate::{msg::StrategyExecuteMsg, state::StorageExt, types::Ica};
 
 pub enum Status {
     Success,
@@ -88,16 +89,32 @@ impl<'a> Config for StorageWrapper<'a> {
 }
 
 impl<'a> Repository for StorageWrapper<'a> {
-    fn phase(&self) -> Phase {
-        self.storage.reconcile_phase()
+    fn delegated(&self) -> Delegated {
+        self.storage.delegated()
     }
 
-    fn state(&self) -> State {
-        self.storage.reconcile_state()
+    fn inflight_delegation(&self) -> InflightDelegation {
+        self.storage.inflight_delegation()
     }
 
-    fn weights(&self) -> Weights {
-        Weights::new_unchecked(self.storage.validator_weights())
+    fn inflight_deposit(&self) -> InflightDeposit {
+        self.storage.inflight_deposit()
+    }
+
+    fn inflight_fee_payable(&self) -> InflightFeePayable {
+        self.storage.inflight_fee_payable()
+    }
+
+    fn inflight_rewards_receivable(&self) -> InflightRewardsReceivable {
+        self.storage.inflight_rewards_receivable()
+    }
+
+    fn inflight_unbond(&self) -> InflightUnbond {
+        self.storage.inflight_unbond()
+    }
+
+    fn last_reconcile_height(&self) -> Option<LastReconcileHeight> {
+        self.storage.last_reconcile_height()
     }
 
     fn msg_issued_count(&self) -> MsgIssuedCount {
@@ -108,10 +125,6 @@ impl<'a> Repository for StorageWrapper<'a> {
         self.storage.msg_success_count()
     }
 
-    fn delegated(&self) -> Delegated {
-        self.storage.delegated()
-    }
-
     fn pending_deposit(&self) -> PendingDeposit {
         self.storage.pending_deposit()
     }
@@ -120,28 +133,23 @@ impl<'a> Repository for StorageWrapper<'a> {
         self.storage.pending_unbond()
     }
 
-    fn inflight_deposit(&self) -> InflightDeposit {
-        self.storage.inflight_deposit()
+    fn phase(&self) -> Phase {
+        self.storage.reconcile_phase()
     }
 
-    fn inflight_unbond(&self) -> InflightUnbond {
-        self.storage.inflight_unbond()
+    fn state(&self) -> State {
+        self.storage.reconcile_state()
     }
 
-    fn inflight_delegation(&self) -> InflightDelegation {
-        self.storage.inflight_delegation()
+    fn redelegation_slot(&self) -> Option<RedelegationSlot> {
+        self.storage
+            .redelegate_slot()
+            .map(ValidatorSetSlot)
+            .map(RedelegationSlot)
     }
 
-    fn inflight_rewards_receivable(&self) -> InflightRewardsReceivable {
-        self.storage.inflight_rewards_receivable()
-    }
-
-    fn inflight_fee_payable(&self) -> InflightFeePayable {
-        self.storage.inflight_fee_payable()
-    }
-
-    fn last_reconcile_height(&self) -> Option<LastReconcileHeight> {
-        self.storage.last_reconcile_height()
+    fn weights(&self) -> Weights {
+        Weights::new_unchecked(self.storage.validator_weights())
     }
 }
 
@@ -328,6 +336,10 @@ fn handle_reconcile_cmd(storage: &mut dyn Storage, cmd: ReconcileCmd) {
         ReconcileCmd::Delegated(v) => storage.set_delegated(v),
         ReconcileCmd::PendingDeposit(v) => storage.set_pending_deposit(v),
         ReconcileCmd::PendingUnbond(v) => storage.set_pending_unbond(v),
+        ReconcileCmd::ClearRedelegationRequest => {
+            storage.clear_redelegate_slot();
+            storage.clear_redelegate_to();
+        }
     }
 }
 
@@ -518,6 +530,43 @@ fn withdraw_rewards(
     }
 }
 
+fn redelegate(
+    storage: &dyn Storage,
+    ValidatorSetSlot(slot): ValidatorSetSlot,
+    amount: u128,
+) -> ProtobufAny {
+    use cosmos_sdk_proto::cosmos::base::v1beta1::Coin;
+
+    let delegator_address = storage
+        .main_ica_address()
+        .expect("must have a main ica address address for request to be issued");
+
+    let validator_src_address = storage.validator(slot);
+
+    let validator_dst_address = storage
+        .redelegate_to()
+        .expect("must have an 'redelegate to' address for request to be issued");
+
+    let remote_denom = storage.remote_denom();
+
+    let msg = MsgBeginRedelegate {
+        delegator_address,
+        validator_src_address,
+        validator_dst_address,
+        amount: Some(Coin {
+            denom: remote_denom,
+            amount: amount.to_string(),
+        }),
+    };
+
+    let encoded = msg.encode_to_vec();
+
+    ProtobufAny {
+        type_url: MsgBeginRedelegate::type_url(),
+        value: encoded.into(),
+    }
+}
+
 fn undelegate(
     storage: &dyn Storage,
     ValidatorSetSlot(slot): ValidatorSetSlot,
@@ -694,6 +743,12 @@ fn handle_reconcile_tx_msg(
             response.push_main_ica_msg(msg);
         }
 
+        TxMsg::Redelegate(slot, amount) => {
+            let msg = redelegate(storage, slot, amount);
+
+            response.push_main_ica_msg(msg);
+        }
+
         TxMsg::Undelegate(slot, amount) => {
             let msg = undelegate(storage, slot, amount);
 
@@ -752,6 +807,15 @@ fn handle_reconcile_event(storage: &mut dyn Storage, env: &CwEnv, event: Event) 
             storage.set_unbonding_expected_amount(idx, amount);
             storage.set_unbonding_local_expiry(idx, env.block.time.seconds() + unbonding_period);
             storage.set_unbonding_issued_count(idx + 1);
+        }
+
+        // swap in delegations icq for the new set
+        Event::RedelegationSuccessful => {
+            let next_delegations_icq = storage
+                .next_delegations_icq()
+                .expect("always: set during redelegations");
+
+            storage.set_delegations_icq(next_delegations_icq);
         }
 
         _ => {}

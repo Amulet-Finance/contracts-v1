@@ -107,7 +107,7 @@ pub fn handle_execute_msg(
 
     let cmd = match msg {
         ExecuteMsg::CreateSynthetic { ticker, decimals } => {
-            let admin_role = get_admin_role(admin_repository, info)?;
+            let admin_role = get_admin_role(admin_repository, &info)?;
 
             mint.create_synthetic(admin_role, ticker.into(), decimals)?
         }
@@ -118,7 +118,7 @@ pub fn handle_execute_msg(
         } => {
             api.addr_validate(&minter)?;
 
-            let admin_role = get_admin_role(admin_repository, info)?;
+            let admin_role = get_admin_role(admin_repository, &info)?;
 
             mint.set_whitelisted(admin_role, minter.into(), whitelisted)?
         }

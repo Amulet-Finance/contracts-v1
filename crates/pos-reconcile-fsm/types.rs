@@ -237,12 +237,13 @@ pub enum Phase {
     SetupAuthz = 1,
     #[display(fmt = "start_reconcile")]
     StartReconcile = 2,
-    Undelegate = 3,
+    Redelegate = 3,
+    Undelegate = 4,
     #[display(fmt = "transfer_undelegated")]
-    TransferUndelegated = 4,
+    TransferUndelegated = 5,
     #[display(fmt = "transfer_pending_deposits")]
-    TransferPendingDeposits = 5,
-    Delegate = 6,
+    TransferPendingDeposits = 6,
+    Delegate = 7,
 }
 
 impl Phase {
@@ -254,8 +255,8 @@ impl Phase {
     ) -> usize {
         // in addition to one per slot
         let extra_msg_count = match self {
-            // no messages other than `Undelegate`
-            Phase::Undelegate => 0,
+            // no messages other than `{Un, Re}delegate`
+            Phase::Redelegate | Phase::Undelegate => 0,
             // extra messages required: one to send rewards + one to send fee
             Phase::Delegate => 2,
             // no need to continue in these cases:
@@ -283,7 +284,8 @@ impl Phase {
         let next = match self {
             Phase::SetupRewardsAddress => Phase::SetupAuthz,
             Phase::SetupAuthz => Phase::StartReconcile,
-            Phase::StartReconcile => Phase::Undelegate,
+            Phase::StartReconcile => Phase::Redelegate,
+            Phase::Redelegate => Phase::Undelegate,
             Phase::Undelegate => Phase::TransferUndelegated,
             Phase::TransferUndelegated => Phase::TransferPendingDeposits,
             Phase::TransferPendingDeposits => Phase::Delegate,
@@ -329,14 +331,19 @@ impl TryFrom<u8> for Phase {
             0 => Self::SetupRewardsAddress,
             1 => Self::SetupAuthz,
             2 => Self::StartReconcile,
-            3 => Self::Undelegate,
-            4 => Self::TransferUndelegated,
-            5 => Self::TransferPendingDeposits,
-            6 => Self::Delegate,
+            3 => Self::Redelegate,
+            4 => Self::Undelegate,
+            5 => Self::TransferUndelegated,
+            6 => Self::TransferPendingDeposits,
+            7 => Self::Delegate,
             _ => return Err(()),
         })
     }
 }
+
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(serde::Serialize))]
+pub struct RedelegationSlot(pub ValidatorSetSlot);
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(serde::Serialize))]

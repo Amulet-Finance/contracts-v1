@@ -52,11 +52,14 @@ mod key {
     pub const MINIMUM_UNBOND_INTERVAL: &str               = key!("minimum_unbond_interval");
     pub const MSG_ISSUED_COUNT: &str                      = key!("msg_issued_count");
     pub const MSG_SUCCESS_COUNT: &str                     = key!("msg_success_count");
+    pub const NEXT_DELEGATIONS_ICQ: &str                  = key!("next_delegations_icq");
     pub const PENDING_DEPOSIT: &str                       = key!("pending_deposit");
     pub const PENDING_UNBOND: &str                        = key!("pending_unbond");
     pub const RECONCILE_PHASE: &str                       = key!("reconcile_phase");
     pub const RECONCILE_STATE: &str                       = key!("reconcile_state");
     pub const RECONCILE_TRIGGER_ADDRESS: &str             = key!("reconcile_trigger_address");
+    pub const REDELEGATE_SLOT: &str                       = key!("redelegate_slot");
+    pub const REDELEGATE_TO: &str                         = key!("redelegate_to");
     pub const REMOTE_DENOM: &str                          = key!("remote_denom");
     pub const REMOTE_DENOM_DECIMALS: &str                 = key!("remote_denom_decimals");
     pub const REWARDS_ICA_ADDRESS: &str                   = key!("rewards_ica_address");
@@ -366,6 +369,14 @@ pub trait StorageExt: Storage {
         self.set_usize(key::MSG_SUCCESS_COUNT, count);
     }
 
+    fn next_delegations_icq(&self) -> Option<u64> {
+        self.u64_at(key::NEXT_DELEGATIONS_ICQ)
+    }
+
+    fn set_next_delegations_icq(&mut self, icq: u64) {
+        self.set_u64(key::NEXT_DELEGATIONS_ICQ, icq)
+    }
+
     fn pending_deposit(&self) -> PendingDeposit {
         self.u128_at(key::PENDING_DEPOSIT)
             .map(PendingDeposit)
@@ -416,6 +427,30 @@ pub trait StorageExt: Storage {
 
     fn set_reconcile_trigger_address(&mut self, reconcile_trigger_address: &str) {
         self.set_string(key::RECONCILE_TRIGGER_ADDRESS, reconcile_trigger_address);
+    }
+
+    fn redelegate_slot(&self) -> Option<usize> {
+        self.usize_at(key::REDELEGATE_SLOT)
+    }
+
+    fn set_redelegate_slot(&mut self, slot_idx: usize) {
+        self.set_usize(key::REDELEGATE_SLOT, slot_idx)
+    }
+
+    fn clear_redelegate_slot(&mut self) {
+        self.remove(key::REDELEGATE_SLOT.as_bytes())
+    }
+
+    fn redelegate_to(&self) -> Option<String> {
+        self.string_at(key::REDELEGATE_TO)
+    }
+
+    fn set_redelegate_to(&mut self, to: &str) {
+        self.set_string(key::REDELEGATE_TO, to)
+    }
+
+    fn clear_redelegate_to(&mut self) {
+        self.remove(key::REDELEGATE_TO.as_bytes())
     }
 
     fn remote_denom(&self) -> String {

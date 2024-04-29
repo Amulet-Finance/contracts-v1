@@ -46,38 +46,55 @@ pub fn ica_balance_registration_msg(storage: &dyn Storage, ica: Ica) -> SubMsg<N
     )
 }
 
-pub fn main_ica_delegations_registration_msg(storage: &dyn Storage) -> SubMsg<NeutronMsg> {
+fn delegations_registration_msg(
+    storage: &dyn Storage,
+    validator_set: Vec<String>,
+    kind: ReplyKind,
+) -> SubMsg<NeutronMsg> {
     let connection_id = storage.connection_id();
 
     let icq_update_period = storage.icq_update_interval();
-
-    let validator_set_size = storage.validator_set_size();
-
-    let mut validators = Vec::with_capacity(validator_set_size);
-
-    for slot_idx in 0..validator_set_size {
-        let validator = storage.validator(slot_idx);
-        validators.push(validator)
-    }
 
     let Some(ica_address) = storage.main_ica_address() else {
         panic!("{} ICA not registered", Ica::Main.id());
     };
 
-    let delegations_icq_register_msg = new_register_delegator_delegations_query_msg(
+    let msg = new_register_delegator_delegations_query_msg(
         connection_id,
         ica_address,
-        validators,
+        validator_set,
         icq_update_period,
     )
     .expect("infallible message construction");
 
     SubMsg::reply_always(
-        delegations_icq_register_msg,
+        msg,
         ReplyState {
-            kind: ReplyKind::RegisterDelegationIcq,
+            kind,
             ica: Ica::Main,
         }
         .into(),
+    )
+}
+
+pub fn main_ica_current_delegations_registration_msg(
+    storage: &dyn Storage,
+    validator_set: Vec<String>,
+) -> SubMsg<NeutronMsg> {
+    delegations_registration_msg(
+        storage,
+        validator_set,
+        ReplyKind::RegisterCurrentSetDelegationsIcq,
+    )
+}
+
+pub fn main_ica_next_delegations_registration_msg(
+    storage: &dyn Storage,
+    validator_set: Vec<String>,
+) -> SubMsg<NeutronMsg> {
+    delegations_registration_msg(
+        storage,
+        validator_set,
+        ReplyKind::RegisterNextSetDelegationsIcq,
     )
 }

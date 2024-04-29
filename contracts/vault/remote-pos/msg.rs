@@ -86,6 +86,11 @@ pub enum StrategyExecuteMsg {
         fee_recipient: Option<String>,
     },
     ReceiveUndelegated {},
+    /// Admin role required
+    RedelegateSlot {
+        slot: usize,
+        validator: String,
+    },
     /// Restore an ICA - requires submitting the registration fee
     /// Note that this will fail if the channel is open.
     RestoreIca {

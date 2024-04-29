@@ -20,6 +20,7 @@ struct Context {
     last_reconcile_height: Option<LastReconcileHeight>,
     current_height: u64,
     rewards_balance_report: Option<RemoteBalanceReport>,
+    redelegation_request: Option<RedelegationSlot>,
 }
 
 macro_rules! progress_fsm {
@@ -59,6 +60,7 @@ impl Context {
             Cmd::Delegated(v) => self.delegated = Some(v),
             Cmd::PendingDeposit(v) => self.pending_deposit = Some(v),
             Cmd::PendingUnbond(v) => self.pending_unbond = Some(v),
+            Cmd::ClearRedelegationRequest => self.redelegation_request = None,
         }
     }
 
@@ -108,12 +110,60 @@ impl Config for Context {
 }
 
 impl Repository for Context {
+    fn delegated(&self) -> Delegated {
+        self.delegated.unwrap_or_default()
+    }
+
+    fn inflight_delegation(&self) -> InflightDelegation {
+        self.inflight_delegation.unwrap_or_default()
+    }
+
+    fn inflight_deposit(&self) -> InflightDeposit {
+        self.inflight_deposit.unwrap_or_default()
+    }
+
+    fn inflight_fee_payable(&self) -> InflightFeePayable {
+        self.inflight_fee_payable.unwrap_or_default()
+    }
+
+    fn inflight_rewards_receivable(&self) -> InflightRewardsReceivable {
+        self.inflight_rewards_receivable.unwrap_or_default()
+    }
+
+    fn inflight_unbond(&self) -> InflightUnbond {
+        self.inflight_unbond.unwrap_or_default()
+    }
+
+    fn last_reconcile_height(&self) -> Option<LastReconcileHeight> {
+        self.last_reconcile_height
+    }
+
+    fn msg_issued_count(&self) -> MsgIssuedCount {
+        self.msg_issued_count.unwrap_or_default()
+    }
+
+    fn msg_success_count(&self) -> MsgSuccessCount {
+        self.msg_success_count.unwrap_or_default()
+    }
+
+    fn pending_deposit(&self) -> PendingDeposit {
+        self.pending_deposit.unwrap_or_default()
+    }
+
+    fn pending_unbond(&self) -> PendingUnbond {
+        self.pending_unbond.unwrap_or_default()
+    }
+
     fn phase(&self) -> Phase {
         self.phase.unwrap_or_default()
     }
 
     fn state(&self) -> State {
         self.state.unwrap_or_default()
+    }
+
+    fn redelegation_slot(&self) -> Option<RedelegationSlot> {
+        self.redelegation_request.clone()
     }
 
     fn weights(&self) -> Weights {
@@ -127,50 +177,6 @@ impl Repository for Context {
             ])
             .unwrap()
         })
-    }
-
-    fn msg_issued_count(&self) -> MsgIssuedCount {
-        self.msg_issued_count.unwrap_or_default()
-    }
-
-    fn msg_success_count(&self) -> MsgSuccessCount {
-        self.msg_success_count.unwrap_or_default()
-    }
-
-    fn delegated(&self) -> Delegated {
-        self.delegated.unwrap_or_default()
-    }
-
-    fn pending_deposit(&self) -> PendingDeposit {
-        self.pending_deposit.unwrap_or_default()
-    }
-
-    fn inflight_deposit(&self) -> InflightDeposit {
-        self.inflight_deposit.unwrap_or_default()
-    }
-
-    fn pending_unbond(&self) -> PendingUnbond {
-        self.pending_unbond.unwrap_or_default()
-    }
-
-    fn inflight_unbond(&self) -> InflightUnbond {
-        self.inflight_unbond.unwrap_or_default()
-    }
-
-    fn inflight_delegation(&self) -> InflightDelegation {
-        self.inflight_delegation.unwrap_or_default()
-    }
-
-    fn inflight_rewards_receivable(&self) -> InflightRewardsReceivable {
-        self.inflight_rewards_receivable.unwrap_or_default()
-    }
-
-    fn inflight_fee_payable(&self) -> InflightFeePayable {
-        self.inflight_fee_payable.unwrap_or_default()
-    }
-
-    fn last_reconcile_height(&self) -> Option<LastReconcileHeight> {
-        self.last_reconcile_height
     }
 }
 

@@ -339,7 +339,7 @@ pub fn handle_admin_msg<Msg>(
     info: MessageInfo,
     msg: AdminMsg,
 ) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
-    let admin_role = get_admin_role(admin_repository, info)?;
+    let admin_role = get_admin_role(admin_repository, &info)?;
 
     let config = configure(vaults, mint);
 

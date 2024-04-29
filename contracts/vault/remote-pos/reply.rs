@@ -8,15 +8,17 @@ use crate::{state::StorageExt, types::Ica};
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum Kind {
-    RegisterDelegationIcq = 0,
+    RegisterCurrentSetDelegationsIcq = 0,
     RegisterBalanceIcq = 1,
+    RegisterNextSetDelegationsIcq = 2,
 }
 
 impl From<u8> for Kind {
     fn from(value: u8) -> Self {
         match value {
-            0 => Self::RegisterDelegationIcq,
+            0 => Self::RegisterCurrentSetDelegationsIcq,
             1 => Self::RegisterBalanceIcq,
+            2 => Self::RegisterNextSetDelegationsIcq,
             _ => panic!("unexpected kind: {value}"),
         }
     }
@@ -67,7 +69,18 @@ fn parse_icq_registration_reply(reply: Reply) -> u64 {
     msg.id
 }
 
-pub fn handle_register_delegations_icq(
+pub fn handle_register_current_set_delegations_icq(
+    deps: DepsMut,
+    reply: Reply,
+) -> Result<Response<NeutronMsg>> {
+    let delegations_icq_id = parse_icq_registration_reply(reply);
+
+    deps.storage.set_delegations_icq(delegations_icq_id);
+
+    Ok(Response::default())
+}
+
+pub fn handle_register_next_set_delegations_icq(
     deps: DepsMut,
     reply: Reply,
 ) -> Result<Response<NeutronMsg>> {

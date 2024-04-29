@@ -7,8 +7,9 @@ use types::{
     FeePaymentCooldownBlocks, FeeRecipient, InflightDelegation, InflightDeposit,
     InflightFeePayable, InflightRewardsReceivable, InflightUnbond, LastReconcileHeight, MaxFeeBps,
     MaxMsgCount, MsgIssuedCount, MsgSuccessCount, Now, PendingDeposit, PendingUnbond, Phase,
-    ReconcilerFee, RemoteBalance, RemoteBalanceReport, RewardsReceivable, State, UnbondingTimeSecs,
-    UndelegatedBalanceReport, ValidatorSetSize, ValidatorSetSlot, Weight, Weights,
+    ReconcilerFee, RedelegationSlot, RemoteBalance, RemoteBalanceReport, RewardsReceivable, State,
+    UnbondingTimeSecs, UndelegatedBalanceReport, ValidatorSetSize, ValidatorSetSlot, Weight,
+    Weights,
 };
 
 /// Access fixed config
@@ -28,33 +29,35 @@ pub trait Config {
 
 /// Access mutable storage
 pub trait Repository {
-    fn phase(&self) -> Phase;
+    fn delegated(&self) -> Delegated;
 
-    fn state(&self) -> State;
+    fn inflight_delegation(&self) -> InflightDelegation;
 
-    fn weights(&self) -> Weights;
+    fn inflight_deposit(&self) -> InflightDeposit;
+
+    fn inflight_fee_payable(&self) -> InflightFeePayable;
+
+    fn inflight_rewards_receivable(&self) -> InflightRewardsReceivable;
+
+    fn inflight_unbond(&self) -> InflightUnbond;
+
+    fn last_reconcile_height(&self) -> Option<LastReconcileHeight>;
 
     fn msg_issued_count(&self) -> MsgIssuedCount;
 
     fn msg_success_count(&self) -> MsgSuccessCount;
 
-    fn delegated(&self) -> Delegated;
-
     fn pending_deposit(&self) -> PendingDeposit;
-
-    fn inflight_deposit(&self) -> InflightDeposit;
 
     fn pending_unbond(&self) -> PendingUnbond;
 
-    fn inflight_unbond(&self) -> InflightUnbond;
+    fn phase(&self) -> Phase;
 
-    fn inflight_delegation(&self) -> InflightDelegation;
+    fn state(&self) -> State;
 
-    fn inflight_rewards_receivable(&self) -> InflightRewardsReceivable;
+    fn redelegation_slot(&self) -> Option<RedelegationSlot>;
 
-    fn inflight_fee_payable(&self) -> InflightFeePayable;
-
-    fn last_reconcile_height(&self) -> Option<LastReconcileHeight>;
+    fn weights(&self) -> Weights;
 }
 
 /// Access current environment
@@ -102,6 +105,7 @@ pub enum TxMsg {
     TransferInUndelegated(u128),
     TransferOutPendingDeposit(u128),
     WithdrawRewards(ValidatorSetSlot),
+    Redelegate(ValidatorSetSlot, u128),
     Undelegate(ValidatorSetSlot, u128),
     Delegate(ValidatorSetSlot, u128),
     Authz(Vec<AuthzMsg>),
@@ -132,20 +136,21 @@ impl TxMsgs {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(test, derive(serde::Serialize))]
 pub enum Cmd {
-    Phase(Phase),
-    State(State),
-    InflightDeposit(InflightDeposit),
+    ClearRedelegationRequest,
+    Delegated(Delegated),
     InflightDelegation(InflightDelegation),
-    InflightUnbond(InflightUnbond),
-    InflightRewardsReceivable(InflightRewardsReceivable),
+    InflightDeposit(InflightDeposit),
     InflightFeePayable(InflightFeePayable),
+    InflightRewardsReceivable(InflightRewardsReceivable),
+    InflightUnbond(InflightUnbond),
     LastReconcileHeight(LastReconcileHeight),
-    Weights(Weights),
     MsgIssuedCount(MsgIssuedCount),
     MsgSuccessCount(MsgSuccessCount),
-    Delegated(Delegated),
     PendingDeposit(PendingDeposit),
     PendingUnbond(PendingUnbond),
+    Phase(Phase),
+    State(State),
+    Weights(Weights),
 }
 
 macro_rules! set {
@@ -192,6 +197,7 @@ pub enum Event {
     DepositsTransferred(u128),
     UnbondComplete(u128),
     DelegationsIncreased(u128),
+    RedelegationSuccessful,
 }
 
 #[cfg_attr(test, derive(serde::Serialize))]
@@ -317,35 +323,38 @@ impl Transition {
 
 #[derive(Debug, Default)]
 struct Cache {
-    weights: Option<Weights>,
+    clear_redelegation: bool,
     delegated: Option<Delegated>,
+    inflight_delegation: Option<InflightDelegation>,
+    inflight_deposit: Option<InflightDeposit>,
+    inflight_fee_payable: Option<InflightFeePayable>,
+    inflight_rewards_receivable: Option<InflightRewardsReceivable>,
+    inflight_unbond: Option<InflightUnbond>,
+    last_reconcile_height: Option<LastReconcileHeight>,
+    msg_issued_count: Option<MsgIssuedCount>,
+    msg_success_count: Option<MsgSuccessCount>,
     pending_deposit: Option<PendingDeposit>,
     pending_unbond: Option<PendingUnbond>,
-    inflight_deposit: Option<InflightDeposit>,
-    inflight_delegation: Option<InflightDelegation>,
-    inflight_unbond: Option<InflightUnbond>,
-    inflight_rewards_receivable: Option<InflightRewardsReceivable>,
-    inflight_fee_payable: Option<InflightFeePayable>,
-    last_reconcile_height: Option<LastReconcileHeight>,
-    msg_success_count: Option<MsgSuccessCount>,
-    msg_issued_count: Option<MsgIssuedCount>,
+    weights: Option<Weights>,
 }
 
 impl Cache {
     fn into_cmds(self) -> Vec<Cmd> {
         [
-            self.weights.map(Cmd::from),
+            self.clear_redelegation
+                .then_some(Cmd::ClearRedelegationRequest),
             self.delegated.map(Cmd::from),
+            self.inflight_delegation.map(Cmd::from),
+            self.inflight_deposit.map(Cmd::from),
+            self.inflight_fee_payable.map(Cmd::from),
+            self.inflight_rewards_receivable.map(Cmd::from),
+            self.inflight_unbond.map(Cmd::from),
+            self.last_reconcile_height.map(Cmd::from),
+            self.msg_issued_count.map(Cmd::from),
+            self.msg_success_count.map(Cmd::from),
             self.pending_deposit.map(Cmd::from),
             self.pending_unbond.map(Cmd::from),
-            self.inflight_deposit.map(Cmd::from),
-            self.inflight_delegation.map(Cmd::from),
-            self.inflight_unbond.map(Cmd::from),
-            self.inflight_rewards_receivable.map(Cmd::from),
-            self.inflight_fee_payable.map(Cmd::from),
-            self.last_reconcile_height.map(Cmd::from),
-            self.msg_success_count.map(Cmd::from),
-            self.msg_issued_count.map(Cmd::from),
+            self.weights.map(Cmd::from),
         ]
         .into_iter()
         .flatten()
@@ -361,6 +370,7 @@ struct IntermediateState<'a> {
 impl<'a> IntermediateState<'a> {
     fn handle_cmd(&mut self, cmd: Cmd) {
         match cmd {
+            Cmd::ClearRedelegationRequest => self.cache.clear_redelegation = true,
             Cmd::InflightDeposit(v) => self.cache.inflight_deposit = Some(v),
             Cmd::InflightDelegation(v) => self.cache.inflight_delegation = Some(v),
             Cmd::InflightUnbond(v) => self.cache.inflight_unbond = Some(v),
@@ -379,19 +389,46 @@ impl<'a> IntermediateState<'a> {
 }
 
 impl<'a> Repository for IntermediateState<'a> {
-    fn phase(&self) -> Phase {
-        self.repo.phase()
-    }
-
-    fn state(&self) -> State {
-        self.repo.state()
-    }
-
-    fn weights(&self) -> Weights {
+    fn delegated(&self) -> Delegated {
         self.cache
-            .weights
-            .clone()
-            .unwrap_or_else(|| self.repo.weights())
+            .delegated
+            .unwrap_or_else(|| self.repo.delegated())
+    }
+
+    fn inflight_delegation(&self) -> InflightDelegation {
+        self.cache
+            .inflight_delegation
+            .unwrap_or_else(|| self.repo.inflight_delegation())
+    }
+
+    fn inflight_deposit(&self) -> InflightDeposit {
+        self.cache
+            .inflight_deposit
+            .unwrap_or_else(|| self.repo.inflight_deposit())
+    }
+
+    fn inflight_fee_payable(&self) -> InflightFeePayable {
+        self.cache
+            .inflight_fee_payable
+            .unwrap_or_else(|| self.repo.inflight_fee_payable())
+    }
+
+    fn inflight_rewards_receivable(&self) -> InflightRewardsReceivable {
+        self.cache
+            .inflight_rewards_receivable
+            .unwrap_or_else(|| self.repo.inflight_rewards_receivable())
+    }
+
+    fn inflight_unbond(&self) -> InflightUnbond {
+        self.cache
+            .inflight_unbond
+            .unwrap_or_else(|| self.repo.inflight_unbond())
+    }
+
+    fn last_reconcile_height(&self) -> Option<LastReconcileHeight> {
+        self.cache
+            .last_reconcile_height
+            .or_else(|| self.repo.last_reconcile_height())
     }
 
     fn msg_issued_count(&self) -> MsgIssuedCount {
@@ -406,22 +443,10 @@ impl<'a> Repository for IntermediateState<'a> {
             .unwrap_or_else(|| self.repo.msg_success_count())
     }
 
-    fn delegated(&self) -> Delegated {
-        self.cache
-            .delegated
-            .unwrap_or_else(|| self.repo.delegated())
-    }
-
     fn pending_deposit(&self) -> PendingDeposit {
         self.cache
             .pending_deposit
             .unwrap_or_else(|| self.repo.pending_deposit())
-    }
-
-    fn inflight_deposit(&self) -> InflightDeposit {
-        self.cache
-            .inflight_deposit
-            .unwrap_or_else(|| self.repo.inflight_deposit())
     }
 
     fn pending_unbond(&self) -> PendingUnbond {
@@ -430,34 +455,27 @@ impl<'a> Repository for IntermediateState<'a> {
             .unwrap_or_else(|| self.repo.pending_unbond())
     }
 
-    fn inflight_unbond(&self) -> InflightUnbond {
-        self.cache
-            .inflight_unbond
-            .unwrap_or_else(|| self.repo.inflight_unbond())
+    fn phase(&self) -> Phase {
+        self.repo.phase()
     }
 
-    fn inflight_delegation(&self) -> InflightDelegation {
-        self.cache
-            .inflight_delegation
-            .unwrap_or_else(|| self.repo.inflight_delegation())
+    fn state(&self) -> State {
+        self.repo.state()
     }
 
-    fn inflight_rewards_receivable(&self) -> InflightRewardsReceivable {
-        self.cache
-            .inflight_rewards_receivable
-            .unwrap_or_else(|| self.repo.inflight_rewards_receivable())
+    fn redelegation_slot(&self) -> Option<RedelegationSlot> {
+        if self.cache.clear_redelegation {
+            return None;
+        }
+
+        self.repo.redelegation_slot()
     }
 
-    fn inflight_fee_payable(&self) -> InflightFeePayable {
+    fn weights(&self) -> Weights {
         self.cache
-            .inflight_fee_payable
-            .unwrap_or_else(|| self.repo.inflight_fee_payable())
-    }
-
-    fn last_reconcile_height(&self) -> Option<LastReconcileHeight> {
-        self.cache
-            .last_reconcile_height
-            .or_else(|| self.repo.last_reconcile_height())
+            .weights
+            .clone()
+            .unwrap_or_else(|| self.repo.weights())
     }
 }
 
@@ -577,6 +595,51 @@ fn start_reconcile(_config: &dyn Config, repo: &dyn Repository, env: &dyn Env) -
     let cmds = set![slashing.adjusted_weights, Delegated(slashing.delegated)];
 
     Transition::next(cmds)
+}
+
+fn start_redelegate(_config: &dyn Config, repo: &dyn Repository, env: &dyn Env) -> Transition {
+    let Some(LastReconcileHeight(last_reconcile_height)) = repo.last_reconcile_height() else {
+        return Transition::next(vec![]);
+    };
+
+    let Some(RedelegationSlot(ValidatorSetSlot(slot))) = repo.redelegation_slot() else {
+        return Transition::next(vec![]);
+    };
+
+    let Some(delegations) = env.delegations_report() else {
+        return Transition::next(vec![]);
+    };
+
+    // we can only use delegations after the previous reconciliation
+    if delegations.height <= last_reconcile_height {
+        return Transition::next(vec![]);
+    }
+
+    let delegated_amount = delegations
+        .delegated_amounts_per_slot
+        .get(slot)
+        .expect("valid slot index");
+
+    let tx_msgs = TxMsgs::one(TxMsg::Redelegate(ValidatorSetSlot(slot), *delegated_amount));
+
+    Transition::tx(tx_msgs, vec![])
+}
+
+fn on_redelegate_success(
+    _config: &dyn Config,
+    _repo: &dyn Repository,
+    _env: &dyn Env,
+) -> Transition {
+    Transition::next(set![Cmd::ClearRedelegationRequest]).event(Event::RedelegationSuccessful)
+}
+
+// Do not retry on failure, clear request and move on
+fn on_redelegate_failure(
+    _config: &dyn Config,
+    _repo: &dyn Repository,
+    _env: &dyn Env,
+) -> Transition {
+    Transition::next(set![Cmd::ClearRedelegationRequest])
 }
 
 fn undelegate_phase_msgs(weights: &Weights, unbond_amount: u128) -> impl Iterator<Item = TxMsg> {
@@ -751,13 +814,9 @@ fn delegate_phase_balances(
         return delegate_deposits_only();
     };
 
-    dbg!();
-
     let Some(total_rewards) = env.rewards_balance(last_reconcile_height) else {
         return delegate_deposits_only();
     };
-
-    dbg!(total_rewards);
 
     let InflightDeposit(inflight_deposit) = repo.inflight_deposit();
 
@@ -900,6 +959,9 @@ fn handler(phase: Phase, state: State) -> Handler {
         (Phase::SetupAuthz, State::Idle | State::Failed) => start_setup_authz,
         (Phase::SetupAuthz, State::Pending) => on_setup_authz_success,
         (Phase::StartReconcile, _) => start_reconcile,
+        (Phase::Redelegate, State::Idle) => start_redelegate,
+        (Phase::Redelegate, State::Pending) => on_redelegate_success,
+        (Phase::Redelegate, State::Failed) => on_redelegate_failure,
         (Phase::Undelegate, State::Idle) => start_undelegate,
         (Phase::Undelegate, State::Pending) => on_undelegate_success,
         (Phase::Undelegate, State::Failed) => retry_undelegate,

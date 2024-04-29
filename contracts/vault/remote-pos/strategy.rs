@@ -1,8 +1,8 @@
-use amulet_ntrn::query::QuerierExt as _;
+use amulet_ntrn::query::QuerierExt;
 use anyhow::{bail, Result};
 use bech32::{Bech32, Hrp};
 use cosmwasm_std::{
-    coins, BankMsg, CosmosMsg, DepsMut, Env, MessageInfo, Response, Storage, Timestamp,
+    coins, BankMsg, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Response, Storage, Timestamp,
 };
 
 use amulet_core::{
@@ -295,6 +295,47 @@ pub fn handle_receive_unbonded(
     Ok(Response::default())
 }
 
+fn must_pay_icq_deposit(deps: Deps<NeutronQuery>, info: &MessageInfo) -> Result<()> {
+    let icq_deposit = deps.querier.interchain_query_deposit()?;
+
+    let sender_deposit = must_pay(info, &icq_deposit.denom)?;
+
+    if sender_deposit != icq_deposit.amount {
+        bail!(
+            "insufficient ICQ deposit: received '{sender_deposit}{denom}', expected '{expected_deposit}{denom}'",
+            expected_deposit = icq_deposit.amount,
+            denom = icq_deposit.denom,
+        )
+    }
+
+    Ok(())
+}
+
+pub fn handle_redelegate_slot(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    slot: usize,
+    validator: String,
+) -> Result<Response<NeutronMsg>> {
+    if deps.storage.redelegate_slot().is_some() {
+        bail!("another redelegation is pending");
+    }
+
+    must_pay_icq_deposit(deps.as_ref(), &info)?;
+
+    let mut validators = deps.storage.validators();
+
+    let Some(slot_validator) = validators.get_mut(slot) else {
+        bail!("invalid slot index");
+    };
+
+    *slot_validator = validator;
+
+    let msg = icq::main_ica_next_delegations_registration_msg(deps.storage, validators);
+
+    Ok(Response::default().add_submessage(msg))
+}
+
 pub fn handle_restore_ica(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
@@ -328,22 +369,15 @@ pub fn handle_restore_icq(
     info: MessageInfo,
     icq: Icq,
 ) -> Result<Response<NeutronMsg>> {
-    let icq_deposit = deps.querier.interchain_query_deposit()?;
-
-    let sender_deposit = must_pay(&info, &icq_deposit.denom)?;
-
-    if sender_deposit != icq_deposit.amount {
-        bail!(
-            "insufficient ICQ deposit: received '{sender_deposit}{denom}', expected '{expected_deposit}{denom}'",
-            expected_deposit = icq_deposit.amount,
-            denom = icq_deposit.denom,
-        )
-    }
+    must_pay_icq_deposit(deps.as_ref(), &info)?;
 
     let msg = match icq {
         Icq::MainBalance => icq::ica_balance_registration_msg(deps.storage, Ica::Main),
         Icq::RewardsBalance => icq::ica_balance_registration_msg(deps.storage, Ica::Rewards),
-        Icq::MainDelegations => icq::main_ica_delegations_registration_msg(deps.storage),
+        Icq::MainDelegations => icq::main_ica_current_delegations_registration_msg(
+            deps.storage,
+            deps.storage.validators(),
+        ),
     };
 
     Ok(Response::default().add_submessage(msg))
