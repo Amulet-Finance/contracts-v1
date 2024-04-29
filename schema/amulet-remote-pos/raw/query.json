@@ -1,0 +1,231 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QueryMsg",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/QueryMsg"
+    },
+    {
+      "$ref": "#/definitions/QueryMsg2"
+    },
+    {
+      "$ref": "#/definitions/StrategyQueryMsg"
+    }
+  ],
+  "definitions": {
+    "QueryMsg": {
+      "oneOf": [
+        {
+          "description": "Returns the current admin role holder",
+          "type": "object",
+          "required": [
+            "current_admin"
+          ],
+          "properties": {
+            "current_admin": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Returns the pending admin role holder",
+          "type": "object",
+          "required": [
+            "pending_admin"
+          ],
+          "properties": {
+            "pending_admin": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "QueryMsg2": {
+      "oneOf": [
+        {
+          "description": "Returns the state of the vault, i.e. total shares issued & total deposit value",
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Returns the pending unbonding for the given address if present, otherwise the whole contract",
+          "type": "object",
+          "required": [
+            "pending_unbonding"
+          ],
+          "properties": {
+            "pending_unbonding": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Returns all the unbondings for the given address if present, otherwise the whole contract",
+          "type": "object",
+          "required": [
+            "active_unbondings"
+          ],
+          "properties": {
+            "active_unbondings": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Returns the current claimable balance for the address",
+          "type": "object",
+          "required": [
+            "claimable"
+          ],
+          "properties": {
+            "claimable": {
+              "type": "object",
+              "required": [
+                "address"
+              ],
+              "properties": {
+                "address": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Returns the underlying asset decimals that the vault deposit value is denominated with",
+          "type": "object",
+          "required": [
+            "underlying_asset_decimals"
+          ],
+          "properties": {
+            "underlying_asset_decimals": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Returns the asset that the vault accepts for deposit",
+          "type": "object",
+          "required": [
+            "deposit_asset"
+          ],
+          "properties": {
+            "deposit_asset": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Returns the shares asset issued by the vault",
+          "type": "object",
+          "required": [
+            "shares_asset"
+          ],
+          "properties": {
+            "shares_asset": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "StrategyQueryMsg": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "config"
+          ],
+          "properties": {
+            "config": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "metadata"
+          ],
+          "properties": {
+            "metadata": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "reconcile_state"
+          ],
+          "properties": {
+            "reconcile_state": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "validator_set"
+          ],
+          "properties": {
+            "validator_set": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

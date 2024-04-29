@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Config",
+  "type": "object",
+  "required": [
+    "connection_id",
+    "estimated_block_interval_seconds",
+    "fee_bps_block_increment",
+    "fee_payment_cooldown_blocks",
+    "icq_update_interval",
+    "interchain_tx_timeout_seconds",
+    "max_fee_bps",
+    "max_unbonding_entries",
+    "remote_denom",
+    "remote_denom_decimals",
+    "transfer_in_channel",
+    "transfer_in_timeout_seconds",
+    "transfer_out_channel",
+    "transfer_out_timeout_seconds",
+    "unbonding_period"
+  ],
+  "properties": {
+    "connection_id": {
+      "type": "string"
+    },
+    "estimated_block_interval_seconds": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "fee_bps_block_increment": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "fee_payment_cooldown_blocks": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "icq_update_interval": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "interchain_tx_timeout_seconds": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "max_fee_bps": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "max_unbonding_entries": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "remote_denom": {
+      "type": "string"
+    },
+    "remote_denom_decimals": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "transfer_in_channel": {
+      "type": "string"
+    },
+    "transfer_in_timeout_seconds": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "transfer_out_channel": {
+      "type": "string"
+    },
+    "transfer_out_timeout_seconds": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "unbonding_period": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    }
+  },
+  "additionalProperties": false
+}

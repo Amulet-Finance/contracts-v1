@@ -1,0 +1,329 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecuteMsg",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/ExecuteMsg"
+    },
+    {
+      "$ref": "#/definitions/ExecuteMsg2"
+    },
+    {
+      "$ref": "#/definitions/StrategyExecuteMsg"
+    }
+  ],
+  "definitions": {
+    "ExecuteMsg": {
+      "oneOf": [
+        {
+          "description": "Transfer admin role to a new address",
+          "type": "object",
+          "required": [
+            "transfer_admin_role"
+          ],
+          "properties": {
+            "transfer_admin_role": {
+              "type": "object",
+              "required": [
+                "next_admin"
+              ],
+              "properties": {
+                "next_admin": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Complete admin role transferral",
+          "type": "object",
+          "required": [
+            "claim_admin_role"
+          ],
+          "properties": {
+            "claim_admin_role": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Cancel admin role transferral",
+          "type": "object",
+          "required": [
+            "cancel_role_transfer"
+          ],
+          "properties": {
+            "cancel_role_transfer": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ExecuteMsg2": {
+      "oneOf": [
+        {
+          "description": "Deposit native tokens into the vault, the sender receives the issued shares Responds with [DepositResponse]",
+          "type": "object",
+          "required": [
+            "deposit"
+          ],
+          "properties": {
+            "deposit": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Donate native tokens to the vault",
+          "type": "object",
+          "required": [
+            "donate"
+          ],
+          "properties": {
+            "donate": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Allow one party to burn shares so that another party may claim the underlying deposits",
+          "type": "object",
+          "required": [
+            "redeem"
+          ],
+          "properties": {
+            "redeem": {
+              "type": "object",
+              "required": [
+                "recipient"
+              ],
+              "properties": {
+                "recipient": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Attempt to start any pending unbondings",
+          "type": "object",
+          "required": [
+            "start_unbond"
+          ],
+          "properties": {
+            "start_unbond": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Claim any unclaimed unbonded underlying tokens belonging to the sender",
+          "type": "object",
+          "required": [
+            "claim"
+          ],
+          "properties": {
+            "claim": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "StrategyExecuteMsg": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "reconcile"
+          ],
+          "properties": {
+            "reconcile": {
+              "type": "object",
+              "properties": {
+                "fee_recipient": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "receive_undelegated"
+          ],
+          "properties": {
+            "receive_undelegated": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Restore an ICA - requires submitting the registration fee Note that this will fail if the channel is open.",
+          "type": "object",
+          "required": [
+            "restore_ica"
+          ],
+          "properties": {
+            "restore_ica": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Restore an ICQ channel - requires submitting the deposit Note that this will fail if the channel is open.",
+          "type": "object",
+          "required": [
+            "restore_icq"
+          ],
+          "properties": {
+            "restore_icq": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Query the x/interchain-txs params for the max msg count and reset cached value",
+          "type": "object",
+          "required": [
+            "reset_max_msg_count"
+          ],
+          "properties": {
+            "reset_max_msg_count": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Admin role required",
+          "type": "object",
+          "required": [
+            "update_config"
+          ],
+          "properties": {
+            "update_config": {
+              "type": "object",
+              "properties": {
+                "estimated_block_interval_seconds": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "fee_bps_block_increment": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "fee_payment_cooldown_blocks": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "icq_update_interval": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "interchain_tx_timeout_seconds": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "max_fee_bps": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0.0
+                },
+                "transfer_in_timeout_seconds": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "transfer_out_timeout_seconds": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0.0
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
