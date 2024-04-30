@@ -43,6 +43,16 @@ macro_rules! progress_fsm {
     }};
 }
 
+macro_rules! failure {
+    ($ctx:ident) => {{
+        let response = fsm(&$ctx, &$ctx, &$ctx).failed();
+
+        for cmd in response.cmds {
+            $ctx.handle_cmd(cmd);
+        }
+    }};
+}
+
 impl Context {
     fn handle_cmd(&mut self, cmd: Cmd) {
         match cmd {
@@ -240,94 +250,94 @@ fn initial_deposit() {
     progress_fsm!(
         ctx,
         expect![[r#"
-                (
-                  cmds: [
-                    MsgSuccessCount((0)),
-                    MsgIssuedCount((1)),
-                    Phase(SetupAuthz),
-                    State(Pending),
-                  ],
-                  events: [],
-                  tx_msgs: Some((
-                    msgs: [
-                      GrantAuthzSend("rewards_account", "delegation_account"),
-                    ],
-                  )),
-                  tx_skip_count: 0,
-                )"#]]
+            (
+              cmds: [
+                MsgIssuedCount((1)),
+                MsgSuccessCount((0)),
+                Phase(SetupAuthz),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  GrantAuthzSend("rewards_account", "delegation_account"),
+                ],
+              )),
+              tx_skip_count: 0,
+            )"#]]
     );
 
     progress_fsm!(
         ctx,
         expect![[r#"
-                (
-                  cmds: [
-                    InflightDeposit((200)),
-                    MsgSuccessCount((0)),
-                    MsgIssuedCount((1)),
-                    Phase(TransferPendingDeposits),
-                    State(Pending),
-                  ],
-                  events: [],
-                  tx_msgs: Some((
-                    msgs: [
-                      TransferOutPendingDeposit(200),
-                    ],
-                  )),
-                  tx_skip_count: 2,
-                )"#]]
+            (
+              cmds: [
+                InflightDeposit((200)),
+                MsgIssuedCount((1)),
+                MsgSuccessCount((0)),
+                Phase(TransferPendingDeposits),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  TransferOutPendingDeposit(200),
+                ],
+              )),
+              tx_skip_count: 3,
+            )"#]]
     );
 
     progress_fsm!(
         ctx,
         expect![[r#"
-                (
-                  cmds: [
-                    PendingDeposit((0)),
-                    InflightDelegation((200)),
-                    MsgSuccessCount((0)),
-                    MsgIssuedCount((5)),
-                    Phase(Delegate),
-                    State(Pending),
-                  ],
-                  events: [
-                    DepositsTransferred(200),
-                  ],
-                  tx_msgs: Some((
-                    msgs: [
-                      Delegate((0), 44),
-                      Delegate((1), 39),
-                      Delegate((2), 39),
-                      Delegate((3), 39),
-                      Delegate((4), 39),
-                    ],
-                  )),
-                  tx_skip_count: 0,
-                )"#]]
+            (
+              cmds: [
+                InflightDelegation((200)),
+                MsgIssuedCount((5)),
+                MsgSuccessCount((0)),
+                PendingDeposit((0)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [
+                DepositsTransferred(200),
+              ],
+              tx_msgs: Some((
+                msgs: [
+                  Delegate((0), 44),
+                  Delegate((1), 39),
+                  Delegate((2), 39),
+                  Delegate((3), 39),
+                  Delegate((4), 39),
+                ],
+              )),
+              tx_skip_count: 0,
+            )"#]]
     );
 
     progress_fsm!(
         ctx,
         expect![[r#"
-                (
-                  cmds: [
-                    Delegated((200)),
-                    InflightDeposit((0)),
-                    InflightDelegation((0)),
-                    InflightRewardsReceivable((0)),
-                    InflightFeePayable((0)),
-                    MsgSuccessCount((0)),
-                    MsgIssuedCount((0)),
-                    LastReconcileHeight((0)),
-                    Phase(StartReconcile),
-                    State(Idle),
-                  ],
-                  events: [
-                    DelegationsIncreased(200),
-                  ],
-                  tx_msgs: None,
-                  tx_skip_count: 0,
-                )"#]]
+            (
+              cmds: [
+                Delegated((200)),
+                InflightDelegation((0)),
+                InflightDeposit((0)),
+                InflightFeePayable((0)),
+                InflightRewardsReceivable((0)),
+                MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
+                LastReconcileHeight((0)),
+                Phase(StartReconcile),
+                State(Idle),
+              ],
+              events: [
+                DelegationsIncreased(200),
+              ],
+              tx_msgs: None,
+              tx_skip_count: 0,
+            )"#]]
     );
 }
 
@@ -351,54 +361,54 @@ fn collect_rewards() {
     progress_fsm!(
         ctx,
         expect![[r#"
-                (
-                  cmds: [
-                    InflightDelegation((100)),
-                    InflightRewardsReceivable((100)),
-                    MsgSuccessCount((0)),
-                    MsgIssuedCount((6)),
-                    Phase(Delegate),
-                    State(Pending),
-                  ],
-                  events: [],
-                  tx_msgs: Some((
-                    msgs: [
-                      Authz([
-                        SendRewardsReceivable((100)),
-                      ]),
-                      Delegate((0), 24),
-                      Delegate((1), 19),
-                      Delegate((2), 19),
-                      Delegate((3), 19),
-                      Delegate((4), 19),
-                    ],
-                  )),
-                  tx_skip_count: 3,
-                )"#]]
+            (
+              cmds: [
+                InflightDelegation((100)),
+                InflightRewardsReceivable((100)),
+                MsgIssuedCount((6)),
+                MsgSuccessCount((0)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Authz([
+                    SendRewardsReceivable((100)),
+                  ]),
+                  Delegate((0), 24),
+                  Delegate((1), 19),
+                  Delegate((2), 19),
+                  Delegate((3), 19),
+                  Delegate((4), 19),
+                ],
+              )),
+              tx_skip_count: 4,
+            )"#]]
     );
 
     progress_fsm!(
         ctx,
         expect![[r#"
-                (
-                  cmds: [
-                    Delegated((300)),
-                    InflightDeposit((0)),
-                    InflightDelegation((0)),
-                    InflightRewardsReceivable((0)),
-                    InflightFeePayable((0)),
-                    MsgSuccessCount((0)),
-                    MsgIssuedCount((0)),
-                    LastReconcileHeight((0)),
-                    Phase(StartReconcile),
-                    State(Idle),
-                  ],
-                  events: [
-                    DelegationsIncreased(100),
-                  ],
-                  tx_msgs: None,
-                  tx_skip_count: 0,
-                )"#]]
+            (
+              cmds: [
+                Delegated((300)),
+                InflightDelegation((0)),
+                InflightDeposit((0)),
+                InflightFeePayable((0)),
+                InflightRewardsReceivable((0)),
+                MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
+                LastReconcileHeight((0)),
+                Phase(StartReconcile),
+                State(Idle),
+              ],
+              events: [
+                DelegationsIncreased(100),
+              ],
+              tx_msgs: None,
+              tx_skip_count: 0,
+            )"#]]
     );
 }
 
@@ -413,18 +423,18 @@ fn nothing_to_do() {
     progress_fsm!(
         ctx,
         expect![[r#"
-                (
-                  cmds: [
-                    MsgSuccessCount((0)),
-                    MsgIssuedCount((0)),
-                    LastReconcileHeight((0)),
-                    Phase(StartReconcile),
-                    State(Idle),
-                  ],
-                  events: [],
-                  tx_msgs: None,
-                  tx_skip_count: 4,
-                )"#]]
+            (
+              cmds: [
+                MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
+                LastReconcileHeight((0)),
+                Phase(StartReconcile),
+                State(Idle),
+              ],
+              events: [],
+              tx_msgs: None,
+              tx_skip_count: 5,
+            )"#]]
     );
 }
 
@@ -440,25 +450,25 @@ fn withdraw_rewards_only() {
     progress_fsm!(
         ctx,
         expect![[r#"
-                (
-                  cmds: [
-                    MsgSuccessCount((0)),
-                    MsgIssuedCount((5)),
-                    Phase(Delegate),
-                    State(Pending),
-                  ],
-                  events: [],
-                  tx_msgs: Some((
-                    msgs: [
-                      WithdrawRewards((0)),
-                      WithdrawRewards((1)),
-                      WithdrawRewards((2)),
-                      WithdrawRewards((3)),
-                      WithdrawRewards((4)),
-                    ],
-                  )),
-                  tx_skip_count: 3,
-                )"#]]
+            (
+              cmds: [
+                MsgIssuedCount((5)),
+                MsgSuccessCount((0)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  WithdrawRewards((0)),
+                  WithdrawRewards((1)),
+                  WithdrawRewards((2)),
+                  WithdrawRewards((3)),
+                  WithdrawRewards((4)),
+                ],
+              )),
+              tx_skip_count: 4,
+            )"#]]
     );
 
     progress_fsm!(
@@ -466,8 +476,8 @@ fn withdraw_rewards_only() {
         expect![[r#"
             (
               cmds: [
-                MsgSuccessCount((0)),
                 MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
                 LastReconcileHeight((0)),
                 Phase(StartReconcile),
                 State(Idle),
@@ -496,8 +506,8 @@ fn pending_unbond_only() {
             (
               cmds: [
                 InflightUnbond((500000)),
-                MsgSuccessCount((0)),
                 MsgIssuedCount((5)),
+                MsgSuccessCount((0)),
                 Phase(Undelegate),
                 State(Pending),
               ],
@@ -511,7 +521,7 @@ fn pending_unbond_only() {
                   Undelegate((4), 99999),
                 ],
               )),
-              tx_skip_count: 0,
+              tx_skip_count: 1,
             )"#]]
     );
 
@@ -521,10 +531,10 @@ fn pending_unbond_only() {
             (
               cmds: [
                 Delegated((500000)),
-                PendingUnbond((0)),
                 InflightUnbond((0)),
-                MsgSuccessCount((0)),
                 MsgIssuedCount((5)),
+                MsgSuccessCount((0)),
+                PendingUnbond((0)),
                 Phase(Delegate),
                 State(Pending),
               ],
@@ -549,8 +559,8 @@ fn pending_unbond_only() {
         expect![[r#"
             (
               cmds: [
-                MsgSuccessCount((0)),
                 MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
                 LastReconcileHeight((0)),
                 Phase(StartReconcile),
                 State(Idle),
@@ -560,4 +570,51 @@ fn pending_unbond_only() {
               tx_skip_count: 0,
             )"#]]
     );
+}
+
+#[test]
+#[should_panic]
+fn notify_failure_in_idle_state() {
+    let mut ctx = Context::default();
+
+    failure!(ctx);
+}
+
+#[test]
+fn notify_failure_in_pending_state() {
+    let mut ctx = Context::default();
+
+    progress_fsm!(ctx);
+
+    let response = fsm(&ctx, &ctx, &ctx).failed();
+
+    check(
+        &response,
+        expect![[r#"
+        (
+          cmds: [
+            State(Failed),
+            MsgIssuedCount((0)),
+          ],
+          events: [],
+          tx_msgs: None,
+          tx_skip_count: 0,
+        )"#]],
+    );
+
+    for cmd in response.cmds {
+        ctx.handle_cmd(cmd);
+    }
+}
+
+#[test]
+#[should_panic]
+fn notify_failure_in_failed_state() {
+    let mut ctx = Context::default();
+
+    progress_fsm!(ctx);
+
+    failure!(ctx);
+
+    failure!(ctx);
 }

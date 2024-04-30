@@ -4,17 +4,30 @@ pub type Minter = Identifier;
 pub type Synthetic = Identifier;
 pub type SyntheticAmount = u128;
 
-#[derive(Debug, Clone, PartialEq, Eq, derive_more::Display, derive_more::Deref)]
-#[deref(forward)]
-pub struct Ticker(std::rc::Rc<String>);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ticker {
+    lowercase: std::rc::Rc<String>,
+    original: std::rc::Rc<String>,
+}
 
 impl Ticker {
     pub fn new(ticker: impl AsRef<str>) -> Self {
-        Self(ticker.as_ref().to_lowercase().into())
+        Self {
+            lowercase: ticker.as_ref().to_lowercase().into(),
+            original: ticker.as_ref().to_owned().into(),
+        }
     }
 
     pub fn into_string(self) -> String {
-        std::rc::Rc::unwrap_or_clone(self.0)
+        std::rc::Rc::unwrap_or_clone(self.lowercase)
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.lowercase.as_str()
+    }
+
+    pub fn display(&self) -> &str {
+        self.original.as_str()
     }
 }
 

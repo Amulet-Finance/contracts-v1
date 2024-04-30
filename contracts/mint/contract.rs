@@ -39,13 +39,9 @@ pub fn execute_mint_msg(
         msg,
     )?;
 
-    let mut response = Response::default();
+    let sub_msgs = mint::handle_cmd(deps.storage, TokenFactory::new(&env), cmd);
 
-    if let Some(sub_msg) = mint::handle_cmd(deps.storage, TokenFactory::new(&env), cmd) {
-        response.messages.push(sub_msg);
-    }
-
-    Ok(response)
+    Ok(Response::default().add_submessages(sub_msgs))
 }
 
 pub fn execute_admin_msg(

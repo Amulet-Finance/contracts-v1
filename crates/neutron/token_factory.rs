@@ -3,7 +3,7 @@ use amulet_core::{
     Decimals, Recipient,
 };
 use amulet_cw::mint::TokenFactory as CwTokenFactory;
-use cosmwasm_std::{CosmosMsg, Env};
+use cosmwasm_std::{CosmosMsg, DenomUnit, Env};
 use neutron_sdk::bindings::msg::NeutronMsg;
 
 pub struct TokenFactory<'a>(&'a Env);
@@ -16,11 +16,36 @@ impl<'a> TokenFactory<'a> {
 
 impl<'a> CwTokenFactory<NeutronMsg> for TokenFactory<'a> {
     fn denom(&self, ticker: &Ticker) -> String {
-        format!("factory/{}/{ticker}", self.0.contract.address)
+        format!("factory/{}/{}", self.0.contract.address, ticker.as_str())
     }
 
-    fn create(&self, ticker: Ticker, _: Decimals) -> CosmosMsg<NeutronMsg> {
+    fn create(&self, ticker: Ticker) -> CosmosMsg<NeutronMsg> {
         NeutronMsg::submit_create_denom(ticker).into()
+    }
+
+    fn set_metadata(&self, ticker: &Ticker, decimals: Decimals) -> CosmosMsg<NeutronMsg> {
+        NeutronMsg::SetDenomMetadata {
+            description: "".to_owned(),
+            denom_units: vec![
+                DenomUnit {
+                    denom: self.denom(ticker),
+                    exponent: 0,
+                    aliases: vec![],
+                },
+                DenomUnit {
+                    denom: ticker.display().to_owned(),
+                    exponent: decimals,
+                    aliases: vec![],
+                },
+            ],
+            base: self.denom(ticker),
+            display: ticker.display().to_owned(),
+            name: ticker.display().to_owned(),
+            symbol: ticker.display().to_owned(),
+            uri: String::new(),
+            uri_hash: String::new(),
+        }
+        .into()
     }
 
     fn mint(
@@ -59,10 +84,39 @@ mod test {
     #[test]
     fn create() {
         check(
-            TokenFactory::new(&mock_env()).create(ticker("amNTRN"), 6),
+            TokenFactory::new(&mock_env()).create(ticker("amNTRN")),
             expect![[r#"
                 custom(create_denom(
                   subdenom: "amntrn",
+                ))"#]],
+        );
+    }
+
+    #[test]
+    fn set_metadata() {
+        check(
+            TokenFactory::new(&mock_env()).set_metadata(&ticker("amNTRN"), 6),
+            expect![[r#"
+                custom(set_denom_metadata(
+                  description: "",
+                  denom_units: [
+                    (
+                      denom: "factory/cosmos2contract/amntrn",
+                      exponent: 0,
+                      aliases: [],
+                    ),
+                    (
+                      denom: "amntrn",
+                      exponent: 6,
+                      aliases: [],
+                    ),
+                  ],
+                  base: "factory/cosmos2contract/amntrn",
+                  display: "amNTRN",
+                  name: "",
+                  symbol: "amNTRN",
+                  uri: "",
+                  uri_hash: "",
                 ))"#]],
         );
     }

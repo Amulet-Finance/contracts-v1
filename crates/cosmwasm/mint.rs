@@ -22,7 +22,9 @@ use crate::{
 pub trait TokenFactory<Msg> {
     fn denom(&self, ticker: &Ticker) -> String;
 
-    fn create(&self, ticker: Ticker, decimals: Decimals) -> CosmosMsg<Msg>;
+    fn create(&self, ticker: Ticker) -> CosmosMsg<Msg>;
+
+    fn set_metadata(&self, ticker: &Ticker, decimals: Decimals) -> CosmosMsg<Msg>;
 
     fn mint(
         &self,
@@ -247,7 +249,7 @@ mod key {
 
 impl<'a> CoreMintRepository for Repository<'a> {
     fn ticker_exists(&self, ticker: &Ticker) -> bool {
-        self.0.has_key(key::SYNTHETIC.with(ticker))
+        self.0.has_key(key::SYNTHETIC.with(ticker.as_str()))
     }
 
     fn synthetic_exists(&self, synthetic: &Synthetic) -> bool {
@@ -263,8 +265,8 @@ pub fn handle_cmd<Msg>(
     storage: &mut dyn Storage,
     token_factory: impl TokenFactory<Msg>,
     cmd: Cmd,
-) -> Option<SubMsg<Msg>> {
-    let msg = match cmd {
+) -> Vec<SubMsg<Msg>> {
+    match cmd {
         Cmd::Config(cfg_cmd) => match cfg_cmd {
             ConfigCmd::CreateSynthetic { ticker, decimals } => {
                 let denom = token_factory.denom(&ticker);
@@ -275,19 +277,23 @@ pub fn handle_cmd<Msg>(
 
                 storage.set_u32(key::COUNT, count + 1);
 
-                storage.set_string(key::SYNTHETIC.with(&ticker), &denom);
+                storage.set_string(key::SYNTHETIC.with(ticker.as_str()), &denom);
 
-                storage.set_string(key::TICKER.with(&denom), &ticker);
+                storage.set_string(key::TICKER.with(&denom), ticker.as_str());
 
                 storage.set_u32(key::DECIMALS.with(&denom), decimals);
 
-                token_factory.create(ticker, decimals)
+                let set_metadata_msg = SubMsg::new(token_factory.set_metadata(&ticker, decimals));
+
+                let create_denom_msg = SubMsg::new(token_factory.create(ticker));
+
+                vec![create_denom_msg, set_metadata_msg]
             }
 
             ConfigCmd::Whitelist { minter, enabled } => {
                 storage.set_bool(key::WHITELIST.with(minter), enabled);
 
-                return None;
+                vec![]
             }
         },
 
@@ -296,11 +302,13 @@ pub fn handle_cmd<Msg>(
                 synthetic,
                 amount,
                 recipient,
-            } => token_factory.mint(synthetic, amount, recipient),
+            } => vec![SubMsg::new(
+                token_factory.mint(synthetic, amount, recipient),
+            )],
 
-            MintCmd::Burn { synthetic, amount } => token_factory.burn(synthetic, amount),
+            MintCmd::Burn { synthetic, amount } => {
+                vec![SubMsg::new(token_factory.burn(synthetic, amount))]
+            }
         },
-    };
-
-    Some(SubMsg::new(msg))
+    }
 }

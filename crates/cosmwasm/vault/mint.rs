@@ -1,10 +1,7 @@
 use cosmwasm_std::{CosmosMsg, Env, Storage};
 
 use amulet_core::{
-    vault::{
-        MintCmd, SharesAmount, SharesMint as CoreSharesMint, TotalSharesIssued,
-        SHARES_DECIMAL_PLACES,
-    },
+    vault::{MintCmd, SharesAmount, SharesMint as CoreSharesMint, TotalSharesIssued},
     Asset,
 };
 
@@ -18,7 +15,7 @@ pub struct SharesMint<'a> {
 pub const SHARES_DENOM: &str = "share";
 
 pub fn init_msg<Msg>(factory: impl TokenFactory<Msg>) -> CosmosMsg<Msg> {
-    factory.create(SHARES_DENOM.to_owned().into(), SHARES_DECIMAL_PLACES)
+    factory.create(SHARES_DENOM.to_owned().into())
 }
 
 #[rustfmt::skip]
