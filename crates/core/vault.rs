@@ -433,7 +433,7 @@ impl<'a> ClaimableBatchIter<'a> {
 
         self.highest_id = Some(highest_id);
 
-        let next_id = match self.unbonding_log.last_claimed_batch(self.recipient) {
+        let first_id = match self.unbonding_log.last_claimed_batch(self.recipient) {
             Some(last_claimed_batch) => {
                 let next_id = self
                     .unbonding_log
@@ -452,7 +452,12 @@ impl<'a> ClaimableBatchIter<'a> {
                 .expect("first entered batch id present if last entered batch id present"),
         };
 
-        self.try_batch(highest_id, next_id)
+        // first id could be the currently pending batch
+        if first_id > highest_id {
+            return None;
+        }
+
+        self.try_batch(highest_id, first_id)
     }
 
     fn try_batch(
