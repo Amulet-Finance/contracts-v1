@@ -3,7 +3,7 @@ pub mod unbonding_log;
 
 use amulet_core::{
     vault::{
-        offset_total_deposits_value, pending_batch_id, vault, ClaimableBatchIter, Cmd,
+        offset_total_deposits_value, pending_batch_id, vault, BatchId, ClaimableBatchIter, Cmd,
         DepositResponse as CoreDepositResponse, Error as CoreVaultError,
         SharesMint as CoreSharesMint, Strategy, UnbondEpoch, UnbondingLog as CoreUnbondingLog,
         Vault,
@@ -113,6 +113,14 @@ pub struct SharesAssetResponse {
 }
 
 #[cw_serde]
+pub struct UnbondingLogMetadata {
+    pub last_committed_batch_id: Option<BatchId>,
+    pub first_entered_batch: Option<BatchId>,
+    pub last_entered_batch: Option<BatchId>,
+    pub last_claimed_batch: Option<BatchId>,
+}
+
+#[cw_serde]
 #[derive(cosmwasm_schema::QueryResponses)]
 pub enum QueryMsg {
     /// Returns the state of the vault, i.e. total shares issued & total deposit value
@@ -126,6 +134,10 @@ pub enum QueryMsg {
     /// Returns all the unbondings for the given address if present, otherwise the whole contract
     #[returns(ActiveUnbondingsResponse)]
     ActiveUnbondings { address: Option<String> },
+
+    /// Returns all the unbonding log metadata for the given address
+    #[returns(UnbondingLogMetadata)]
+    UnbondingLogMetadata { address: String },
 
     /// Returns the current claimable balance for the address
     #[returns(ClaimableResponse)]
@@ -394,6 +406,13 @@ pub fn handle_query_msg(
 
             to_json_binary(&active_unbondings)
         }
+
+        QueryMsg::UnbondingLogMetadata { address } => to_json_binary(&UnbondingLogMetadata {
+            last_committed_batch_id: unbonding_log.last_committed_batch_id(),
+            first_entered_batch: unbonding_log.first_entered_batch(&address),
+            last_entered_batch: unbonding_log.last_entered_batch(&address),
+            last_claimed_batch: unbonding_log.last_claimed_batch(&address),
+        }),
 
         QueryMsg::Claimable { address } => {
             let amount = ClaimableBatchIter::new(&address, unbonding_log, strategy)
