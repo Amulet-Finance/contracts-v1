@@ -75,6 +75,10 @@ impl FixedU256 {
         Self(x)
     }
 
+    pub const fn zero() -> Self {
+        Self(U256::zero())
+    }
+
     pub fn from_u128(x: u128) -> Self {
         Self(U256::from(x) << 128)
     }
@@ -131,6 +135,10 @@ impl FixedU256 {
 
     pub fn abs_diff(self, other: Self) -> Self {
         Self(self.0.abs_diff(other.0))
+    }
+
+    pub const fn is_zero(&self) -> bool {
+        self.0.is_zero()
     }
 }
 
