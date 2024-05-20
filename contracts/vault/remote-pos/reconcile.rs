@@ -27,14 +27,14 @@ use amulet_ntrn::{IbcFeeExt, IBC_FEE_DENOM};
 use pos_reconcile_fsm::{
     fsm,
     types::{
-        Account, BalancesIcqResult, CurrentHeight, Delegated, Delegation, DelegationsIcqResult,
-        DelegationsReport, FeeBpsBlockIncrement, FeePaymentCooldownBlocks, FeeRecipient,
-        InflightDelegation, InflightDeposit, InflightFeePayable, InflightRewardsReceivable,
-        InflightUnbond, LastReconcileHeight, MaxFeeBps, MaxMsgCount, MsgIssuedCount,
-        MsgSuccessCount, Now as ReconcilePosNow, PendingDeposit, PendingUnbond, Phase,
-        ReconcilerFee, RedelegationSlot, RemoteBalance, RemoteBalanceReport, RewardsReceivable,
-        State, UnbondingTimeSecs, UndelegatedBalanceReport, ValidatorSetSize, ValidatorSetSlot,
-        Weights,
+        Account, BalancesIcqResult, CurrentHeight, DelegateStartSlot, Delegated, Delegation,
+        DelegationsIcqResult, DelegationsReport, FeeBpsBlockIncrement, FeePaymentCooldownBlocks,
+        FeeRecipient, InflightDelegation, InflightDeposit, InflightFeePayable,
+        InflightRewardsReceivable, InflightUnbond, LastReconcileHeight, MaxFeeBps, MaxMsgCount,
+        MsgIssuedCount, MsgSuccessCount, Now as ReconcilePosNow, PendingDeposit, PendingUnbond,
+        Phase, ReconcilerFee, RedelegationSlot, RemoteBalance, RemoteBalanceReport,
+        RewardsReceivable, State, UnbondingTimeSecs, UndelegateStartSlot, UndelegatedBalanceReport,
+        ValidatorSetSize, ValidatorSetSlot, Weights,
     },
     AuthzMsg, Cmd as ReconcileCmd, Config, Env as FsmEnv, Event, Fsm, Repository,
     Response as FsmResponse, TxMsg,
@@ -83,6 +83,10 @@ impl<'a> Config for StorageWrapper<'a> {
         MaxFeeBps(self.storage.max_fee_bps() as _)
     }
 
+    fn starting_weights(&self) -> Weights {
+        Weights::new_unchecked(self.storage.validator_initial_weights())
+    }
+
     fn validator_set_size(&self) -> ValidatorSetSize {
         ValidatorSetSize(self.storage.validator_set_size())
     }
@@ -91,6 +95,10 @@ impl<'a> Config for StorageWrapper<'a> {
 impl<'a> Repository for StorageWrapper<'a> {
     fn delegated(&self) -> Delegated {
         self.storage.delegated()
+    }
+
+    fn delegate_start_slot(&self) -> DelegateStartSlot {
+        self.storage.delegate_start_slot()
     }
 
     fn inflight_delegation(&self) -> InflightDelegation {
@@ -146,6 +154,10 @@ impl<'a> Repository for StorageWrapper<'a> {
             .redelegate_slot()
             .map(ValidatorSetSlot)
             .map(RedelegationSlot)
+    }
+
+    fn undelegate_start_slot(&self) -> UndelegateStartSlot {
+        self.storage.undelegate_start_slot()
     }
 
     fn weights(&self) -> Weights {
@@ -322,24 +334,26 @@ impl ResponseBuilder {
 
 fn handle_reconcile_cmd(storage: &mut dyn Storage, cmd: ReconcileCmd) {
     match cmd {
-        ReconcileCmd::Phase(v) => storage.set_reconcile_phase(v),
-        ReconcileCmd::State(v) => storage.set_reconcile_state(v),
-        ReconcileCmd::InflightDeposit(v) => storage.set_inflight_deposit(v),
-        ReconcileCmd::InflightDelegation(v) => storage.set_inflight_delegation(v),
-        ReconcileCmd::InflightUnbond(v) => storage.set_inflight_unbond(v),
-        ReconcileCmd::InflightRewardsReceivable(v) => storage.set_inflight_rewards_receivable(v),
-        ReconcileCmd::InflightFeePayable(v) => storage.set_inflight_fee_payable(v),
-        ReconcileCmd::LastReconcileHeight(v) => storage.set_last_reconcile_height(v),
-        ReconcileCmd::Weights(v) => storage.set_validator_weights(v),
-        ReconcileCmd::MsgIssuedCount(v) => storage.set_msg_issued_count(v),
-        ReconcileCmd::MsgSuccessCount(v) => storage.set_msg_success_count(v),
-        ReconcileCmd::Delegated(v) => storage.set_delegated(v),
-        ReconcileCmd::PendingDeposit(v) => storage.set_pending_deposit(v),
-        ReconcileCmd::PendingUnbond(v) => storage.set_pending_unbond(v),
         ReconcileCmd::ClearRedelegationRequest => {
             storage.clear_redelegate_slot();
             storage.clear_redelegate_to();
         }
+        ReconcileCmd::DelegateStartSlot(v) => storage.set_delegate_start_slot(v),
+        ReconcileCmd::Delegated(v) => storage.set_delegated(v),
+        ReconcileCmd::InflightDelegation(v) => storage.set_inflight_delegation(v),
+        ReconcileCmd::InflightDeposit(v) => storage.set_inflight_deposit(v),
+        ReconcileCmd::InflightFeePayable(v) => storage.set_inflight_fee_payable(v),
+        ReconcileCmd::InflightRewardsReceivable(v) => storage.set_inflight_rewards_receivable(v),
+        ReconcileCmd::InflightUnbond(v) => storage.set_inflight_unbond(v),
+        ReconcileCmd::LastReconcileHeight(v) => storage.set_last_reconcile_height(v),
+        ReconcileCmd::MsgIssuedCount(v) => storage.set_msg_issued_count(v),
+        ReconcileCmd::MsgSuccessCount(v) => storage.set_msg_success_count(v),
+        ReconcileCmd::PendingDeposit(v) => storage.set_pending_deposit(v),
+        ReconcileCmd::PendingUnbond(v) => storage.set_pending_unbond(v),
+        ReconcileCmd::Phase(v) => storage.set_reconcile_phase(v),
+        ReconcileCmd::State(v) => storage.set_reconcile_state(v),
+        ReconcileCmd::UndelegateStartSlot(v) => storage.set_undelegate_start_slot(v),
+        ReconcileCmd::Weights(v) => storage.set_validator_weights(v),
     }
 }
 
@@ -797,7 +811,7 @@ fn handle_reconcile_event(storage: &mut dyn Storage, env: &CwEnv, event: Event) 
             storage.set_last_used_main_ica_balance_icq_update(icq_update_timestamp);
         }
 
-        Event::UnbondComplete(amount) => {
+        Event::UnbondStarted(amount) => {
             storage.set_last_unbond_timestamp(env.block.time.seconds());
 
             let idx = storage.unbonding_issued_count().unwrap_or_default();
@@ -979,4 +993,29 @@ pub fn reconcile(
         Source::Continuation(Status::Success) => success(deps, env),
         Source::Continuation(Status::Failure) => failure(deps, env),
     }
+}
+
+pub fn force_next(deps: DepsMut<NeutronQuery>, env: CwEnv) -> Result<Response<NeutronMsg>> {
+    let fee_recipient = deps.storage.fee_recipient();
+
+    let storage_wrapper = StorageWrapper {
+        storage: deps.storage,
+    };
+
+    let reconcile_env = Env {
+        deps: deps.as_ref(),
+        env: &env,
+        fee_recipient,
+    };
+
+    let Some(response) = fsm(&storage_wrapper, &storage_wrapper, &reconcile_env).force_next()
+    else {
+        bail!(
+            "force next not available for phase {} in state {}",
+            storage_wrapper.phase(),
+            storage_wrapper.state()
+        );
+    };
+
+    handle_reconcile_response(deps, env, response)
 }

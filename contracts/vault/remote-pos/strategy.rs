@@ -1,5 +1,5 @@
 use amulet_ntrn::query::QuerierExt;
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use bech32::{Bech32, Hrp};
 use cosmwasm_std::{
     coins, BankMsg, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Response, Storage, Timestamp,
@@ -10,12 +10,12 @@ use amulet_core::{
         DepositAmount, DepositValue, Now as VaultNow, Strategy as CoreStrategy, StrategyCmd,
         TotalDepositsValue, UnbondEpoch, UnbondReadyStatus,
     },
-    Asset, Decimals,
+    Asset, Decimals, Identifier,
 };
 use cw_utils::must_pay;
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 use num::FixedU256;
-use pos_reconcile_fsm::types::{Delegated, PendingDeposit, PendingUnbond};
+use pos_reconcile_fsm::types::{Delegated, InflightDelegation, PendingDeposit, PendingUnbond};
 
 use crate::{
     icq,
@@ -51,16 +51,19 @@ impl<'a> CoreStrategy for Strategy<'a> {
     }
 
     fn total_deposits_value(&self) -> TotalDepositsValue {
-        // Delegated + Pending Deposits - Pending Unbond
+        // Delegated + Inflight Delegation + Pending Deposits - Pending Unbond
         let Delegated(delegated) = self.storage.delegated();
+        let InflightDelegation(inflight_delegation) = self.storage.inflight_delegation();
         let PendingDeposit(pending_deposit) = self.storage.pending_deposit();
         let PendingUnbond(pending_unbond) = self.storage.pending_unbond();
 
         delegated
+            .checked_add(inflight_delegation)
+            .expect("adding inflight delegation value will not overflow 128 bits")
             .checked_add(pending_deposit)
             .expect("adding pending deposit value will not overflow 128 bits")
             .checked_sub(pending_unbond)
-            .expect("always: pending unbond <= delegated")
+            .expect("always: pending unbond <= total deposits")
     }
 
     fn deposit_value(&self, amount: DepositAmount) -> DepositValue {
@@ -109,10 +112,60 @@ impl<'a> CoreStrategy for Strategy<'a> {
     }
 }
 
-pub fn handle_cmd<CustomMsg>(
+fn send_claimed_unbondings<C>(
     storage: &mut dyn Storage,
-    cmd: StrategyCmd,
-) -> Option<CosmosMsg<CustomMsg>> {
+    amount: u128,
+    recipient: Identifier,
+) -> Result<CosmosMsg<C>> {
+    let TotalActualUnbonded(total_actual_unbonded) = storage.total_actual_unbonded();
+
+    let TotalExpectedUnbonded(total_expected_unbonded) = storage.total_expected_unbonded();
+
+    let AvailableToClaim(available_to_claim) = storage.available_to_claim();
+
+    ensure!(
+        total_actual_unbonded > 0,
+        "total_actual_unbondings > 0 for claims to be processed"
+    );
+
+    ensure!(
+        total_expected_unbonded > 0,
+        "total_expected_unbondings > 0 for claims to be processed"
+    );
+
+    let numer = FixedU256::from_u128(total_actual_unbonded.min(total_expected_unbonded));
+
+    let denom = FixedU256::from_u128(total_expected_unbonded);
+
+    let ratio = numer
+        .checked_div(denom)
+        .expect("checked: total expected unbonded is not zero");
+
+    let claim_amount = ratio
+        .checked_mul(FixedU256::from_u128(amount))
+        .expect("always: ratio <= 1.0")
+        .floor();
+
+    if available_to_claim < claim_amount {
+        bail!("insufficient amount of unbondings received: {available_to_claim} < {claim_amount}");
+    }
+
+    let available_to_claim = available_to_claim
+        .checked_sub(claim_amount)
+        .expect("checked: claim amount <= available to claim");
+
+    storage.set_available_to_claim(AvailableToClaim(available_to_claim));
+
+    let ibc_deposit_asset = storage.ibc_deposit_asset();
+
+    Ok(BankMsg::Send {
+        to_address: recipient.into_string(),
+        amount: coins(claim_amount, ibc_deposit_asset),
+    }
+    .into())
+}
+
+pub fn handle_cmd<C>(storage: &mut dyn Storage, cmd: StrategyCmd) -> Result<Option<CosmosMsg<C>>> {
     match cmd {
         StrategyCmd::Deposit { amount } => {
             let PendingDeposit(pending_deposit) = storage.pending_deposit();
@@ -135,45 +188,11 @@ pub fn handle_cmd<CustomMsg>(
         }
 
         StrategyCmd::SendClaimed { amount, recipient } => {
-            let TotalActualUnbonded(total_actual_unbonded) = storage.total_actual_unbonded();
-
-            let TotalExpectedUnbonded(total_expected_unbonded) = storage.total_expected_unbonded();
-
-            let AvailableToClaim(available_to_claim) = storage.available_to_claim();
-
-            let numer = FixedU256::from_u128(total_actual_unbonded.min(total_expected_unbonded));
-
-            let denom = FixedU256::from_u128(total_expected_unbonded);
-
-            let ratio = numer
-                .checked_div(denom)
-                .expect("total expected unbonded is not zero");
-
-            let claim_amount = ratio
-                .checked_mul(FixedU256::from_u128(amount))
-                .expect("always: ratio <= 1.0")
-                .floor()
-                .min(available_to_claim);
-
-            let available_to_claim = available_to_claim
-                .checked_sub(claim_amount)
-                .expect("always: claim amount <= available to claim");
-
-            storage.set_available_to_claim(AvailableToClaim(available_to_claim));
-
-            let ibc_deposit_asset = storage.ibc_deposit_asset();
-
-            return Some(
-                BankMsg::Send {
-                    to_address: recipient.into_string(),
-                    amount: coins(claim_amount, ibc_deposit_asset),
-                }
-                .into(),
-            );
+            return send_claimed_unbondings(storage, amount, recipient).map(Some)
         }
     }
 
-    None
+    Ok(None)
 }
 
 // Mirrors: https://github.com/neutron-org/neutron/blob/v2.0.0/x/ibc-hooks/utils/utils.go#L68

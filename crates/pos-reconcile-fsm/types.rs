@@ -15,8 +15,9 @@ pub struct CurrentHeight(pub u64);
 #[cfg_attr(test, derive(serde::Serialize))]
 pub struct Delegated(pub u128);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct DetectedLosses(pub u128);
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(test, derive(serde::Serialize))]
+pub struct DelegateStartSlot(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FeeBpsBlockIncrement(pub u64);
@@ -27,6 +28,10 @@ pub struct FeePaymentCooldownBlocks(pub u64);
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(serde::Serialize))]
 pub struct InflightDelegation(pub u128);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(test, derive(serde::Serialize))]
+pub struct InflightActualDelegation(pub u128);
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(serde::Serialize))]
@@ -93,6 +98,10 @@ pub struct UnbondingTimeSecs(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UnbondCompleteTimestamp(pub u64);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(test, derive(serde::Serialize))]
+pub struct UndelegateStartSlot(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ValidatorSetSize(pub usize);
@@ -471,6 +480,13 @@ impl Weight {
 #[cfg_attr(test, derive(serde::Serialize))]
 pub struct Weights(Vec<Weight>);
 
+pub trait SplitBalance {
+    /// Splits the balance across a number of slots, returning `(total_allocated, Vec<allocations>)`
+    /// `total_allocated` can be less than `balance` if there are rounding errors.
+    /// `Vec<allocations>` will always be the same length as the number of slots, even if `balance == 0`.
+    fn split_balance(&self, balance: u128) -> (u128, Vec<u128>);
+}
+
 impl Weights {
     pub fn new_unchecked(weights: Vec<Weight>) -> Self {
         Self(weights)
@@ -495,38 +511,75 @@ impl Weights {
         Some(Weights(weights.to_owned()))
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Weight> {
-        self.0.iter()
+    pub fn as_slice(&self) -> &[Weight] {
+        self.0.as_slice()
+    }
+}
+
+fn split_balance_according_to_weight(weights: &[Weight], balance: u128) -> (u128, Vec<u128>) {
+    if balance == 0 {
+        return (0, vec![0; weights.len()]);
     }
 
-    pub fn split_balance(&self, total_balance: u128) -> Vec<u128> {
-        if total_balance == 0 {
-            return vec![0; self.0.len()];
+    let mut allocations = Vec::with_capacity(weights.len());
+    let mut total_allocated = 0u128;
+
+    for weight in weights {
+        let slot_balance = weight.apply(balance);
+
+        allocations.push(slot_balance);
+
+        total_allocated += slot_balance
+    }
+
+    assert!(
+        total_allocated <= balance,
+        "total allocated cannot be > total balance to split"
+    );
+
+    (total_allocated, allocations)
+}
+
+impl SplitBalance for Weights {
+    fn split_balance(&self, balance: u128) -> (u128, Vec<u128>) {
+        // no scaling is required, all weights are being used
+        split_balance_according_to_weight(self.as_slice(), balance)
+    }
+}
+
+impl<'a> SplitBalance for &'a Weights {
+    fn split_balance(&self, balance: u128) -> (u128, Vec<u128>) {
+        Weights::split_balance(self, balance)
+    }
+}
+
+impl<'a> SplitBalance for &'a [Weight] {
+    fn split_balance(&self, balance: u128) -> (u128, Vec<u128>) {
+        // only a subset of weights might be being used, scaling is required so the sum of the weights is as close to 1.0 as possible
+        let mut total_weight = FixedU256::zero();
+
+        for weight in *self {
+            total_weight = total_weight
+                .checked_add(weight.0)
+                .expect("always: weights total <= 1.0");
         }
 
-        let mut balances = Vec::with_capacity(self.0.len());
-        let mut total_allocated = 0u128;
-
-        for weight in &self.0 {
-            let slot_balance = weight.apply(total_balance);
-
-            balances.push(slot_balance);
-
-            total_allocated += slot_balance
+        if total_weight.is_zero() {
+            return (0, vec![0; self.len()]);
         }
 
-        assert!(
-            total_allocated <= total_balance,
-            "total allocated cannot be > total balance to split"
-        );
+        let mut scaled_weights = Vec::with_capacity(self.len());
 
-        if total_allocated == total_balance {
-            return balances;
+        for weight in *self {
+            let scaled_w = weight
+                .0
+                .checked_div(total_weight)
+                .map(Weight)
+                .expect("checked: total_weight > 0");
+
+            scaled_weights.push(scaled_w);
         }
 
-        // add any dust to the first slot
-        balances[0] += total_allocated.abs_diff(total_balance);
-
-        balances
+        split_balance_according_to_weight(&scaled_weights, balance)
     }
 }

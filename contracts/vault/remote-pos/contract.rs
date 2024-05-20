@@ -160,11 +160,12 @@ pub fn instantiate(
     for (slot_idx, (validator, weight)) in msg
         .initial_validator_set
         .into_iter()
-        .zip(weights.iter().copied())
+        .zip(weights.as_slice())
         .enumerate()
     {
         store.set_validator(slot_idx, &validator);
-        store.set_validator_weight(slot_idx, weight);
+        store.set_validator_weight(slot_idx, *weight);
+        store.set_validator_initial_weight(slot_idx, *weight);
     }
 
     let init_mint_msg = init_mint_msg(TokenFactory::new(&env));
@@ -224,7 +225,7 @@ pub fn execute_vault_msg(
             }
 
             VaultCmd::Strategy(cmd) => {
-                if let Some(msg) = strategy::handle_cmd(deps.storage, cmd) {
+                if let Some(msg) = strategy::handle_cmd(deps.storage, cmd)? {
                     response.messages.push(SubMsg::new(msg));
                 }
             }
@@ -243,6 +244,8 @@ pub fn execute_strategy_msg(
     msg: StrategyExecuteMsg,
 ) -> Result<Response<NeutronMsg>> {
     match msg {
+        StrategyExecuteMsg::ForceNext {} => reconcile::force_next(deps, env),
+
         StrategyExecuteMsg::Reconcile { fee_recipient } => {
             reconcile(deps, env, Source::Trigger(info, fee_recipient))
         }

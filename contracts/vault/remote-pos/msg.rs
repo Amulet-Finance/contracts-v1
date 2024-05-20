@@ -82,6 +82,8 @@ pub struct ValidatorSet {
 
 #[cw_serde]
 pub enum StrategyExecuteMsg {
+    /// Force a failed phase to continue to the next phase, if elligible
+    ForceNext {},
     Reconcile {
         fee_recipient: Option<String>,
     },

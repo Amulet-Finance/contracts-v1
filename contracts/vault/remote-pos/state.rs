@@ -1,9 +1,10 @@
 use amulet_cw::StorageExt as _;
 use cosmwasm_std::Storage;
 use pos_reconcile_fsm::types::{
-    Delegated, InflightDelegation, InflightDeposit, InflightFeePayable, InflightRewardsReceivable,
-    InflightUnbond, LastReconcileHeight, MsgIssuedCount, MsgSuccessCount, PendingDeposit,
-    PendingUnbond, Phase, State, Weight, Weights,
+    DelegateStartSlot, Delegated, InflightDelegation, InflightDeposit, InflightFeePayable,
+    InflightRewardsReceivable, InflightUnbond, LastReconcileHeight, MsgIssuedCount,
+    MsgSuccessCount, PendingDeposit, PendingUnbond, Phase, State, UndelegateStartSlot, Weight,
+    Weights,
 };
 
 use crate::types::{AvailableToClaim, TotalActualUnbonded, TotalExpectedUnbonded};
@@ -28,6 +29,7 @@ mod key {
     pub const CONNECTION_ID: &str                         = key!("connection_id");
     pub const DELEGATED: &str                             = key!("delegated");
     pub const DELEGATIONS_ICQ: &str                       = key!("delegations_icq");
+    pub const DELEGATE_START_SLOT: &str                   = key!("delegate_start_slot");
     pub const ESTIMATED_BLOCK_INTERVAL_SECONDS: &str      = key!("estimated_block_interval_seconds");
     pub const FEE_BPS_BLOCK_INCREMENT: &str               = key!("fee_bps_block_increment");
     pub const FEE_PAYMENT_COOLDOWN_BLOCKS: &str           = key!("fee_payment_cooldown_blocks");
@@ -75,6 +77,7 @@ mod key {
     pub const UNBONDING_ISSUED_COUNT: &str                = key!("unbonding_issued_count");
     pub const UNBONDING_LOCAL_EXPIRY: MapKey              = map_key!("unbonding_local_expiry");
     pub const UNBONDING_PERIOD: &str                      = key!("unbonding_period");
+    pub const UNDELEGATE_START_SLOT: &str                 = key!("undelegate_start_slot");
     pub const VALIDATOR: MapKey                           = map_key!("validator");
     pub const VALIDATOR_SET_SIZE: &str                    = key!("validator_set_size");
     pub const VALIDATOR_WEIGHT: MapKey                    = map_key!("validator_weight");
@@ -116,6 +119,16 @@ pub trait StorageExt: Storage {
 
     fn set_delegations_icq(&mut self, icq: u64) {
         self.set_u64(key::DELEGATIONS_ICQ, icq)
+    }
+
+    fn delegate_start_slot(&self) -> DelegateStartSlot {
+        self.usize_at(key::DELEGATE_START_SLOT)
+            .map(DelegateStartSlot)
+            .unwrap_or_default()
+    }
+
+    fn set_delegate_start_slot(&mut self, DelegateStartSlot(slot): DelegateStartSlot) {
+        self.set_usize(key::DELEGATE_START_SLOT, slot)
     }
 
     fn estimated_block_interval_seconds(&self) -> u64 {
@@ -596,6 +609,16 @@ pub trait StorageExt: Storage {
         self.set_u64(key::UNBONDING_PERIOD, unbonding_period);
     }
 
+    fn undelegate_start_slot(&self) -> UndelegateStartSlot {
+        self.usize_at(key::UNDELEGATE_START_SLOT)
+            .map(UndelegateStartSlot)
+            .unwrap_or_default()
+    }
+
+    fn set_undelegate_start_slot(&mut self, UndelegateStartSlot(slot): UndelegateStartSlot) {
+        self.set_usize(key::UNDELEGATE_START_SLOT, slot)
+    }
+
     fn validator(&self, slot_idx: usize) -> String {
         self.string_at(key::VALIDATOR.with(slot_idx))
             .expect("set during initialisation")
@@ -615,6 +638,31 @@ pub trait StorageExt: Storage {
 
     fn set_validator(&mut self, slot_idx: usize, validator: &str) {
         self.set_string(key::VALIDATOR.with(slot_idx), validator)
+    }
+
+    fn validator_initial_weight(&self, slot_idx: usize) -> Weight {
+        self.u256_at(key::VALIDATOR_WEIGHT.multi([&"initial", &slot_idx]))
+            .map(Weight::raw)
+            .expect("set during initialisation")
+    }
+
+    fn validator_initial_weights(&self) -> Vec<Weight> {
+        let set_size = self.validator_set_size();
+
+        let mut weights = Vec::with_capacity(set_size);
+
+        for slot_idx in 0..set_size {
+            weights.push(self.validator_initial_weight(slot_idx));
+        }
+
+        weights
+    }
+
+    fn set_validator_initial_weight(&mut self, slot_idx: usize, validator_weight: Weight) {
+        self.set_u256(
+            key::VALIDATOR_WEIGHT.multi([&"initial", &slot_idx]),
+            validator_weight.into_raw(),
+        )
     }
 
     fn validator_set_size(&self) -> usize {
@@ -652,7 +700,7 @@ pub trait StorageExt: Storage {
     }
 
     fn set_validator_weights(&mut self, weights: Weights) {
-        for (idx, weight) in weights.iter().copied().enumerate() {
+        for (idx, weight) in weights.as_slice().iter().copied().enumerate() {
             self.set_validator_weight(idx, weight)
         }
     }

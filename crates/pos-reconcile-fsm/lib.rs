@@ -1,15 +1,15 @@
 pub mod types;
 
-use std::num::NonZeroU128;
+use std::{collections::BTreeMap, num::NonZeroU128};
 
 use types::{
-    Account, CurrentHeight, Delegated, DelegationsReport, FeeBpsBlockIncrement, FeeMetadata,
-    FeePaymentCooldownBlocks, FeeRecipient, InflightDelegation, InflightDeposit,
+    Account, CurrentHeight, DelegateStartSlot, Delegated, DelegationsReport, FeeBpsBlockIncrement,
+    FeeMetadata, FeePaymentCooldownBlocks, FeeRecipient, InflightDelegation, InflightDeposit,
     InflightFeePayable, InflightRewardsReceivable, InflightUnbond, LastReconcileHeight, MaxFeeBps,
     MaxMsgCount, MsgIssuedCount, MsgSuccessCount, Now, PendingDeposit, PendingUnbond, Phase,
-    ReconcilerFee, RedelegationSlot, RemoteBalance, RemoteBalanceReport, RewardsReceivable, State,
-    UnbondingTimeSecs, UndelegatedBalanceReport, ValidatorSetSize, ValidatorSetSlot, Weight,
-    Weights,
+    ReconcilerFee, RedelegationSlot, RemoteBalance, RemoteBalanceReport, RewardsReceivable,
+    SplitBalance, State, UnbondingTimeSecs, UndelegateStartSlot, UndelegatedBalanceReport,
+    ValidatorSetSize, ValidatorSetSlot, Weight, Weights,
 };
 
 /// Access fixed config
@@ -24,12 +24,16 @@ pub trait Config {
 
     fn max_fee_bps(&self) -> MaxFeeBps;
 
+    fn starting_weights(&self) -> Weights;
+
     fn validator_set_size(&self) -> ValidatorSetSize;
 }
 
 /// Access mutable storage
 pub trait Repository {
     fn delegated(&self) -> Delegated;
+
+    fn delegate_start_slot(&self) -> DelegateStartSlot;
 
     fn inflight_delegation(&self) -> InflightDelegation;
 
@@ -56,6 +60,8 @@ pub trait Repository {
     fn state(&self) -> State;
 
     fn redelegation_slot(&self) -> Option<RedelegationSlot>;
+
+    fn undelegate_start_slot(&self) -> UndelegateStartSlot;
 
     fn weights(&self) -> Weights;
 }
@@ -138,6 +144,7 @@ impl TxMsgs {
 pub enum Cmd {
     ClearRedelegationRequest,
     Delegated(Delegated),
+    DelegateStartSlot(DelegateStartSlot),
     InflightDelegation(InflightDelegation),
     InflightDeposit(InflightDeposit),
     InflightFeePayable(InflightFeePayable),
@@ -150,6 +157,7 @@ pub enum Cmd {
     PendingUnbond(PendingUnbond),
     Phase(Phase),
     State(State),
+    UndelegateStartSlot(UndelegateStartSlot),
     Weights(Weights),
 }
 
@@ -174,20 +182,22 @@ macro_rules! impl_cmd_from {
 }
 
 impl_cmd_from![
-    Phase,
-    State,
-    PendingUnbond,
-    PendingDeposit,
     Delegated,
-    MsgIssuedCount,
-    MsgSuccessCount,
-    Weights,
-    LastReconcileHeight,
+    DelegateStartSlot,
+    InflightDeposit,
+    InflightDelegation,
     InflightFeePayable,
     InflightRewardsReceivable,
     InflightUnbond,
-    InflightDelegation,
-    InflightDeposit
+    LastReconcileHeight,
+    MsgIssuedCount,
+    MsgSuccessCount,
+    PendingDeposit,
+    PendingUnbond,
+    Phase,
+    State,
+    UndelegateStartSlot,
+    Weights
 ];
 
 #[derive(Debug, Clone, Copy)]
@@ -195,7 +205,7 @@ impl_cmd_from![
 pub enum Event {
     UndelegatedAssetsTransferred,
     DepositsTransferred(u128),
-    UnbondComplete(u128),
+    UnbondStarted(u128),
     DelegationsIncreased(u128),
     RedelegationSuccessful,
 }
@@ -247,9 +257,6 @@ trait EnvExt: Env {
     ) -> Option<NonZeroU128> {
         let rewards_balance_report = self.rewards_balance_report()?;
 
-        dbg!(rewards_balance_report);
-        dbg!(last_reconcile_height);
-
         if rewards_balance_report.height <= last_reconcile_height {
             return None;
         }
@@ -266,16 +273,26 @@ pub trait Fsm {
     fn reconcile(&self) -> Response;
 
     fn failed(&self) -> Response;
+
+    fn force_next(&self) -> Option<Response>;
 }
 
-pub struct FsmImpl<'a> {
+#[derive(Clone, Copy)]
+struct Context<'a> {
     config: &'a dyn Config,
     repo: &'a dyn Repository,
     env: &'a dyn Env,
 }
 
+#[derive(Clone, Copy)]
+pub struct FsmImpl<'a> {
+    ctx: Context<'a>,
+}
+
 pub fn fsm<'a>(config: &'a dyn Config, repo: &'a dyn Repository, env: &'a dyn Env) -> FsmImpl<'a> {
-    FsmImpl { config, repo, env }
+    FsmImpl {
+        ctx: Context { config, repo, env },
+    }
 }
 
 enum TransitionKind {
@@ -325,6 +342,7 @@ impl Transition {
 struct Cache {
     clear_redelegation: bool,
     delegated: Option<Delegated>,
+    delegate_start_slot: Option<DelegateStartSlot>,
     inflight_delegation: Option<InflightDelegation>,
     inflight_deposit: Option<InflightDeposit>,
     inflight_fee_payable: Option<InflightFeePayable>,
@@ -335,6 +353,7 @@ struct Cache {
     msg_success_count: Option<MsgSuccessCount>,
     pending_deposit: Option<PendingDeposit>,
     pending_unbond: Option<PendingUnbond>,
+    undelegate_start_slot: Option<UndelegateStartSlot>,
     weights: Option<Weights>,
 }
 
@@ -362,37 +381,45 @@ impl Cache {
     }
 }
 
-struct IntermediateState<'a> {
+struct IntermediateRepo<'a> {
     repo: &'a dyn Repository,
     cache: Cache,
 }
 
-impl<'a> IntermediateState<'a> {
+impl<'a> IntermediateRepo<'a> {
     fn handle_cmd(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::ClearRedelegationRequest => self.cache.clear_redelegation = true,
-            Cmd::InflightDeposit(v) => self.cache.inflight_deposit = Some(v),
-            Cmd::InflightDelegation(v) => self.cache.inflight_delegation = Some(v),
-            Cmd::InflightUnbond(v) => self.cache.inflight_unbond = Some(v),
-            Cmd::InflightRewardsReceivable(v) => self.cache.inflight_rewards_receivable = Some(v),
-            Cmd::InflightFeePayable(v) => self.cache.inflight_fee_payable = Some(v),
-            Cmd::LastReconcileHeight(v) => self.cache.last_reconcile_height = Some(v),
-            Cmd::Weights(v) => self.cache.weights = Some(v),
+            Cmd::DelegateStartSlot(v) => self.cache.delegate_start_slot = Some(v),
             Cmd::Delegated(v) => self.cache.delegated = Some(v),
+            Cmd::InflightDelegation(v) => self.cache.inflight_delegation = Some(v),
+            Cmd::InflightDeposit(v) => self.cache.inflight_deposit = Some(v),
+            Cmd::InflightFeePayable(v) => self.cache.inflight_fee_payable = Some(v),
+            Cmd::InflightRewardsReceivable(v) => self.cache.inflight_rewards_receivable = Some(v),
+            Cmd::InflightUnbond(v) => self.cache.inflight_unbond = Some(v),
+            Cmd::LastReconcileHeight(v) => self.cache.last_reconcile_height = Some(v),
+            Cmd::MsgIssuedCount(v) => self.cache.msg_issued_count = Some(v),
+            Cmd::MsgSuccessCount(v) => self.cache.msg_success_count = Some(v),
             Cmd::PendingDeposit(v) => self.cache.pending_deposit = Some(v),
             Cmd::PendingUnbond(v) => self.cache.pending_unbond = Some(v),
-            Cmd::MsgSuccessCount(v) => self.cache.msg_success_count = Some(v),
-            Cmd::MsgIssuedCount(v) => self.cache.msg_issued_count = Some(v),
+            Cmd::UndelegateStartSlot(v) => self.cache.undelegate_start_slot = Some(v),
+            Cmd::Weights(v) => self.cache.weights = Some(v),
             _ => panic!("unexpected cmd: {cmd:?}"),
         }
     }
 }
 
-impl<'a> Repository for IntermediateState<'a> {
+impl<'a> Repository for IntermediateRepo<'a> {
     fn delegated(&self) -> Delegated {
         self.cache
             .delegated
             .unwrap_or_else(|| self.repo.delegated())
+    }
+
+    fn delegate_start_slot(&self) -> DelegateStartSlot {
+        self.cache
+            .delegate_start_slot
+            .unwrap_or_else(|| self.repo.delegate_start_slot())
     }
 
     fn inflight_delegation(&self) -> InflightDelegation {
@@ -471,6 +498,12 @@ impl<'a> Repository for IntermediateState<'a> {
         self.repo.redelegation_slot()
     }
 
+    fn undelegate_start_slot(&self) -> UndelegateStartSlot {
+        self.cache
+            .undelegate_start_slot
+            .unwrap_or_else(|| self.repo.undelegate_start_slot())
+    }
+
     fn weights(&self) -> Weights {
         self.cache
             .weights
@@ -479,13 +512,9 @@ impl<'a> Repository for IntermediateState<'a> {
     }
 }
 
-type Handler = fn(&dyn Config, &dyn Repository, &dyn Env) -> Transition;
+type Handler = fn(Context) -> Transition;
 
-fn start_setup_rewards_address(
-    _config: &dyn Config,
-    _repo: &dyn Repository,
-    env: &dyn Env,
-) -> Transition {
+fn start_setup_rewards_address(Context { env, .. }: Context) -> Transition {
     let Some((delegation_account, rewards_account)) = env
         .delegation_account_address()
         .zip(env.rewards_account_address())
@@ -501,15 +530,11 @@ fn start_setup_rewards_address(
     Transition::tx(tx_msgs, vec![])
 }
 
-fn on_setup_rewards_address_success(
-    _config: &dyn Config,
-    _repo: &dyn Repository,
-    _env: &dyn Env,
-) -> Transition {
+fn on_setup_rewards_address_success(_: Context) -> Transition {
     Transition::next(vec![])
 }
 
-fn start_setup_authz(_config: &dyn Config, _repo: &dyn Repository, env: &dyn Env) -> Transition {
+fn start_setup_authz(Context { env, .. }: Context) -> Transition {
     let (delegation_account, rewards_account) = env
         .delegation_account_address()
         .zip(env.rewards_account_address())
@@ -520,11 +545,7 @@ fn start_setup_authz(_config: &dyn Config, _repo: &dyn Repository, env: &dyn Env
     Transition::tx(tx_msgs, vec![])
 }
 
-fn on_setup_authz_success(
-    _config: &dyn Config,
-    _repo: &dyn Repository,
-    _env: &dyn Env,
-) -> Transition {
+fn on_setup_authz_success(_: Context) -> Transition {
     Transition::next(vec![])
 }
 
@@ -578,7 +599,7 @@ fn check_for_slashing(
     })
 }
 
-fn start_reconcile(_config: &dyn Config, repo: &dyn Repository, env: &dyn Env) -> Transition {
+fn start_reconcile(Context { repo, env, .. }: Context) -> Transition {
     let Some(last_reconcile_height) = repo.last_reconcile_height() else {
         return Transition::next(vec![]);
     };
@@ -597,7 +618,7 @@ fn start_reconcile(_config: &dyn Config, repo: &dyn Repository, env: &dyn Env) -
     Transition::next(cmds)
 }
 
-fn start_redelegate(_config: &dyn Config, repo: &dyn Repository, env: &dyn Env) -> Transition {
+fn start_redelegate(Context { repo, env, .. }: Context) -> Transition {
     let Some(LastReconcileHeight(last_reconcile_height)) = repo.last_reconcile_height() else {
         return Transition::next(vec![]);
     };
@@ -625,92 +646,242 @@ fn start_redelegate(_config: &dyn Config, repo: &dyn Repository, env: &dyn Env) 
     Transition::tx(tx_msgs, vec![])
 }
 
-fn on_redelegate_success(
-    _config: &dyn Config,
-    _repo: &dyn Repository,
-    _env: &dyn Env,
-) -> Transition {
+fn on_redelegate_success(_: Context) -> Transition {
     Transition::next(set![Cmd::ClearRedelegationRequest]).event(Event::RedelegationSuccessful)
 }
 
 // Do not retry on failure, clear request and move on
-fn on_redelegate_failure(
-    _config: &dyn Config,
-    _repo: &dyn Repository,
-    _env: &dyn Env,
-) -> Transition {
+fn on_redelegate_failure(_: Context) -> Transition {
     Transition::next(set![Cmd::ClearRedelegationRequest])
 }
 
-fn undelegate_phase_msgs(weights: &Weights, unbond_amount: u128) -> impl Iterator<Item = TxMsg> {
-    weights
-        .split_balance(unbond_amount)
+type Undelegation = (ValidatorSetSlot, NonZeroU128);
+
+fn undelegations(
+    weights: impl SplitBalance,
+    unbond_amount: u128,
+    slot_offset: usize,
+) -> impl Iterator<Item = Undelegation> {
+    let (_, unbonding_amounts) = weights.split_balance(unbond_amount);
+
+    unbonding_amounts
         .into_iter()
         // get the indexes of the slots
         .enumerate()
         // skip slots where the split amount is zero
-        .filter_map(|(idx, amount)| Some(ValidatorSetSlot(idx)).zip(NonZeroU128::new(amount)))
-        // create undelegate msg
-        .map(|(slot, amount)| TxMsg::Undelegate(slot, amount.get()))
+        .filter_map(move |(idx, amount)| {
+            Some(ValidatorSetSlot(idx + slot_offset)).zip(NonZeroU128::new(amount))
+        })
 }
 
-fn start_undelegate(config: &dyn Config, repo: &dyn Repository, _env: &dyn Env) -> Transition {
-    let PendingUnbond(pending_unbond) = repo.pending_unbond();
+fn undelegate_tx_msgs(
+    config: &dyn Config,
+    repo: &dyn Repository,
+    unbond_amount: u128,
+) -> Option<TxMsgs> {
+    let UndelegateStartSlot(start_slot_idx) = repo.undelegate_start_slot();
 
-    if pending_unbond == 0 {
+    let weights = repo.weights();
+
+    if start_slot_idx == 0 {
+        // no need to take a subset of slot weights
+        let undelegate_msgs = undelegations(weights, unbond_amount, start_slot_idx)
+            .map(|(slot, amount)| TxMsg::Undelegate(slot, amount.get()));
+
+        return TxMsgBatcher::new(config, repo).batch_msgs(undelegate_msgs);
+    }
+
+    let weights = &weights.as_slice()[start_slot_idx..];
+
+    let undelegate_msgs = undelegations(weights, unbond_amount, start_slot_idx)
+        .map(|(slot, amount)| TxMsg::Undelegate(slot, amount.get()));
+
+    TxMsgBatcher::new(config, repo).batch_msgs(undelegate_msgs)
+}
+
+fn undelegate_adjust_weights(
+    weights: &Weights,
+    previous_delegated: u128,
+    current_delegated: u128,
+    undelegations: impl Iterator<Item = Undelegation>,
+) -> Option<Weights> {
+    if current_delegated == 0 {
+        return None;
+    }
+
+    let undelegations: BTreeMap<_, _> = undelegations
+        .map(|(ValidatorSetSlot(slot), amount)| (slot, amount.get()))
+        .collect();
+
+    let mut adjusted_weights = vec![];
+
+    for (slot, weight) in weights.as_slice().iter().enumerate() {
+        let mut slot_delegation = weight.apply(previous_delegated);
+
+        if let Some(undelegation) = undelegations.get(&slot) {
+            slot_delegation = slot_delegation
+                .checked_sub(*undelegation)
+                .expect("always: previous slot delegation >= slot undelegation");
+        }
+
+        let adjusted_w = Weight::checked_from_fraction(slot_delegation, current_delegated)
+            .expect("checked: current delegation > 0");
+
+        adjusted_weights.push(adjusted_w);
+    }
+
+    Weights::new(&adjusted_weights)
+}
+
+fn start_undelegate(Context { repo, config, .. }: Context) -> Transition {
+    let PendingUnbond(pending_unbond) = repo.pending_unbond();
+    let Delegated(delegated) = repo.delegated();
+
+    // The pending unbond amount can be greater than the delegated amount if pending deposits
+    // are being unbonded before they had chance to be delegated.
+    //
+    // Only undelegating if pending unbond <= delegated is a simple way to ensure ordering.
+    if pending_unbond > delegated || pending_unbond == 0 {
         return Transition::next(vec![]);
     }
 
-    let undelegate_msgs = undelegate_phase_msgs(&repo.weights(), pending_unbond);
+    let InflightUnbond(inflight_unbond) = repo.inflight_unbond();
 
-    let Some(tx_msgs) = TxMsgBatcher::new(config, repo).batch_msgs(undelegate_msgs) else {
+    // If there is any leftover inflight unbond, clear that before taking on more pending unbonds
+    let unbond_amount = if inflight_unbond > 0 {
+        inflight_unbond
+    } else {
+        pending_unbond
+    };
+
+    let Some(tx_msgs) = undelegate_tx_msgs(config, repo, unbond_amount) else {
         return Transition::next(vec![]);
     };
 
-    let cmds = set![InflightUnbond(pending_unbond)];
+    let mut cmds = vec![];
+
+    if inflight_unbond == 0 {
+        cmds.push(InflightUnbond(unbond_amount).into());
+    }
 
     Transition::tx(tx_msgs, cmds)
 }
 
-fn on_undelegate_success(config: &dyn Config, repo: &dyn Repository, _env: &dyn Env) -> Transition {
+fn on_undelegate_success(Context { repo, config, .. }: Context) -> Transition {
     let InflightUnbond(inflight_unbond) = repo.inflight_unbond();
 
-    let undelegate_msgs = undelegate_phase_msgs(&repo.weights(), inflight_unbond);
-
-    if let Some(tx_msgs) = TxMsgBatcher::new(config, repo).batch_msgs(undelegate_msgs) {
+    if let Some(tx_msgs) = undelegate_tx_msgs(config, repo, inflight_unbond) {
         return Transition::tx(tx_msgs, vec![]);
     };
 
     let PendingUnbond(pending_unbond) = repo.pending_unbond();
 
-    let Delegated(delegated) = repo.delegated();
+    let Delegated(prev_delegated) = repo.delegated();
 
-    let cmds = set![
+    let delegated = prev_delegated - inflight_unbond;
+
+    let mut cmds = set![
         PendingUnbond(pending_unbond - inflight_unbond),
         InflightUnbond(0),
-        Delegated(delegated - inflight_unbond)
+        Delegated(delegated)
     ];
 
-    Transition::next(cmds).event(Event::UnbondComplete(inflight_unbond))
+    let UndelegateStartSlot(start_slot_idx) = repo.undelegate_start_slot();
+
+    if start_slot_idx > 0 {
+        // reset starting slot to the first one
+        cmds.push(UndelegateStartSlot(0).into());
+
+        let weights = repo.weights();
+
+        let undelegations = undelegations(
+            &weights.as_slice()[start_slot_idx..],
+            inflight_unbond,
+            start_slot_idx,
+        );
+
+        let adjusted_weights =
+            undelegate_adjust_weights(&weights, prev_delegated, delegated, undelegations)
+                .unwrap_or_else(|| config.starting_weights());
+
+        cmds.push(adjusted_weights.into())
+    }
+
+    Transition::next(cmds).event(Event::UnbondStarted(inflight_unbond))
 }
 
-fn retry_undelegate(config: &dyn Config, repo: &dyn Repository, _env: &dyn Env) -> Transition {
+fn retry_undelegate(Context { repo, config, .. }: Context) -> Transition {
     let InflightUnbond(inflight_unbond) = repo.inflight_unbond();
 
-    let undelegate_msgs = undelegate_phase_msgs(&repo.weights(), inflight_unbond);
-
-    let tx_msgs = TxMsgBatcher::new(config, repo)
-        .batch_msgs(undelegate_msgs)
+    let tx_msgs = undelegate_tx_msgs(config, repo, inflight_unbond)
         .expect("always: messages to re-issue when retrying");
 
     Transition::tx(tx_msgs, vec![])
 }
 
-fn start_transfer_undelegated(
-    _config: &dyn Config,
-    repo: &dyn Repository,
-    env: &dyn Env,
-) -> Transition {
+fn undelegate_force_next(Context { repo, config, .. }: Context) -> (Vec<Event>, Vec<Cmd>) {
+    let MsgSuccessCount(msg_success_count) = repo.msg_success_count();
+    let UndelegateStartSlot(start_slot_idx) = repo.undelegate_start_slot();
+
+    if msg_success_count == 0 {
+        // was the last undelegation partial? i.e. forced next after a successful batch
+        if start_slot_idx > 0 {
+            // no change, try again next time
+            return (vec![], vec![]);
+        }
+
+        // non-partial undelegation, clear inflight unbond
+        return (vec![], set![InflightUnbond(0)]);
+    }
+
+    let InflightUnbond(inflight_unbond) = repo.inflight_unbond();
+    let PendingUnbond(pending_unbond) = repo.pending_unbond();
+    let Delegated(prev_delegated) = repo.delegated();
+
+    let weights = repo.weights();
+
+    let undelegations: Vec<_> = undelegations(&weights, inflight_unbond, start_slot_idx)
+        .take(msg_success_count)
+        .collect();
+
+    let total_unbonded: u128 = undelegations
+        .iter()
+        .take(msg_success_count)
+        .try_fold(0u128, |sum, (_, amount)| sum.checked_add(amount.get()))
+        .expect("always: inflight unbond <= delegated <= u128::MAX");
+
+    let delegated = prev_delegated
+        .checked_sub(total_unbonded)
+        .expect("always: total unbonded <= inflight unbond <= delegated");
+
+    // Undelegation should start at the slot after the last successful undelegation
+    let undelegate_start_slot = undelegations
+        .last()
+        .map(|(ValidatorSetSlot(slot), _)| slot + 1)
+        .expect("always: undelegations length > 0 when msg success count > 0");
+
+    let adjusted_weights = undelegate_adjust_weights(
+        &weights,
+        prev_delegated,
+        delegated,
+        undelegations.into_iter(),
+    )
+    .unwrap_or_else(|| config.starting_weights());
+
+    let cmds = set![
+        Delegated(delegated),
+        PendingUnbond(pending_unbond - total_unbonded),
+        InflightUnbond(inflight_unbond - total_unbonded),
+        UndelegateStartSlot(undelegate_start_slot),
+        adjusted_weights
+    ];
+
+    let events = vec![Event::UnbondStarted(total_unbonded)];
+
+    (events, cmds)
+}
+
+fn start_transfer_undelegated(Context { repo, env, .. }: Context) -> Transition {
     let Some(LastReconcileHeight(last_reconcile_height)) = repo.last_reconcile_height() else {
         return Transition::next(vec![]);
     };
@@ -735,22 +906,16 @@ fn start_transfer_undelegated(
     Transition::tx(tx_msgs, vec![])
 }
 
-fn on_transfer_undelegated_success(
-    _config: &dyn Config,
-    _repo: &dyn Repository,
-    _env: &dyn Env,
-) -> Transition {
+fn on_transfer_undelegated_success(_: Context) -> Transition {
     Transition::next(vec![]).event(Event::UndelegatedAssetsTransferred)
 }
 
-fn start_transfer_pending_deposits(
-    _config: &dyn Config,
-    repo: &dyn Repository,
-    _env: &dyn Env,
-) -> Transition {
+fn start_transfer_pending_deposits(Context { repo, .. }: Context) -> Transition {
     let PendingDeposit(pending_deposit) = repo.pending_deposit();
+    let InflightDeposit(inflight_deposit) = repo.inflight_deposit();
 
-    if pending_deposit == 0 {
+    // Nothing to do if there are no pending deposits or if there are still inflight deposits to clear
+    if pending_deposit == 0 || inflight_deposit > 0 {
         return Transition::next(vec![]);
     }
 
@@ -761,11 +926,7 @@ fn start_transfer_pending_deposits(
     Transition::tx(tx_msgs, cmds)
 }
 
-fn on_transfer_pending_deposits_success(
-    _config: &dyn Config,
-    repo: &dyn Repository,
-    _env: &dyn Env,
-) -> Transition {
+fn on_transfer_pending_deposits_success(Context { repo, .. }: Context) -> Transition {
     let PendingDeposit(pending_deposit) = repo.pending_deposit();
 
     let InflightDeposit(inflight_deposit) = repo.inflight_deposit();
@@ -810,6 +971,30 @@ fn delegate_phase_balances(
         })
     };
 
+    let DelegateStartSlot(start_slot) = repo.delegate_start_slot();
+
+    // was the previous delegation a partial one?
+    if start_slot > 0 {
+        // delegations should be comprised of previously moved rewards and inflight deposits
+        let InflightDeposit(inflight_deposit) = repo.inflight_deposit();
+        let InflightRewardsReceivable(rewards) = repo.inflight_rewards_receivable();
+
+        let inflight_delegation = inflight_deposit
+            .checked_add(rewards)
+            .expect("always: this inflight delegation < previous inflight delegation");
+
+        assert!(
+            inflight_delegation > 0,
+            "inflight delegation > 0 when the previous delegation was partial"
+        );
+
+        return Some(DelegatePhaseBalances {
+            delegation: InflightDelegation(inflight_delegation),
+            rewards_receivable: InflightRewardsReceivable(rewards),
+            fee_payable: InflightFeePayable(0),
+        });
+    }
+
     let Some(last_reconcile_height) = repo.last_reconcile_height() else {
         return delegate_deposits_only();
     };
@@ -838,22 +1023,42 @@ fn delegate_phase_balances(
     })
 }
 
-fn delegate_phase_msgs(
-    weights: &Weights,
-    balances: DelegatePhaseBalances,
-    fee_recipient: Option<FeeRecipient>,
-) -> impl Iterator<Item = TxMsg> {
-    let InflightDelegation(inflight_delegation) = balances.delegation;
+type Delegation = (ValidatorSetSlot, NonZeroU128);
 
-    let delegate_msgs = weights
-        .split_balance(inflight_delegation)
+fn delegations(
+    weights: impl SplitBalance,
+    total: u128,
+    slot_offset: usize,
+) -> impl Iterator<Item = Delegation> {
+    let (allocated, mut delegations) = weights.split_balance(total);
+
+    let unallocated = allocated.abs_diff(total);
+
+    delegations[0] = delegations[0]
+        .checked_add(unallocated)
+        .expect("always: any slot allocation + unallocated <= total delegation");
+
+    delegations
         .into_iter()
         // get the indexes of the slots
         .enumerate()
         // skip slots where the split amount is zero
-        .filter_map(|(idx, amount)| (amount != 0).then_some((ValidatorSetSlot(idx), amount)))
+        .filter_map(move |(idx, amount)| {
+            NonZeroU128::new(amount).map(|amount| (ValidatorSetSlot(idx + slot_offset), amount))
+        })
+}
+
+fn delegate_phase_msgs(
+    weights: impl SplitBalance,
+    balances: DelegatePhaseBalances,
+    slot_offset: usize,
+    fee_recipient: Option<FeeRecipient>,
+) -> impl Iterator<Item = TxMsg> {
+    let InflightDelegation(inflight_delegation) = balances.delegation;
+
+    let delegate_msgs = delegations(weights, inflight_delegation, slot_offset)
         // create undelegate msg
-        .map(|(slot, amount)| TxMsg::Delegate(slot, amount));
+        .map(|(slot, amount)| TxMsg::Delegate(slot, amount.get()));
 
     let InflightRewardsReceivable(rewards_receivable) = balances.rewards_receivable;
 
@@ -876,17 +1081,69 @@ fn delegate_phase_msgs(
         .chain(send_fee_msg)
 }
 
+fn delegate_tx_msgs(
+    config: &dyn Config,
+    repo: &dyn Repository,
+    env: &dyn Env,
+    balances: DelegatePhaseBalances,
+) -> Option<TxMsgs> {
+    let DelegateStartSlot(start_slot_idx) = repo.delegate_start_slot();
+
+    let weights = repo.weights();
+
+    if start_slot_idx == 0 {
+        // no need to take a subset of slot weights
+        let msgs = delegate_phase_msgs(weights, balances, start_slot_idx, env.fee_recipient());
+
+        return TxMsgBatcher::new(config, repo).batch_msgs(msgs);
+    }
+
+    let weights = &weights.as_slice()[start_slot_idx..];
+
+    let msgs = delegate_phase_msgs(weights, balances, start_slot_idx, env.fee_recipient());
+
+    TxMsgBatcher::new(config, repo).batch_msgs(msgs)
+}
+
+fn delegate_adjust_weights(
+    weights: &Weights,
+    previous_delegated: u128,
+    current_delegated: u128,
+    delegations: impl Iterator<Item = Delegation>,
+) -> Weights {
+    let delegations: BTreeMap<_, _> = delegations
+        .map(|(ValidatorSetSlot(slot), amount)| (slot, amount.get()))
+        .collect();
+
+    let mut adjusted_weights = vec![];
+
+    for (slot, weight) in weights.as_slice().iter().enumerate() {
+        let mut slot_delegation = weight.apply(previous_delegated);
+
+        if let Some(delegation) = delegations.get(&slot) {
+            slot_delegation = slot_delegation.checked_add(*delegation).expect(
+                "always: delegation would have failed if new delegated amount overflowed 128 bits",
+            );
+        }
+
+        let adjusted_w = Weight::checked_from_fraction(slot_delegation, current_delegated)
+            .expect("checked: current delegation > prev delegation >= 0");
+
+        adjusted_weights.push(adjusted_w);
+    }
+
+    Weights::new(&adjusted_weights).expect("always: valid weights")
+}
+
 fn try_withdraw_rewards(config: &dyn Config, repo: &dyn Repository) -> Transition {
     if repo.last_reconcile_height().is_none() {
         return Transition::next(vec![]);
     }
 
-    let weights = repo.weights();
+    let ValidatorSetSize(validator_set_size) = config.validator_set_size();
 
-    let msgs = weights
-        .iter()
-        .enumerate()
-        .map(|(idx, _)| ValidatorSetSlot(idx))
+    let msgs = (0..validator_set_size)
+        .map(ValidatorSetSlot)
         .map(TxMsg::WithdrawRewards);
 
     let Some(tx_msgs) = TxMsgBatcher::new(config, repo).batch_msgs(msgs) else {
@@ -896,16 +1153,12 @@ fn try_withdraw_rewards(config: &dyn Config, repo: &dyn Repository) -> Transitio
     Transition::tx(tx_msgs, vec![])
 }
 
-fn start_delegate(config: &dyn Config, repo: &dyn Repository, env: &dyn Env) -> Transition {
+fn start_delegate(Context { config, repo, env }: Context) -> Transition {
     let Some(delegate_balances) = delegate_phase_balances(config, repo, env) else {
         return try_withdraw_rewards(config, repo);
     };
 
-    let delegate_msgs =
-        delegate_phase_msgs(&repo.weights(), delegate_balances, env.fee_recipient());
-
-    let tx_msgs = TxMsgBatcher::new(config, repo)
-        .batch_msgs(delegate_msgs)
+    let tx_msgs = delegate_tx_msgs(config, repo, env, delegate_balances)
         .expect("always: at least one message if there are delegatable balances");
 
     let mut cmds = vec![];
@@ -925,31 +1178,121 @@ fn start_delegate(config: &dyn Config, repo: &dyn Repository, env: &dyn Env) -> 
     Transition::tx(tx_msgs, cmds)
 }
 
-fn on_delegate_success(config: &dyn Config, repo: &dyn Repository, env: &dyn Env) -> Transition {
+fn on_delegate_success(Context { config, repo, env }: Context) -> Transition {
     let Some(delegate_balances) = delegate_phase_balances(config, repo, env) else {
         return try_withdraw_rewards(config, repo);
     };
 
-    let delegate_msgs =
-        delegate_phase_msgs(&repo.weights(), delegate_balances, env.fee_recipient());
-
-    if let Some(tx_msgs) = TxMsgBatcher::new(config, repo).batch_msgs(delegate_msgs) {
+    if let Some(tx_msgs) = delegate_tx_msgs(config, repo, env, delegate_balances) {
         return Transition::tx(tx_msgs, vec![]);
     }
 
-    let Delegated(delegated) = repo.delegated();
+    let Delegated(prev_delegated) = repo.delegated();
 
     let InflightDelegation(inflight_delegation) = delegate_balances.delegation;
 
+    let delegated = prev_delegated
+        .checked_add(inflight_delegation)
+        .expect("always: total delegated amount should never overflow u128");
+
+    let weights = repo.weights();
+
+    let DelegateStartSlot(start_slot) = repo.delegate_start_slot();
+
+    let delegations = delegations(&weights, inflight_delegation, start_slot);
+
+    let adjusted_weights =
+        delegate_adjust_weights(&weights, prev_delegated, delegated, delegations);
+
     let cmds = set![
-        Delegated(delegated + inflight_delegation),
+        Delegated(delegated),
         InflightDelegation(0),
         InflightDeposit(0),
         InflightRewardsReceivable(0),
-        InflightFeePayable(0)
+        InflightFeePayable(0),
+        DelegateStartSlot(0),
+        adjusted_weights
     ];
 
     Transition::next(cmds).event(Event::DelegationsIncreased(inflight_delegation))
+}
+
+fn delegate_force_next(Context { repo, .. }: Context) -> (Vec<Event>, Vec<Cmd>) {
+    let MsgSuccessCount(msg_success_count) = repo.msg_success_count();
+    let DelegateStartSlot(start_slot_idx) = repo.delegate_start_slot();
+
+    if msg_success_count == 0 {
+        // was the last delegation partial? i.e. forced next after a successful batch
+        if start_slot_idx > 0 {
+            // no change, try again next time
+            return (vec![], vec![]);
+        }
+
+        // no batches ever succeeded: clear inflight balances, try again next time as normal
+        return (
+            vec![],
+            set![
+                InflightDelegation(0),
+                InflightDeposit(0),
+                InflightRewardsReceivable(0),
+                InflightFeePayable(0)
+            ],
+        );
+    }
+
+    let InflightDelegation(inflight_delegation) = repo.inflight_delegation();
+    let Delegated(prev_delegated) = repo.delegated();
+
+    let weights = repo.weights();
+
+    let delegations: Vec<_> = delegations(&weights, inflight_delegation, start_slot_idx)
+        .take(msg_success_count)
+        .collect();
+
+    let total_delegated: u128 = delegations
+        .iter()
+        .take(msg_success_count)
+        .try_fold(0u128, |sum, (_, amount)| sum.checked_add(amount.get()))
+        .expect("always: total delegated < inflight delegation");
+
+    let delegated = prev_delegated
+        .checked_sub(total_delegated)
+        .expect("always: total delegated < inflight delegation <= delegated");
+
+    // The delegation should recommence at the slot after the last successful undelegation
+    let delegate_start_slot = delegations
+        .last()
+        .map(|(ValidatorSetSlot(slot), _)| slot + 1)
+        .expect("always: delegations length > 0 when msg success count > 0");
+
+    let adjusted_weights =
+        delegate_adjust_weights(&weights, prev_delegated, delegated, delegations.into_iter());
+
+    let InflightDeposit(inflight_deposit) = repo.inflight_deposit();
+    let InflightRewardsReceivable(rewards) = repo.inflight_rewards_receivable();
+
+    // draw down rewards first
+    let rewards = rewards.saturating_sub(total_delegated);
+
+    let inflight_deposit = inflight_deposit
+        .checked_sub(total_delegated.abs_diff(rewards))
+        .expect("always: inflight deposit == (inflight delegation - rewards)");
+
+    let cmds = set![
+        Delegated(delegated),
+        // Clear inflight delegation so it is recalculated on the next pass
+        InflightDelegation(0),
+        InflightDeposit(inflight_deposit),
+        InflightRewardsReceivable(rewards),
+        // Discard any fee payment
+        InflightFeePayable(0),
+        DelegateStartSlot(delegate_start_slot),
+        adjusted_weights
+    ];
+
+    let events = vec![Event::DelegationsIncreased(total_delegated)];
+
+    (events, cmds)
 }
 
 fn handler(phase: Phase, state: State) -> Handler {
@@ -976,111 +1319,124 @@ fn handler(phase: Phase, state: State) -> Handler {
     }
 }
 
-impl<'a> Fsm for FsmImpl<'a> {
-    fn reconcile(&self) -> Response {
-        let mut phase = self.repo.phase();
-        let mut state = self.repo.state();
+fn reconcile(
+    ctx: Context,
+    mut phase: Phase,
+    mut state: State,
+    mut intermediate_repo: IntermediateRepo,
+    mut all_events: Vec<Event>,
+) -> Response {
+    let mut tx_skip_count = 0;
 
-        let mut all_events = vec![];
+    loop {
+        let Transition { kind, cmds, events } = handler(phase, state)(Context {
+            repo: &intermediate_repo,
+            ..ctx
+        });
 
-        let mut intermediate_state = IntermediateState {
-            repo: self.repo,
-            cache: Cache::default(),
-        };
+        all_events.extend_from_slice(&events);
 
-        let mut tx_skip_count = 0;
-
-        // issued messages were successful, adjust counts accordingly
-        if state.is_pending() {
-            let MsgIssuedCount(msg_issued_count) = intermediate_state.msg_issued_count();
-            let MsgSuccessCount(msg_success_count) = intermediate_state.msg_success_count();
-
-            intermediate_state
-                .handle_cmd(MsgSuccessCount(msg_success_count + msg_issued_count).into());
+        for cmd in cmds {
+            intermediate_repo.handle_cmd(cmd);
         }
 
-        loop {
-            let Transition { kind, cmds, events } =
-                handler(phase, state)(self.config, &intermediate_state, self.env);
+        match kind {
+            TransitionKind::Next => {
+                intermediate_repo.handle_cmd(MsgIssuedCount(0).into());
+                intermediate_repo.handle_cmd(MsgSuccessCount(0).into());
 
-            all_events.extend_from_slice(&events);
+                // Possible Txs skipped
+                if state.is_idle() {
+                    let phase_tx_count =
+                        phase.tx_count(ctx.config.validator_set_size(), ctx.config.max_msg_count());
 
-            for cmd in cmds {
-                intermediate_state.handle_cmd(cmd);
-            }
-
-            match kind {
-                TransitionKind::Next => {
-                    intermediate_state.handle_cmd(MsgIssuedCount(0).into());
-                    intermediate_state.handle_cmd(MsgSuccessCount(0).into());
-
-                    // Possible Txs skipped
-                    if state.is_idle() {
-                        let phase_tx_count = phase.tx_count(
-                            self.config.validator_set_size(),
-                            self.config.max_msg_count(),
-                        );
-
-                        tx_skip_count += phase_tx_count;
-                    }
-
-                    let Some(next_phase) = phase.next() else {
-                        let mut cmds = intermediate_state.cache.into_cmds();
-
-                        let CurrentHeight(current_height) = self.env.current_height();
-
-                        cmds.push(LastReconcileHeight(current_height).into());
-                        cmds.push(Phase::StartReconcile.into());
-                        cmds.push(State::Idle.into());
-
-                        return Response {
-                            cmds,
-                            events: all_events,
-                            tx_msgs: None,
-                            tx_skip_count,
-                        };
-                    };
-
-                    phase = next_phase;
-                    state = State::Idle;
+                    tx_skip_count += phase_tx_count;
                 }
 
-                TransitionKind::Tx(tx_msgs) => {
-                    intermediate_state.handle_cmd(MsgIssuedCount(tx_msgs.msgs.len()).into());
+                let Some(next_phase) = phase.next() else {
+                    let mut cmds = intermediate_repo.cache.into_cmds();
 
-                    let mut cmds = intermediate_state.cache.into_cmds();
+                    let CurrentHeight(current_height) = ctx.env.current_height();
 
-                    cmds.push(phase.into());
-                    cmds.push(State::Pending.into());
+                    cmds.push(LastReconcileHeight(current_height).into());
+                    cmds.push(Phase::StartReconcile.into());
+                    cmds.push(State::Idle.into());
 
                     return Response {
                         cmds,
                         events: all_events,
-                        tx_msgs: Some(tx_msgs),
-                        tx_skip_count,
-                    };
-                }
-
-                TransitionKind::Abort => {
-                    let tx_skip_count = phase.sequence_tx_count(
-                        state,
-                        self.config.validator_set_size(),
-                        self.config.max_msg_count(),
-                    );
-
-                    return Response {
-                        cmds: vec![],
-                        events: all_events,
                         tx_msgs: None,
                         tx_skip_count,
                     };
-                }
+                };
+
+                phase = next_phase;
+                state = State::Idle;
+            }
+
+            TransitionKind::Tx(tx_msgs) => {
+                intermediate_repo.handle_cmd(MsgIssuedCount(tx_msgs.msgs.len()).into());
+
+                let mut cmds = intermediate_repo.cache.into_cmds();
+
+                cmds.push(phase.into());
+                cmds.push(State::Pending.into());
+
+                return Response {
+                    cmds,
+                    events: all_events,
+                    tx_msgs: Some(tx_msgs),
+                    tx_skip_count,
+                };
+            }
+
+            TransitionKind::Abort => {
+                let tx_skip_count = phase.sequence_tx_count(
+                    state,
+                    ctx.config.validator_set_size(),
+                    ctx.config.max_msg_count(),
+                );
+
+                return Response {
+                    cmds: vec![],
+                    events: all_events,
+                    tx_msgs: None,
+                    tx_skip_count,
+                };
             }
         }
     }
+}
+
+impl<'a> Fsm for FsmImpl<'a> {
+    fn reconcile(&self) -> Response {
+        let state = self.ctx.repo.state();
+
+        let mut intermediate_repo = IntermediateRepo {
+            repo: self.ctx.repo,
+            cache: Cache::default(),
+        };
+
+        // issued messages were successful, adjust counts accordingly
+        if state.is_pending() {
+            let MsgIssuedCount(msg_issued_count) = intermediate_repo.msg_issued_count();
+            let MsgSuccessCount(msg_success_count) = intermediate_repo.msg_success_count();
+
+            intermediate_repo
+                .handle_cmd(MsgSuccessCount(msg_success_count + msg_issued_count).into());
+        }
+
+        reconcile(
+            self.ctx,
+            self.ctx.repo.phase(),
+            state,
+            intermediate_repo,
+            vec![],
+        )
+    }
 
     fn failed(&self) -> Response {
-        if !self.repo.state().is_pending() {
+        if !self.ctx.repo.state().is_pending() {
             panic!("failed called in a non-pending state")
         }
 
@@ -1092,6 +1448,56 @@ impl<'a> Fsm for FsmImpl<'a> {
             tx_msgs: None,
             tx_skip_count: 0,
         }
+    }
+
+    fn force_next(&self) -> Option<Response> {
+        let phase = self.ctx.repo.phase();
+
+        if !self.ctx.repo.state().is_failed() {
+            return None;
+        }
+
+        let (events, mut cmds) = match phase {
+            Phase::Undelegate => undelegate_force_next(self.ctx),
+            Phase::Delegate => delegate_force_next(self.ctx),
+            _ => return None,
+        };
+
+        // ensure message counts are cleared
+        cmds.push(MsgIssuedCount(0).into());
+        cmds.push(MsgSuccessCount(0).into());
+
+        let Some(next_phase) = phase.next() else {
+            let CurrentHeight(current_height) = self.ctx.env.current_height();
+
+            cmds.push(LastReconcileHeight(current_height).into());
+            cmds.push(Phase::StartReconcile.into());
+            cmds.push(State::Idle.into());
+
+            return Some(Response {
+                cmds,
+                events,
+                tx_msgs: None,
+                tx_skip_count: 0,
+            });
+        };
+
+        let mut intermediate_repo = IntermediateRepo {
+            repo: self.ctx.repo,
+            cache: Cache::default(),
+        };
+
+        for cmd in cmds {
+            intermediate_repo.handle_cmd(cmd);
+        }
+
+        Some(reconcile(
+            self.ctx,
+            next_phase,
+            State::Idle,
+            intermediate_repo,
+            events,
+        ))
     }
 }
 
