@@ -36,7 +36,7 @@ pub trait Admin {
     /// Authorize the `sender` as the current admin, obtaining the `AdminRole` token
     fn authorize_admin(&self, sender: Sender) -> Result<AdminRole, UnauthorizedError>;
 
-    /// Transfer the admin role to the next admin - they have to `claim` in order to become the current admin
+    /// Transfer the admin role to the next admin - they have to `claim_admin_role` in order to become the current admin
     fn transfer_admin_role(
         &self,
         admin_role: AdminRole,

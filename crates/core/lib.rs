@@ -5,11 +5,8 @@ pub mod vault;
 
 use num::FixedU256;
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, derive_more::Display, derive_more::Deref, derive_more::From,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::Display, derive_more::Deref)]
 #[deref(forward)]
-#[from(forward)]
 pub struct Identifier(std::rc::Rc<String>);
 
 pub type Asset = Identifier;
@@ -20,6 +17,18 @@ pub type Decimals = u32;
 impl Identifier {
     pub fn into_string(self) -> String {
         std::rc::Rc::unwrap_or_clone(self.0)
+    }
+}
+
+impl From<String> for Identifier {
+    fn from(value: String) -> Self {
+        Self(value.into())
+    }
+}
+
+impl From<&str> for Identifier {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned().into())
     }
 }
 

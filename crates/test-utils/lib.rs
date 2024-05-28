@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use ron::ser::{to_string_pretty, PrettyConfig};
 use serde::Serialize;
 
@@ -7,6 +9,10 @@ pub trait ToExpectInput {
 
 pub fn check(actual: impl ToExpectInput, expected: expect_test::Expect) {
     expected.assert_eq(actual.to_expect_input().as_str());
+}
+
+pub fn check_err(actual: impl Error, expected: expect_test::Expect) {
+    expected.assert_eq(actual.to_string().as_str());
 }
 
 impl<T> ToExpectInput for T
