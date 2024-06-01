@@ -14,6 +14,12 @@ deploy-contract contract init_msg *FLAGS:
 update-expect package:
 	UPDATE_EXPECT=1 cargo test --package {{package}}
 
+test *NEXTEST_OPTS:
+	cargo nextest run {{NEXTEST_OPTS}}
+
+test-coverage *LLVM_COV_OPTS:
+	cargo llvm-cov {{LLVM_COV_OPTS}}
+
 build-contracts:
 	#!/usr/bin/env nu
 	do {
