@@ -25,7 +25,6 @@ struct WholeBatch {
 #[derive(Default)]
 struct RecipientBatch {
     value: DepositValue,
-    claimed: bool,
     next: Option<BatchId>,
 }
 
@@ -949,8 +948,8 @@ impl UnbondingLog for World {
         self.unbonding_batches.get(&batch).map(|b| b.amount)
     }
 
-    fn pending_batch_hint(&self, batch: BatchId) -> Option<Hint> {
-        todo!()
+    fn pending_batch_hint(&self, _batch: BatchId) -> Option<Hint> {
+        unimplemented!("only included for downstream use")
     }
 
     fn committed_batch_epoch(&self, batch: BatchId) -> Option<UnbondEpoch> {
@@ -999,7 +998,3 @@ impl SharesMint for World {
         SHARES_ASSET.into()
     }
 }
-
-// fn claim(&self, recipient: Recipient) -> Result<Vec<Cmd>, Error>;
-
-// fn start_unbond(&self) -> Result<Vec<Cmd>, Error>;

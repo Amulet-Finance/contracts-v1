@@ -49,6 +49,7 @@ impl From<&Identifier> for String {
 pub struct UnauthorizedError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(test, derive(serde::Serialize))]
 struct Rate(FixedU256);
 
 impl Rate {

@@ -36,6 +36,7 @@ macro_rules! safe_add {
 
 /// Σ x/y - where x is a debt payment and y is the collateral balance at the time of payment
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(test, derive(serde::Serialize))]
 pub struct SumPaymentRatio(FixedU256);
 
 impl SumPaymentRatio {
@@ -69,6 +70,7 @@ pub struct Vault {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(serde::Serialize))]
 pub struct Cdp {
     pub collateral: Collateral,
     pub debt: Debt,

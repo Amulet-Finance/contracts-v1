@@ -55,7 +55,8 @@ pub enum Error {
     SyntheticNotFound,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(serde::Serialize))]
 pub enum MintCmd {
     Mint {
         synthetic: Synthetic,

@@ -49,5 +49,5 @@ pub mod prelude {
     pub use expect_test::expect;
     pub use rstest::*;
 
-    pub use crate::{assert_wn, check, ToExpectInput};
+    pub use crate::{assert_wn, check, check_err, ToExpectInput};
 }

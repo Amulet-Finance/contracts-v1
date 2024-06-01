@@ -1,6 +1,7 @@
 macro_rules! bps_rate {
     ($T:ident, max=$max:expr, default=$default:expr) => {
         #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+        #[cfg_attr(test, derive(serde::Serialize))]
         pub struct $T {
             bps: u32,
             rate: $crate::Rate,
