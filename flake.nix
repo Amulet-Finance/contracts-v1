@@ -28,10 +28,13 @@
         pkgs.binaryen
         pkgs.coreutils
         pkgs.bun
+        pkgs.cargo-llvm-cov
+        pkgs.cargo-nextest
         # nice to have
         pkgs.nodePackages_latest.typescript-language-server
         pkgs.rust-analyzer-unwrapped
-        pkgs.cargo-nextest
+        pkgs.go
+        pkgs.gopls
         pkgs.tokei
       ];
 
