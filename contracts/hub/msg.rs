@@ -25,3 +25,27 @@ pub enum QueryMsg {
     Admin(AdminQueryMsg),
     Hub(HubQueryMsg),
 }
+
+impl From<HubExecuteMsg> for ExecuteMsg {
+    fn from(v: HubExecuteMsg) -> Self {
+        Self::Hub(v)
+    }
+}
+
+impl From<AdminExecuteMsg> for ExecuteMsg {
+    fn from(v: AdminExecuteMsg) -> Self {
+        Self::Admin(v)
+    }
+}
+
+impl From<HubQueryMsg> for QueryMsg {
+    fn from(v: HubQueryMsg) -> Self {
+        Self::Hub(v)
+    }
+}
+
+impl From<AdminQueryMsg> for QueryMsg {
+    fn from(v: AdminQueryMsg) -> Self {
+        Self::Admin(v)
+    }
+}

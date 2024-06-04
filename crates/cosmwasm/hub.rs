@@ -19,6 +19,7 @@ use amulet_core::{
         ProxyConfig, SyntheticMint as CoreSyntheticMint, VaultDepositReason, VaultId,
         Vaults as CoreVaults,
     },
+    Identifier,
 };
 use cw_utils::{one_coin, parse_reply_execute_data, ParseReplyError, PaymentError};
 
@@ -180,6 +181,10 @@ pub struct VaultMetadata {
     pub vault: String,
     /// Denom of the associated synthetic (debt token)
     pub synthetic: String,
+    /// The deposit enabled state
+    pub deposit_enabled: bool,
+    /// The advance enabled state
+    pub advance_enabled: bool,
     /// The maximum Loan-To-Value (LTV) allowed in basis points
     pub max_ltv_bps: u32,
     /// The base fee applied to yield payments in basis points
@@ -204,10 +209,20 @@ pub struct VaultMetadata {
     pub treasury_shares: Uint128,
     /// The AMO associated with the vault, if any
     pub amo: Option<String>,
+    /// The portion of payments allocated to the AMO
+    pub amo_allocation: u32,
     /// The amount of shares claimable by the AMO
     pub amo_shares: Uint128,
     /// The on-going sum of payments over collateral, if any
     pub sum_payment_ratio: Option<SumPaymentRatio>,
+    /// The address of the deposit proxy, if any
+    pub deposit_proxy: Option<String>,
+    /// The address of the advance proxy, if any
+    pub advance_proxy: Option<String>,
+    /// The address of the mint proxy, if any
+    pub mint_proxy: Option<String>,
+    /// The address of the redeem proxy, if any
+    pub redeem_proxy: Option<String>,
 }
 
 #[cw_serde]
@@ -651,6 +666,10 @@ fn vault_metadata(
 
     let synthetic = vaults.synthetic_asset(&vault);
 
+    let deposit_enabled = vaults.deposits_enabled(&vault);
+
+    let advance_enabled = vaults.advance_enabled(&vault);
+
     let max_ltv_bps = vaults.max_ltv(&vault).unwrap_or_default().raw();
 
     let collateral_yield_fee_bps = vaults
@@ -693,6 +712,8 @@ fn vault_metadata(
 
     let amo = vaults.amo(&vault).map(Into::into);
 
+    let amo_allocation = vaults.amo_allocation(&vault).unwrap_or_default().raw();
+
     let amo_shares = balance_sheet.amo_shares(&vault).unwrap_or_default().into();
 
     let sum_payment_ratio = balance_sheet.overall_sum_payment_ratio(&vault).map(|spr| {
@@ -707,9 +728,19 @@ fn vault_metadata(
         SumPaymentRatio { ratio, timestamp }
     });
 
+    let deposit_proxy = vaults.deposit_proxy(&vault).map(Identifier::into_string);
+
+    let advance_proxy = vaults.advance_proxy(&vault).map(Identifier::into_string);
+
+    let mint_proxy = vaults.mint_proxy(&vault).map(Identifier::into_string);
+
+    let redeem_proxy = vaults.redeem_proxy(&vault).map(Identifier::into_string);
+
     Ok(VaultMetadata {
         vault: vault.into_string(),
         synthetic: synthetic.into_string(),
+        deposit_enabled,
+        advance_enabled,
         max_ltv_bps,
         collateral_yield_fee_bps,
         reserve_yield_fee_bps,
@@ -722,8 +753,13 @@ fn vault_metadata(
         reserve_shares,
         treasury_shares,
         amo,
+        amo_allocation,
         amo_shares,
         sum_payment_ratio,
+        deposit_proxy,
+        advance_proxy,
+        redeem_proxy,
+        mint_proxy,
     })
 }
 
@@ -819,6 +855,18 @@ pub fn handle_hub_cmd<Msg>(
     }
 
     Ok(())
+}
+
+impl From<UserMsg> for ExecuteMsg {
+    fn from(v: UserMsg) -> Self {
+        Self::User(v)
+    }
+}
+
+impl From<AdminMsg> for ExecuteMsg {
+    fn from(v: AdminMsg) -> Self {
+        Self::Admin(v)
+    }
 }
 
 #[cfg(test)]

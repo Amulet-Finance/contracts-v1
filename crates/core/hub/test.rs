@@ -2161,7 +2161,7 @@ fn convert_credit() {
                 )),
                 BalanceSheet(SetCollateralBalance(
                   vault: "vault",
-                  balance: 1089,
+                  balance: 1088,
                 )),
                 BalanceSheet(SetReserveShares(
                   vault: "vault",
@@ -2182,7 +2182,7 @@ fn convert_credit() {
                 BalanceSheet(SetAccountCollateral(
                   vault: "vault",
                   account: "sender",
-                  collateral: 1089,
+                  collateral: 1088,
                 )),
                 BalanceSheet(SetAccountSumPaymentRatio(
                   vault: "vault",
@@ -2191,7 +2191,7 @@ fn convert_credit() {
                 )),
               ],
               cdp: (
-                collateral: 1089,
+                collateral: 1088,
                 debt: 0,
                 credit: 0,
                 spr: (("0.08999999999999999999999999999999")),
@@ -2209,14 +2209,14 @@ fn convert_credit() {
             (
               users: {
                 "sender": (
-                  collateral: 1089,
+                  collateral: 1088,
                   debt: 0,
                   credit: 0,
                   spr: Some((("0.08999999999999999999999999999999"))),
                 ),
               },
               collateral_shares: 990000000000000000000,
-              collateral_balance: 1089,
+              collateral_balance: 1088,
               reserve_shares: 909090909090909092,
               reserve_balance: 1,
               treasury_shares: 9090909090909090908,

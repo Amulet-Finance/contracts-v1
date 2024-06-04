@@ -716,14 +716,16 @@ pub fn convert_credit(
     let (vault, shares) = withdraw_vault_reserves(vault, redemption_rate, amount)
         .ok_or(ConvertCreditError::InsufficientReserves)?;
 
-    let vault = add_vault_collateral(vault, amount, shares);
+    let shares_value = redemption_rate.shares_to_deposits(shares);
+
+    let vault = add_vault_collateral(vault, shares_value, shares);
 
     cdp.credit = cdp
         .credit
         .checked_sub(amount)
         .expect("checked: credit >= amount");
 
-    cdp.collateral = safe_add!(cdp.collateral, amount);
+    cdp.collateral = safe_add!(cdp.collateral, shares_value);
 
     Ok((vault, cdp))
 }

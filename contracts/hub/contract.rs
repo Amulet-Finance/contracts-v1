@@ -133,3 +133,6 @@ pub fn query(deps: Deps, _: Env, msg: QueryMsg) -> Result<Binary, Error> {
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, Error> {
     Ok(Response::default())
 }
+
+#[cfg(test)]
+mod test;
