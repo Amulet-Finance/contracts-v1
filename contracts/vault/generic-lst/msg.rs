@@ -1,7 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::Uint128;
 
-use amulet_cw::{
+pub use amulet_cw::{
     admin::{ExecuteMsg as AdminExecuteMsg, QueryMsg as AdminQueryMsg},
     vault::{ExecuteMsg as VaultExecuteMsg, QueryMsg as VaultQueryMsg},
 };
@@ -52,4 +52,40 @@ pub enum QueryMsg {
     Admin(AdminQueryMsg),
     Vault(VaultQueryMsg),
     Strategy(StrategyQueryMsg),
+}
+
+impl From<StrategyExecuteMsg> for ExecuteMsg {
+    fn from(v: StrategyExecuteMsg) -> Self {
+        Self::Strategy(v)
+    }
+}
+
+impl From<VaultExecuteMsg> for ExecuteMsg {
+    fn from(v: VaultExecuteMsg) -> Self {
+        Self::Vault(v)
+    }
+}
+
+impl From<AdminExecuteMsg> for ExecuteMsg {
+    fn from(v: AdminExecuteMsg) -> Self {
+        Self::Admin(v)
+    }
+}
+
+impl From<StrategyQueryMsg> for QueryMsg {
+    fn from(v: StrategyQueryMsg) -> Self {
+        Self::Strategy(v)
+    }
+}
+
+impl From<VaultQueryMsg> for QueryMsg {
+    fn from(v: VaultQueryMsg) -> Self {
+        Self::Vault(v)
+    }
+}
+
+impl From<AdminQueryMsg> for QueryMsg {
+    fn from(v: AdminQueryMsg) -> Self {
+        Self::Admin(v)
+    }
 }

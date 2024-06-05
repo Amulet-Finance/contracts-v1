@@ -13,7 +13,6 @@ test       = false
 path       = "contract.rs"
 crate-type = ["cdylib", "rlib"]
 doctest    = false
-test       = false
 
 [dependencies]
 anyhow.workspace          = true
@@ -24,3 +23,6 @@ neutron-sdk.workspace     = true
 amulet-core.workspace     = true
 amulet-cw.workspace       = true
 amulet-ntrn.workspace     = true
+
+[dev-dependencies]
+test-utils = { workspace = true }
