@@ -1,7 +1,6 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{
-    to_json_binary, Api, Binary, CosmosMsg, CustomQuery, MessageInfo, QuerierWrapper, StdError,
-    Storage, SubMsg, Uint128,
+    to_json_binary, Api, Binary, CosmosMsg, MessageInfo, StdError, Storage, SubMsg, Uint128,
 };
 
 use amulet_core::{
@@ -79,7 +78,6 @@ pub struct Metadata {
     pub denom: String,
     pub ticker: String,
     pub decimals: u32,
-    pub total_supply: Uint128,
 }
 
 #[cw_serde]
@@ -150,11 +148,7 @@ pub fn handle_execute_msg(
     Ok(cmd)
 }
 
-pub fn handle_query_msg(
-    storage: &dyn Storage,
-    querier: QuerierWrapper<impl CustomQuery>,
-    msg: QueryMsg,
-) -> Result<Binary, StdError> {
+pub fn handle_query_msg(storage: &dyn Storage, msg: QueryMsg) -> Result<Binary, StdError> {
     match msg {
         QueryMsg::Whitelisted { minter } => {
             let whitelisted = Repository(storage)
@@ -173,13 +167,10 @@ pub fn handle_query_msg(
                 .u32_at(key::DECIMALS.with(&synthetic))
                 .ok_or(StdError::not_found("synthetic"))?;
 
-            let total_supply = querier.query_supply(&synthetic)?;
-
             to_json_binary(&Metadata {
                 denom: synthetic,
                 ticker,
                 decimals,
-                total_supply: total_supply.amount,
             })
         }
 
@@ -201,13 +192,10 @@ pub fn handle_query_msg(
                     .u32_at(key::DECIMALS.with(&denom))
                     .expect("always: set during denom creation");
 
-                let total_supply = querier.query_supply(&denom)?;
-
                 assets.push(Metadata {
                     denom,
                     ticker,
                     decimals,
-                    total_supply: total_supply.amount,
                 });
             }
 

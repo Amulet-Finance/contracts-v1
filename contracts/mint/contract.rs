@@ -79,9 +79,7 @@ pub fn query(deps: Deps, _: Env, msg: QueryMsg) -> Result<Binary, Error> {
             admin::handle_query_msg(&AdminRespository::new(deps.storage), admin_query)?
         }
 
-        QueryMsg::Mint(mint_query) => {
-            mint::handle_query_msg(deps.storage, deps.querier, mint_query)?
-        }
+        QueryMsg::Mint(mint_query) => mint::handle_query_msg(deps.storage, mint_query)?,
     };
 
     Ok(binary)
@@ -91,3 +89,6 @@ pub fn query(deps: Deps, _: Env, msg: QueryMsg) -> Result<Binary, Error> {
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, Error> {
     Ok(Response::default())
 }
+
+#[cfg(test)]
+mod test;

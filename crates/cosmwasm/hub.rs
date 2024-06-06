@@ -3,8 +3,6 @@ pub mod balance_sheet;
 pub mod synthetic_mint;
 pub mod vaults;
 
-use core::panic;
-
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{
     from_json, to_json_binary, Addr, Api, Binary, Env, MessageInfo, Reply, Response, StdError,
@@ -719,7 +717,7 @@ fn vault_metadata(
     let sum_payment_ratio = balance_sheet.overall_sum_payment_ratio(&vault).map(|spr| {
         let timestamp = storage
             .overall_spr_timestamp(&vault)
-            .expect("always: present overall spr is present");
+            .expect("always: present when overall spr is present");
 
         let raw_spr = spr.into_raw();
 

@@ -23,3 +23,27 @@ pub enum QueryMsg {
     Admin(AdminQueryMsg),
     Mint(MintQueryMsg),
 }
+
+impl From<MintExecuteMsg> for ExecuteMsg {
+    fn from(v: MintExecuteMsg) -> Self {
+        Self::Mint(v)
+    }
+}
+
+impl From<AdminExecuteMsg> for ExecuteMsg {
+    fn from(v: AdminExecuteMsg) -> Self {
+        Self::Admin(v)
+    }
+}
+
+impl From<MintQueryMsg> for QueryMsg {
+    fn from(v: MintQueryMsg) -> Self {
+        Self::Mint(v)
+    }
+}
+
+impl From<AdminQueryMsg> for QueryMsg {
+    fn from(v: AdminQueryMsg) -> Self {
+        Self::Admin(v)
+    }
+}

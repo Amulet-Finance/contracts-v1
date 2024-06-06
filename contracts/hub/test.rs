@@ -90,7 +90,6 @@ fn update_querier(deps: &mut MockDeps, total_deposits: u128, total_issued_shares
                     denom,
                     ticker: "SYNTH".into(),
                     decimals: 6,
-                    total_supply: 0u32.into(),
                 }),
                 q => panic!("unexpected vault query: {q:?}"),
             },
