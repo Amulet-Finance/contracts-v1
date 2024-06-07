@@ -59,7 +59,6 @@ export interface Metadata {
   decimals: number;
   denom: string;
   ticker: string;
-  total_supply: Uint128;
 }
 export interface CurrentAdminResponse {
   current_admin?: string | null;

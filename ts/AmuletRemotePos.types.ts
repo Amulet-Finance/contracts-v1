@@ -47,11 +47,18 @@ export type ExecuteMsg2 = {
   claim: {};
 };
 export type StrategyExecuteMsg = {
+  force_next: {};
+} | {
   reconcile: {
     fee_recipient?: string | null;
   };
 } | {
   receive_undelegated: {};
+} | {
+  redelegate_slot: {
+    slot: number;
+    validator: string;
+  };
 } | {
   restore_ica: {
     id: string;
@@ -89,6 +96,10 @@ export type QueryMsg2 = {
 } | {
   active_unbondings: {
     address?: string | null;
+  };
+} | {
+  unbonding_log_metadata: {
+    address: string;
   };
 } | {
   claimable: {
@@ -194,6 +205,12 @@ export interface SharesAssetResponse {
 export interface StateResponse {
   total_deposits: Uint128;
   total_issued_shares: Uint128;
+}
+export interface UnbondingLogMetadata {
+  first_entered_batch?: number | null;
+  last_claimed_batch?: number | null;
+  last_committed_batch_id?: number | null;
+  last_entered_batch?: number | null;
 }
 export interface UnderlyingAssetDecimalsResponse {
   decimals: number;

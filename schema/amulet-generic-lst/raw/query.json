@@ -106,6 +106,28 @@
           "additionalProperties": false
         },
         {
+          "description": "Returns all the unbonding log metadata for the given address",
+          "type": "object",
+          "required": [
+            "unbonding_log_metadata"
+          ],
+          "properties": {
+            "unbonding_log_metadata": {
+              "type": "object",
+              "required": [
+                "address"
+              ],
+              "properties": {
+                "address": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
           "description": "Returns the current claimable balance for the address",
           "type": "object",
           "required": [

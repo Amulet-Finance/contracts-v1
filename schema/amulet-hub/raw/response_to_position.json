@@ -6,7 +6,8 @@
     "collateral",
     "credit",
     "debt",
-    "sum_payment_ratio"
+    "sum_payment_ratio",
+    "vault_loss_detected"
   ],
   "properties": {
     "collateral": {
@@ -40,6 +41,10 @@
           "$ref": "#/definitions/Uint256"
         }
       ]
+    },
+    "vault_loss_detected": {
+      "description": "Whether or not there was a vault loss detected. If `true` the other fields will be based on the last stored overall SPR for the vault.",
+      "type": "boolean"
     }
   },
   "additionalProperties": false,

@@ -57,6 +57,7 @@ dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std",
  "neutron-sdk",
+ "test-utils",
 ]
 
 [[package]]
@@ -68,6 +69,8 @@ dependencies = [
  "anyhow",
  "cosmwasm-schema",
  "cosmwasm-std",
+ "prost",
+ "test-utils",
 ]
 
 [[package]]
@@ -81,6 +84,7 @@ dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std",
  "neutron-sdk",
+ "test-utils",
 ]
 
 [[package]]
@@ -115,6 +119,7 @@ dependencies = [
  "pos-reconcile-fsm",
  "prost",
  "prost-types",
+ "test-utils",
 ]
 
 [[package]]

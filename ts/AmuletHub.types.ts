@@ -188,15 +188,22 @@ export interface ListVaultsResponse {
   vaults: VaultMetadata[];
 }
 export interface VaultMetadata {
+  advance_enabled: boolean;
   advance_fee_oracle?: string | null;
   advance_fee_recipient?: string | null;
+  advance_proxy?: string | null;
   amo?: string | null;
+  amo_allocation: number;
   amo_shares: Uint128;
   collateral_balance: Uint128;
   collateral_shares: Uint128;
   collateral_yield_fee_bps: number;
+  deposit_enabled: boolean;
+  deposit_proxy?: string | null;
   fixed_advance_fee_bps: number;
   max_ltv_bps: number;
+  mint_proxy?: string | null;
+  redeem_proxy?: string | null;
   reserve_balance: Uint128;
   reserve_shares: Uint128;
   reserve_yield_fee_bps: number;
@@ -217,6 +224,7 @@ export interface PositionResponse {
   credit: Uint128;
   debt: Uint128;
   sum_payment_ratio: Uint256;
+  vault_loss_detected: boolean;
 }
 export interface TreasuryResponse {
   treasury?: string | null;

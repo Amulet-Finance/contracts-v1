@@ -55,6 +55,10 @@ export type QueryMsg2 = {
     address?: string | null;
   };
 } | {
+  unbonding_log_metadata: {
+    address: string;
+  };
+} | {
   claimable: {
     address: string;
   };
@@ -107,6 +111,12 @@ export interface SharesAssetResponse {
 export interface StateResponse {
   total_deposits: Uint128;
   total_issued_shares: Uint128;
+}
+export interface UnbondingLogMetadata {
+  first_entered_batch?: number | null;
+  last_claimed_batch?: number | null;
+  last_committed_batch_id?: number | null;
+  last_entered_batch?: number | null;
 }
 export interface UnderlyingAssetDecimalsResponse {
   decimals: number;

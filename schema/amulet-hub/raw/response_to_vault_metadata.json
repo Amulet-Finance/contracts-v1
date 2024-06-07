@@ -3,10 +3,13 @@
   "title": "VaultMetadata",
   "type": "object",
   "required": [
+    "advance_enabled",
+    "amo_allocation",
     "amo_shares",
     "collateral_balance",
     "collateral_shares",
     "collateral_yield_fee_bps",
+    "deposit_enabled",
     "fixed_advance_fee_bps",
     "max_ltv_bps",
     "reserve_balance",
@@ -17,6 +20,10 @@
     "vault"
   ],
   "properties": {
+    "advance_enabled": {
+      "description": "The advance enabled state",
+      "type": "boolean"
+    },
     "advance_fee_oracle": {
       "description": "The advance fee rate oracle assigned to the vault, if any",
       "type": [
@@ -31,12 +38,25 @@
         "null"
       ]
     },
+    "advance_proxy": {
+      "description": "The address of the advance proxy, if any",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "amo": {
       "description": "The AMO associated with the vault, if any",
       "type": [
         "string",
         "null"
       ]
+    },
+    "amo_allocation": {
+      "description": "The portion of payments allocated to the AMO",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
     },
     "amo_shares": {
       "description": "The amount of shares claimable by the AMO",
@@ -68,6 +88,17 @@
       "format": "uint32",
       "minimum": 0.0
     },
+    "deposit_enabled": {
+      "description": "The deposit enabled state",
+      "type": "boolean"
+    },
+    "deposit_proxy": {
+      "description": "The address of the deposit proxy, if any",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "fixed_advance_fee_bps": {
       "description": "The default fee applied to a requested advance amount in basis points (if there is no oracle set)",
       "type": "integer",
@@ -79,6 +110,20 @@
       "type": "integer",
       "format": "uint32",
       "minimum": 0.0
+    },
+    "mint_proxy": {
+      "description": "The address of the mint proxy, if any",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "redeem_proxy": {
+      "description": "The address of the redeem proxy, if any",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "reserve_balance": {
       "description": "The total amount of assets in the reserve",

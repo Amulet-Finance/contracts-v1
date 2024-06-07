@@ -152,6 +152,20 @@
     "StrategyExecuteMsg": {
       "oneOf": [
         {
+          "description": "Force a failed phase to continue to the next phase, if elligible",
+          "type": "object",
+          "required": [
+            "force_next"
+          ],
+          "properties": {
+            "force_next": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
           "type": "object",
           "required": [
             "reconcile"
@@ -180,6 +194,34 @@
           "properties": {
             "receive_undelegated": {
               "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Admin role required",
+          "type": "object",
+          "required": [
+            "redelegate_slot"
+          ],
+          "properties": {
+            "redelegate_slot": {
+              "type": "object",
+              "required": [
+                "slot",
+                "validator"
+              ],
+              "properties": {
+                "slot": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0.0
+                },
+                "validator": {
+                  "type": "string"
+                }
+              },
               "additionalProperties": false
             }
           },
