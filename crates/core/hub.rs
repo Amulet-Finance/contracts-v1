@@ -864,55 +864,12 @@ pub fn hub<'a>(
 }
 
 #[derive(Debug, Clone)]
-struct Updated {
-    vault: VaultPosition,
-    cdp: Cdp,
-}
-
-#[derive(Debug, Clone)]
 struct Evaluation {
     prev_vault: VaultPosition,
     prev_cdp: Cdp,
     redemption_rate: Option<RedemptionRate>,
-    updated: Option<Updated>,
-}
-
-impl Evaluation {
-    fn previous_vault(&self) -> &VaultPosition {
-        &self.prev_vault
-    }
-
-    fn latest_vault(&self) -> VaultPosition {
-        self.updated
-            .as_ref()
-            .map_or(self.prev_vault.clone(), |updated| updated.vault.clone())
-    }
-
-    fn updated_vault(&self) -> Option<&VaultPosition> {
-        self.updated.as_ref().map(|u| &u.vault)
-    }
-
-    fn previous_cdp(&self) -> &Cdp {
-        &self.prev_cdp
-    }
-
-    fn into_previous_cdp(self) -> Cdp {
-        self.prev_cdp
-    }
-
-    fn latest_cdp(&self) -> Cdp {
-        self.updated
-            .as_ref()
-            .map_or(self.prev_cdp.clone(), |updated| updated.cdp.clone())
-    }
-
-    fn updated_cdp(&self) -> Option<&Cdp> {
-        self.updated.as_ref().map(|u| &u.cdp)
-    }
-
-    fn updated_positions(&self) -> Option<(&VaultPosition, &Cdp)> {
-        self.updated_vault().zip(self.updated_cdp())
-    }
+    current_vault: VaultPosition,
+    current_cdp: Cdp,
 }
 
 fn push_update_vault_position_cmds(
@@ -1012,7 +969,7 @@ fn push_update_cdp_cmds(
 }
 
 impl<'a> HubImpl<'a> {
-    fn current_vault_position(&self, vault: &VaultId) -> VaultPosition {
+    pub fn current_vault_position(&self, vault: &VaultId) -> VaultPosition {
         VaultPosition {
             collateral_pool: {
                 let shares = self
@@ -1103,14 +1060,14 @@ impl<'a> HubImpl<'a> {
     }
 
     fn _evaluate(&self, vault_id: &VaultId, account: &Account) -> Result<Evaluation, Error> {
-        let current_vault = self.current_vault_position(vault_id);
+        let prev_vault = self.current_vault_position(vault_id);
 
-        let current_cdp = self.current_cdp(vault_id, account);
+        let prev_cdp = self.current_cdp(vault_id, account);
 
         let redemption_rate = self.redemption_rate(vault_id);
 
-        let Some(vault) = update_vault(
-            current_vault.clone(),
+        let current_vault = update_vault(
+            prev_vault.clone(),
             redemption_rate,
             || self.vaults.amo_allocation(vault_id).unwrap_or_default(),
             || {
@@ -1120,22 +1077,16 @@ impl<'a> HubImpl<'a> {
             },
             || self.vaults.reserve_yield_fee(vault_id).unwrap_or_default(),
         )?
-        else {
-            return Ok(Evaluation {
-                prev_vault: current_vault,
-                prev_cdp: current_cdp,
-                redemption_rate,
-                updated: None,
-            });
-        };
+        .unwrap_or_else(|| prev_vault.clone());
 
-        let cdp = update_cdp(&vault, current_cdp.clone());
+        let current_cdp = update_cdp(&current_vault, prev_cdp.clone());
 
         Ok(Evaluation {
-            prev_vault: current_vault,
-            prev_cdp: current_cdp,
+            prev_vault,
+            prev_cdp,
             redemption_rate,
-            updated: Some(Updated { vault, cdp }),
+            current_vault,
+            current_cdp,
         })
     }
 }
@@ -1144,33 +1095,26 @@ impl<'a> Hub for HubImpl<'a> {
     fn evaluate(&self, vault_id: VaultId, sender: Sender) -> Result<PositionResponse, Error> {
         let evaluation = self._evaluate(&vault_id, &sender)?;
 
-        let Some((updated_vault, updated_cdp)) = evaluation.updated_positions() else {
-            return Ok(PositionResponse {
-                cmds: vec![],
-                cdp: evaluation.into_previous_cdp(),
-            });
-        };
-
         let mut cmds = vec![];
 
         push_update_vault_position_cmds(
             &vault_id,
-            evaluation.previous_vault(),
-            updated_vault,
+            &evaluation.prev_vault,
+            &evaluation.current_vault,
             &mut cmds,
         );
 
         push_update_cdp_cmds(
             &vault_id,
             &sender,
-            evaluation.previous_cdp(),
-            updated_cdp,
+            &evaluation.prev_cdp,
+            &evaluation.current_cdp,
             &mut cmds,
         );
 
         Ok(PositionResponse {
             cmds,
-            cdp: updated_cdp.clone(),
+            cdp: evaluation.current_cdp,
         })
     }
 
@@ -1251,11 +1195,11 @@ impl<'a> Hub for HubImpl<'a> {
         let advance_fee_recipient = self.vaults.advance_fee_recipient(&vault_id);
 
         let Advance {
-            cdp: updated_cdp,
+            cdp: current_cdp,
             amount,
             fee,
         } = advance(
-            evaluation.latest_cdp(),
+            evaluation.current_cdp,
             advance_amount,
             || self.max_ltv(&vault_id),
             || {
@@ -1273,19 +1217,17 @@ impl<'a> Hub for HubImpl<'a> {
         push_update_cdp_cmds(
             &vault_id,
             &recipient,
-            evaluation.previous_cdp(),
-            &updated_cdp,
+            &evaluation.prev_cdp,
+            &current_cdp,
             &mut cmds,
         );
 
-        if let Some(updated_vault) = evaluation.updated_vault() {
-            push_update_vault_position_cmds(
-                &vault_id,
-                evaluation.previous_vault(),
-                updated_vault,
-                &mut cmds,
-            );
-        }
+        push_update_vault_position_cmds(
+            &vault_id,
+            &evaluation.prev_vault,
+            &evaluation.current_vault,
+            &mut cmds,
+        );
 
         cmds.push_cmd(MintCmd::Mint {
             synthetic: synthetic.clone(),
@@ -1361,30 +1303,28 @@ impl<'a> Hub for HubImpl<'a> {
 
         let evaluation = self._evaluate(&vault_id, &sender)?;
 
-        if evaluation.latest_cdp().debt == 0 {
+        if evaluation.current_cdp.debt == 0 {
             return Err(Error::NothingToRepay);
         }
 
-        let updated_cdp = repay(evaluation.latest_cdp(), synthetic_amount);
+        let updated_cdp = repay(evaluation.current_cdp, synthetic_amount);
 
         let mut cmds = vec![];
 
         push_update_cdp_cmds(
             &vault_id,
             &sender,
-            evaluation.previous_cdp(),
+            &evaluation.prev_cdp,
             &updated_cdp,
             &mut cmds,
         );
 
-        if let Some(updated_vault) = evaluation.updated_vault() {
-            push_update_vault_position_cmds(
-                &vault_id,
-                evaluation.previous_vault(),
-                updated_vault,
-                &mut cmds,
-            );
-        }
+        push_update_vault_position_cmds(
+            &vault_id,
+            &evaluation.prev_vault,
+            &evaluation.current_vault,
+            &mut cmds,
+        );
 
         cmds.push_cmd(MintCmd::Burn {
             synthetic: synthetic_asset,
@@ -1416,8 +1356,8 @@ impl<'a> Hub for HubImpl<'a> {
         let max_ltv = self.max_ltv(&vault_id);
 
         let (updated_vault, updated_cdp, shares_amount) = withdraw_collateral(
-            evaluation.latest_vault(),
-            evaluation.latest_cdp(),
+            evaluation.current_vault,
+            evaluation.current_cdp,
             collateral_amount,
             max_ltv,
             evaluation.redemption_rate,
@@ -1427,7 +1367,7 @@ impl<'a> Hub for HubImpl<'a> {
 
         push_update_vault_position_cmds(
             &vault_id,
-            evaluation.previous_vault(),
+            &evaluation.prev_vault,
             &updated_vault,
             &mut cmds,
         );
@@ -1435,7 +1375,7 @@ impl<'a> Hub for HubImpl<'a> {
         push_update_cdp_cmds(
             &vault_id,
             &sender,
-            evaluation.previous_cdp(),
+            &evaluation.prev_cdp,
             &updated_cdp,
             &mut cmds,
         );
@@ -1472,8 +1412,8 @@ impl<'a> Hub for HubImpl<'a> {
             mint_credit,
             redeem_shares,
         } = self_liquidate(
-            evaluation.latest_vault(),
-            evaluation.latest_cdp(),
+            evaluation.current_vault,
+            evaluation.current_cdp,
             evaluation.redemption_rate,
         )?;
 
@@ -1481,7 +1421,7 @@ impl<'a> Hub for HubImpl<'a> {
 
         push_update_vault_position_cmds(
             &vault_id,
-            evaluation.previous_vault(),
+            &evaluation.prev_vault,
             &updated_vault,
             &mut cmds,
         );
@@ -1489,7 +1429,7 @@ impl<'a> Hub for HubImpl<'a> {
         push_update_cdp_cmds(
             &vault_id,
             &sender,
-            evaluation.previous_cdp(),
+            &evaluation.prev_cdp,
             &updated_cdp,
             &mut cmds,
         );
@@ -1535,8 +1475,8 @@ impl<'a> Hub for HubImpl<'a> {
         let evaluation = self._evaluate(&vault_id, &sender)?;
 
         let (updated_vault, updated_cdp) = convert_credit(
-            evaluation.latest_vault(),
-            evaluation.latest_cdp(),
+            evaluation.current_vault,
+            evaluation.current_cdp,
             credit_amount,
             evaluation.redemption_rate,
         )?;
@@ -1545,7 +1485,7 @@ impl<'a> Hub for HubImpl<'a> {
 
         push_update_vault_position_cmds(
             &vault_id,
-            evaluation.previous_vault(),
+            &evaluation.prev_vault,
             &updated_vault,
             &mut cmds,
         );
@@ -1553,7 +1493,7 @@ impl<'a> Hub for HubImpl<'a> {
         push_update_cdp_cmds(
             &vault_id,
             &sender,
-            evaluation.previous_cdp(),
+            &evaluation.prev_cdp,
             &updated_cdp,
             &mut cmds,
         );
@@ -1595,7 +1535,7 @@ impl<'a> Hub for HubImpl<'a> {
         let evaluation = self._evaluate(&vault_id, &sender)?;
 
         let (updated_vault, shares_amount) = redeem_reserves(
-            evaluation.latest_vault(),
+            evaluation.current_vault,
             synthetic_amount,
             evaluation.redemption_rate,
         )?;
@@ -1604,20 +1544,18 @@ impl<'a> Hub for HubImpl<'a> {
 
         push_update_vault_position_cmds(
             &vault_id,
-            evaluation.previous_vault(),
+            &evaluation.prev_vault,
             &updated_vault,
             &mut cmds,
         );
 
-        if let Some(updated_cdp) = evaluation.updated_cdp() {
-            push_update_cdp_cmds(
-                &vault_id,
-                &recipient,
-                evaluation.previous_cdp(),
-                updated_cdp,
-                &mut cmds,
-            );
-        }
+        push_update_cdp_cmds(
+            &vault_id,
+            &recipient,
+            &evaluation.prev_cdp,
+            &evaluation.current_cdp,
+            &mut cmds,
+        );
 
         let shares_asset = self.vaults.shares_asset(&vault_id);
 
@@ -1774,26 +1712,24 @@ impl<'a> Hub for HubImpl<'a> {
 
         let evaluation = self._evaluate(&vault_id, &sender)?;
 
-        let (updated_vault, treasury_shares) = claim_treasury_shares(evaluation.latest_vault())?;
+        let (updated_vault, treasury_shares) = claim_treasury_shares(evaluation.current_vault)?;
 
         let mut cmds = vec![];
 
         push_update_vault_position_cmds(
             &vault_id,
-            evaluation.previous_vault(),
+            &evaluation.prev_vault,
             &updated_vault,
             &mut cmds,
         );
 
-        if let Some(updated_cdp) = evaluation.updated_cdp() {
-            push_update_cdp_cmds(
-                &vault_id,
-                &sender,
-                evaluation.previous_cdp(),
-                updated_cdp,
-                &mut cmds,
-            );
-        }
+        push_update_cdp_cmds(
+            &vault_id,
+            &sender,
+            &evaluation.prev_cdp,
+            &evaluation.current_cdp,
+            &mut cmds,
+        );
 
         let shares_asset = self.vaults.shares_asset(&vault_id);
 
@@ -1819,26 +1755,24 @@ impl<'a> Hub for HubImpl<'a> {
 
         let evaluation = self._evaluate(&vault_id, &sender)?;
 
-        let (updated_vault, amo_shares) = claim_amo_shares(evaluation.latest_vault())?;
+        let (updated_vault, amo_shares) = claim_amo_shares(evaluation.current_vault)?;
 
         let mut cmds = vec![];
 
         push_update_vault_position_cmds(
             &vault_id,
-            evaluation.previous_vault(),
+            &evaluation.prev_vault,
             &updated_vault,
             &mut cmds,
         );
 
-        if let Some(updated_cdp) = evaluation.updated_cdp() {
-            push_update_cdp_cmds(
-                &vault_id,
-                &sender,
-                evaluation.previous_cdp(),
-                updated_cdp,
-                &mut cmds,
-            );
-        }
+        push_update_cdp_cmds(
+            &vault_id,
+            &sender,
+            &evaluation.prev_cdp,
+            &evaluation.current_cdp,
+            &mut cmds,
+        );
 
         let shares_asset = self.vaults.shares_asset(&vault_id);
 
@@ -1872,470 +1806,3 @@ impl From<BalanceSheetCmd> for Cmd {
 
 #[cfg(test)]
 mod test;
-
-// #[cfg(test)]
-// mod test {
-//     use test_utils::prelude::*;
-
-//     use num::FixedU256;
-
-//     use super::*;
-
-//     #[derive(Debug, Default, PartialEq, Eq)]
-//     struct Balances {
-//         collateral_pool_shares: Option<SharesAmount>,
-//         collateral_pool_balance: Option<Collateral>,
-//         reserve_pool_shares: Option<SharesAmount>,
-//         reserve_pool_balance: Option<Collateral>,
-//         treasury_shares: Option<SharesAmount>,
-//         amo_shares: Option<SharesAmount>,
-//         overall_spr: Option<SumPaymentRatio>,
-//         account_collateral: Option<Collateral>,
-//         account_debt: Option<Debt>,
-//         account_credit: Option<Credit>,
-//         account_spr: Option<SumPaymentRatio>,
-//     }
-
-//     #[derive(Default)]
-//     struct Context {
-//         enable_advance_fee: bool,
-//         enable_advance_fee_oracle: bool,
-//         enable_treasury: bool,
-//         enable_amo: bool,
-//         total_shares_issued: TotalSharesIssued,
-//         total_deposit_value: TotalDepositsValue,
-//         balances: Balances,
-//     }
-
-//     fn user() -> Recipient {
-//         "user".to_owned().into()
-//     }
-
-//     fn synthetic_asset() -> Asset {
-//         "amASSET".to_owned().into()
-//     }
-
-//     fn deposit_asset() -> Asset {
-//         "ASSET".to_owned().into()
-//     }
-
-//     fn shares_asset() -> Asset {
-//         "shares".to_owned().into()
-//     }
-
-//     fn vault_id() -> VaultId {
-//         "vault".to_owned().into()
-//     }
-
-//     fn advance_fee_recipient() -> Recipient {
-//         "advance_fee_recipient".to_owned().into()
-//     }
-
-//     fn advance_fee_oracle() -> Oracle {
-//         "advance_fee_oracle".to_owned().into()
-//     }
-
-//     fn treasury() -> Treasury {
-//         "treasury".to_owned().into()
-//     }
-
-//     fn amo() -> Amo {
-//         "amo".to_owned().into()
-//     }
-
-//     const INIT_DEPOSIT_AMOUNT: u128 = 10u128.pow(6);
-//     const INIT_SHARES_ISSUED: u128 = 10u128.pow(18);
-
-//     #[test]
-//     fn initial_deposit() {
-//         let mut ctx = Context::default();
-
-//         let hub = hub(&ctx, &ctx, &ctx);
-
-//         let cmds = hub
-//             .deposit(
-//                 vault_id(),
-//                 user(),
-//                 deposit_asset(),
-//                 INIT_DEPOSIT_AMOUNT,
-//                 user(),
-//             )
-//             .unwrap();
-
-//         assert_eq!(cmds.len(), 1);
-
-//         let Cmd::Vault(VaultCmd::Deposit {
-//             vault,
-//             asset,
-//             amount,
-//             callback_recipient,
-//             callback_reason,
-//         }) = cmds.into_iter().next().unwrap()
-//         else {
-//             unreachable!()
-//         };
-
-//         assert_eq!(vault, vault_id());
-//         assert_eq!(asset, deposit_asset());
-//         assert_eq!(amount, INIT_DEPOSIT_AMOUNT);
-//         assert_eq!(callback_recipient, user());
-//         assert_eq!(callback_reason, VaultDepositReason::Deposit);
-
-//         let cmds = hub
-//             .vault_deposit_callback(
-//                 vault_id(),
-//                 callback_recipient,
-//                 callback_reason,
-//                 INIT_SHARES_ISSUED,
-//                 INIT_DEPOSIT_AMOUNT,
-//             )
-//             .unwrap();
-
-//         for cmd in cmds {
-//             ctx.handle_cmd(cmd);
-//         }
-
-//         assert_eq!(
-//             ctx.balances,
-//             Balances {
-//                 collateral_pool_shares: Some(INIT_SHARES_ISSUED),
-//                 collateral_pool_balance: Some(INIT_DEPOSIT_AMOUNT),
-//                 account_collateral: Some(INIT_DEPOSIT_AMOUNT),
-//                 ..Default::default()
-//             }
-//         )
-//     }
-
-//     fn with_init_deposit() -> Context {
-//         Context {
-//             total_shares_issued: INIT_SHARES_ISSUED,
-//             total_deposit_value: INIT_DEPOSIT_AMOUNT,
-//             balances: Balances {
-//                 collateral_pool_shares: Some(INIT_SHARES_ISSUED),
-//                 collateral_pool_balance: Some(INIT_DEPOSIT_AMOUNT),
-//                 account_collateral: Some(INIT_DEPOSIT_AMOUNT),
-//                 ..Default::default()
-//             },
-//             ..Default::default()
-//         }
-//     }
-
-//     fn spr(numer: u128, denom: u128) -> SumPaymentRatio {
-//         FixedU256::from_u128(numer)
-//             .checked_div(FixedU256::from_u128(denom))
-//             .map(FixedU256::into_raw)
-//             .map(SumPaymentRatio::raw)
-//             .unwrap()
-//     }
-
-//     #[test]
-//     fn evaluate() {
-//         const YIELD_EARNED: u128 = 10u128.pow(5);
-
-//         let mut ctx = with_init_deposit();
-
-//         ctx.total_deposit_value += YIELD_EARNED;
-
-//         let PositionResponse { cmds, cdp } =
-//             hub(&ctx, &ctx, &ctx).evaluate(vault_id(), user()).unwrap();
-
-//         for cmd in cmds {
-//             ctx.handle_cmd(cmd);
-//         }
-
-//         let treasury_payment = YIELD_EARNED / 10;
-
-//         let debt_payment = YIELD_EARNED - treasury_payment;
-
-//         let redemption_rate =
-//             RedemptionRate::new(ctx.total_shares_issued, ctx.total_deposit_value).unwrap();
-
-//         let expected_spr = spr(debt_payment, INIT_DEPOSIT_AMOUNT);
-
-//         assert_eq!(cdp.collateral, INIT_DEPOSIT_AMOUNT);
-//         assert_wn!(1, cdp.credit, debt_payment);
-//         assert_eq!(cdp.debt, 0);
-//         assert_eq!(cdp.spr, expected_spr);
-
-//         let balances = ctx.balances;
-
-//         assert_eq!(balances.collateral_pool_balance, Some(INIT_DEPOSIT_AMOUNT));
-//         assert_wn!(1, balances.reserve_pool_balance.unwrap(), debt_payment);
-//         assert_wn!(
-//             1,
-//             balances.collateral_pool_shares.unwrap(),
-//             redemption_rate.deposits_to_shares(INIT_DEPOSIT_AMOUNT)
-//         );
-//         assert_wn!(
-//             1,
-//             balances.reserve_pool_shares.unwrap(),
-//             redemption_rate.deposits_to_shares(debt_payment)
-//         );
-//         assert_wn!(
-//             1,
-//             balances.treasury_shares.unwrap(),
-//             redemption_rate.deposits_to_shares(treasury_payment)
-//         );
-//         assert_eq!(
-//             balances.collateral_pool_shares.unwrap()
-//                 + balances.reserve_pool_shares.unwrap()
-//                 + balances.treasury_shares.unwrap(),
-//             INIT_SHARES_ISSUED
-//         );
-//         assert_eq!(
-//             balances.overall_spr.unwrap(),
-//             spr(debt_payment, INIT_DEPOSIT_AMOUNT)
-//         );
-//         assert_eq!(balances.account_collateral.unwrap(), INIT_DEPOSIT_AMOUNT);
-//         assert_wn!(1, balances.account_credit.unwrap(), debt_payment);
-//         assert_eq!(
-//             balances.account_spr.unwrap(),
-//             spr(debt_payment, INIT_DEPOSIT_AMOUNT)
-//         );
-//     }
-
-//     impl Context {
-//         fn handle_balance_sheet_cmd(&mut self, cmd: BalanceSheetCmd) {
-//             match cmd {
-//                 BalanceSheetCmd::SetCollateralShares { vault, shares } => {
-//                     assert!(vault == vault_id());
-//                     self.balances.collateral_pool_shares = Some(shares);
-//                 }
-//                 BalanceSheetCmd::SetCollateralBalance { vault, balance } => {
-//                     assert!(vault == vault_id());
-//                     self.balances.collateral_pool_balance = Some(balance);
-//                 }
-//                 BalanceSheetCmd::SetReserveShares { vault, shares } => {
-//                     assert!(vault == vault_id());
-//                     self.balances.reserve_pool_shares = Some(shares);
-//                 }
-//                 BalanceSheetCmd::SetReserveBalance { vault, balance } => {
-//                     assert!(vault == vault_id());
-//                     self.balances.reserve_pool_balance = Some(balance);
-//                 }
-//                 BalanceSheetCmd::SetTreasuryShares { vault, shares } => {
-//                     assert!(vault == vault_id());
-//                     self.balances.treasury_shares = Some(shares);
-//                 }
-//                 BalanceSheetCmd::SetAmoShares { vault, shares } => {
-//                     assert!(vault == vault_id());
-//                     self.balances.amo_shares = Some(shares);
-//                 }
-//                 BalanceSheetCmd::SetOverallSumPaymentRatio { vault, spr } => {
-//                     assert!(vault == vault_id());
-//                     self.balances.overall_spr = Some(spr);
-//                 }
-//                 BalanceSheetCmd::SetAccountCollateral {
-//                     vault,
-//                     account,
-//                     collateral,
-//                 } => {
-//                     assert!(vault == vault_id() && account == user());
-//                     self.balances.account_collateral = Some(collateral);
-//                 }
-//                 BalanceSheetCmd::SetAccountDebt {
-//                     vault,
-//                     account,
-//                     debt,
-//                 } => {
-//                     assert!(vault == vault_id() && account == user());
-//                     self.balances.account_debt = Some(debt);
-//                 }
-//                 BalanceSheetCmd::SetAccountCredit {
-//                     vault,
-//                     account,
-//                     credit,
-//                 } => {
-//                     assert!(vault == vault_id() && account == user());
-//                     self.balances.account_credit = Some(credit);
-//                 }
-//                 BalanceSheetCmd::SetAccountSumPaymentRatio {
-//                     vault,
-//                     account,
-//                     spr,
-//                 } => {
-//                     assert!(vault == vault_id() && account == user());
-//                     self.balances.account_spr = Some(spr);
-//                 }
-//                 _ => {}
-//             }
-//         }
-
-//         fn handle_cmd(&mut self, cmd: Cmd) {
-//             if let Cmd::BalanceSheet(cmd) = cmd {
-//                 self.handle_balance_sheet_cmd(cmd)
-//             }
-//         }
-//     }
-
-//     impl BalanceSheet for Context {
-//         fn treasury(&self) -> Option<Treasury> {
-//             self.enable_treasury.then_some(treasury())
-//         }
-
-//         fn collateral_shares(&self, vault: &VaultId) -> Option<SharesAmount> {
-//             assert!(vault == &vault_id());
-//             self.balances.collateral_pool_shares
-//         }
-
-//         fn collateral_balance(&self, vault: &VaultId) -> Option<Collateral> {
-//             assert!(vault == &vault_id());
-//             self.balances.collateral_pool_balance
-//         }
-
-//         fn reserve_shares(&self, vault: &VaultId) -> Option<SharesAmount> {
-//             assert!(vault == &vault_id());
-//             self.balances.reserve_pool_shares
-//         }
-
-//         fn reserve_balance(&self, vault: &VaultId) -> Option<Collateral> {
-//             assert!(vault == &vault_id());
-//             self.balances.reserve_pool_balance
-//         }
-
-//         fn treasury_shares(&self, vault: &VaultId) -> Option<TreasuryShares> {
-//             assert!(vault == &vault_id());
-//             self.balances.treasury_shares
-//         }
-
-//         fn amo_shares(&self, vault: &VaultId) -> Option<AmoShares> {
-//             assert!(vault == &vault_id());
-//             self.balances.amo_shares
-//         }
-
-//         fn overall_sum_payment_ratio(&self, vault: &VaultId) -> Option<SumPaymentRatio> {
-//             assert!(vault == &vault_id());
-//             self.balances.overall_spr
-//         }
-
-//         fn account_collateral(&self, vault: &VaultId, account: &Account) -> Option<Collateral> {
-//             assert!(vault == &vault_id() && account == &user());
-//             self.balances.account_collateral
-//         }
-
-//         fn account_debt(&self, vault: &VaultId, account: &Account) -> Option<Debt> {
-//             assert!(vault == &vault_id() && account == &user());
-//             self.balances.account_debt
-//         }
-
-//         fn account_credit(&self, vault: &VaultId, account: &Account) -> Option<Credit> {
-//             assert!(vault == &vault_id() && account == &user());
-//             self.balances.account_credit
-//         }
-
-//         fn account_sum_payment_ratio(
-//             &self,
-//             vault: &VaultId,
-//             account: &Account,
-//         ) -> Option<SumPaymentRatio> {
-//             assert!(vault == &vault_id() && account == &user());
-//             self.balances.account_spr
-//         }
-//     }
-
-//     impl AdvanceFeeOracle for Context {
-//         fn advance_fee(&self, oracle: &Oracle, recipient: &Recipient) -> Option<AdvanceFee> {
-//             assert!(oracle == &advance_fee_oracle());
-//             assert!(recipient == &user());
-//             None
-//         }
-//     }
-
-//     impl SyntheticMint for Context {
-//         fn syntethic_decimals(&self, synthetic: &Synthetic) -> Option<Decimals> {
-//             (synthetic == &synthetic_asset()).then_some(6)
-//         }
-//     }
-
-//     impl Vaults for Context {
-//         fn underlying_asset_decimals(&self, vault: &VaultId) -> Option<Decimals> {
-//             (vault == &vault_id()).then_some(6)
-//         }
-
-//         fn is_registered(&self, vault: &VaultId) -> bool {
-//             vault == &vault_id()
-//         }
-
-//         fn deposits_enabled(&self, vault: &VaultId) -> bool {
-//             vault == &vault_id()
-//         }
-
-//         fn advance_enabled(&self, vault: &VaultId) -> bool {
-//             vault == &vault_id()
-//         }
-
-//         fn max_ltv(&self, _vault: &VaultId) -> Option<MaxLtv> {
-//             None
-//         }
-
-//         fn collateral_yield_fee(&self, _vault: &VaultId) -> Option<CollateralYieldFee> {
-//             None
-//         }
-
-//         fn reserve_yield_fee(&self, _vault: &VaultId) -> Option<ReserveYieldFee> {
-//             None
-//         }
-
-//         fn fixed_advance_fee(&self, _vault: &VaultId) -> Option<AdvanceFee> {
-//             None
-//         }
-
-//         fn advance_fee_recipient(&self, _vault: &VaultId) -> Option<Recipient> {
-//             self.enable_advance_fee.then_some(advance_fee_recipient())
-//         }
-
-//         fn advance_fee_oracle(&self, _vault: &VaultId) -> Option<Oracle> {
-//             self.enable_advance_fee_oracle
-//                 .then_some(advance_fee_oracle())
-//         }
-
-//         fn amo(&self, _vault: &VaultId) -> Option<Amo> {
-//             self.enable_amo.then_some(amo())
-//         }
-
-//         fn amo_allocation(&self, _vault: &VaultId) -> Option<AmoAllocation> {
-//             None
-//         }
-
-//         fn deposit_proxy(&self, _vault: &VaultId) -> Option<Proxy> {
-//             None
-//         }
-
-//         fn advance_proxy(&self, _vault: &VaultId) -> Option<Proxy> {
-//             None
-//         }
-
-//         fn redeem_proxy(&self, _vault: &VaultId) -> Option<Proxy> {
-//             None
-//         }
-
-//         fn mint_proxy(&self, _vault: &VaultId) -> Option<Proxy> {
-//             None
-//         }
-
-//         fn deposit_asset(&self, vault: &VaultId) -> Asset {
-//             assert!(vault == &vault_id());
-//             deposit_asset()
-//         }
-
-//         fn shares_asset(&self, vault: &VaultId) -> Asset {
-//             assert!(vault == &vault_id());
-//             shares_asset()
-//         }
-
-//         fn synthetic_asset(&self, vault: &VaultId) -> Synthetic {
-//             assert!(vault == &vault_id());
-//             synthetic_asset()
-//         }
-
-//         fn total_shares_issued(&self, vault: &VaultId) -> TotalSharesIssued {
-//             assert!(vault == &vault_id());
-//             self.total_shares_issued
-//         }
-
-//         fn total_deposits_value(&self, vault: &VaultId) -> TotalDepositsValue {
-//             assert!(vault == &vault_id());
-//             self.total_deposit_value
-//         }
-//     }
-// }

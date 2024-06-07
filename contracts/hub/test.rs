@@ -325,6 +325,7 @@ fn deposit() {
               debt: "0",
               credit: "0",
               sum_payment_ratio: "0",
+              vault_loss_detected: false,
             )"#]],
     );
 }
@@ -440,6 +441,7 @@ fn deposit_on_behalf() {
               debt: "0",
               credit: "0",
               sum_payment_ratio: "0",
+              vault_loss_detected: false,
             )"#]],
     );
 }
@@ -622,6 +624,7 @@ fn repay_underlying() {
               debt: "100",
               credit: "0",
               sum_payment_ratio: "0",
+              vault_loss_detected: false,
             )"#]],
     );
 }
@@ -711,7 +714,7 @@ fn repay_synthetic() {
               ],
               attributes: [],
               events: [],
-              data: Some("eyJjb2xsYXRlcmFsIjoiMTAwMCIsImRlYnQiOiIxMDAiLCJjcmVkaXQiOiIwIiwic3VtX3BheW1lbnRfcmF0aW8iOiIwIn0="),
+              data: Some("eyJjb2xsYXRlcmFsIjoiMTAwMCIsImRlYnQiOiIxMDAiLCJjcmVkaXQiOiIwIiwic3VtX3BheW1lbnRfcmF0aW8iOiIwIiwidmF1bHRfbG9zc19kZXRlY3RlZCI6ZmFsc2V9"),
             )"#]],
     );
 
@@ -752,6 +755,7 @@ fn repay_synthetic() {
               debt: "100",
               credit: "0",
               sum_payment_ratio: "0",
+              vault_loss_detected: false,
             )"#]],
     );
 }
@@ -873,6 +877,7 @@ fn advance() {
               debt: "500",
               credit: "0",
               sum_payment_ratio: "0",
+              vault_loss_detected: false,
             )"#]],
     );
 }
@@ -1005,6 +1010,7 @@ fn advance_on_behalf() {
               debt: "500",
               credit: "0",
               sum_payment_ratio: "0",
+              vault_loss_detected: false,
             )"#]],
     );
 }
@@ -1081,7 +1087,7 @@ fn withdraw() {
               ],
               attributes: [],
               events: [],
-              data: Some("eyJjb2xsYXRlcmFsIjoiNTAwIiwiZGVidCI6IjAiLCJjcmVkaXQiOiIwIiwic3VtX3BheW1lbnRfcmF0aW8iOiIwIn0="),
+              data: Some("eyJjb2xsYXRlcmFsIjoiNTAwIiwiZGVidCI6IjAiLCJjcmVkaXQiOiIwIiwic3VtX3BheW1lbnRfcmF0aW8iOiIwIiwidmF1bHRfbG9zc19kZXRlY3RlZCI6ZmFsc2V9"),
             )"#]],
     );
 
@@ -1097,6 +1103,7 @@ fn withdraw() {
               debt: "0",
               credit: "0",
               sum_payment_ratio: "0",
+              vault_loss_detected: false,
             )"#]],
     );
 
@@ -1178,6 +1185,7 @@ fn withdraw() {
               debt: "0",
               credit: "0",
               sum_payment_ratio: "0",
+              vault_loss_detected: false,
             )"#]],
     );
 }
@@ -1390,6 +1398,7 @@ fn self_liquidate() {
               debt: "0",
               credit: "0",
               sum_payment_ratio: "0",
+              vault_loss_detected: false,
             )"#]],
     );
 }
@@ -1450,7 +1459,7 @@ fn convert_credit() {
               messages: [],
               attributes: [],
               events: [],
-              data: Some("eyJjb2xsYXRlcmFsIjoiMTA4OCIsImRlYnQiOiIwIiwiY3JlZGl0IjoiMCIsInN1bV9wYXltZW50X3JhdGlvIjoiMzA2MjU0MTMwMjI4ODQ0NjE3MTE3MDM3MTQ2Njg4NTkxMzkwMzEifQ=="),
+              data: Some("eyJjb2xsYXRlcmFsIjoiMTA4OCIsImRlYnQiOiIwIiwiY3JlZGl0IjoiMCIsInN1bV9wYXltZW50X3JhdGlvIjoiMzA2MjU0MTMwMjI4ODQ0NjE3MTE3MDM3MTQ2Njg4NTkxMzkwMzEiLCJ2YXVsdF9sb3NzX2RldGVjdGVkIjpmYWxzZX0="),
             )"#]],
     );
 
@@ -1466,6 +1475,7 @@ fn convert_credit() {
               debt: "0",
               credit: "0",
               sum_payment_ratio: "30625413022884461711703714668859139031",
+              vault_loss_detected: false,
             )"#]],
     );
 
@@ -1529,6 +1539,7 @@ fn convert_credit() {
               debt: "0",
               credit: "0",
               sum_payment_ratio: "30625413022884461711703714668859139031",
+              vault_loss_detected: false,
             )"#]],
     );
 }
@@ -2567,7 +2578,7 @@ fn evaluate() {
               messages: [],
               attributes: [],
               events: [],
-              data: Some("eyJjb2xsYXRlcmFsIjoiMCIsImRlYnQiOiIwIiwiY3JlZGl0IjoiMCIsInN1bV9wYXltZW50X3JhdGlvIjoiMzAyODUxMzA2NTU5NjM1MjMyNDgyNDAzNDAwNjE0MjczNzA4MTkifQ=="),
+              data: Some("eyJjb2xsYXRlcmFsIjoiMCIsImRlYnQiOiIwIiwiY3JlZGl0IjoiMCIsInN1bV9wYXltZW50X3JhdGlvIjoiMzAyODUxMzA2NTU5NjM1MjMyNDgyNDAzNDAwNjE0MjczNzA4MTkiLCJ2YXVsdF9sb3NzX2RldGVjdGVkIjpmYWxzZX0="),
             )"#]],
     );
 
@@ -2583,6 +2594,7 @@ fn evaluate() {
               debt: "0",
               credit: "0",
               sum_payment_ratio: "30285130655963523248240340061427370819",
+              vault_loss_detected: false,
             )"#]],
     );
 
@@ -2625,6 +2637,105 @@ fn evaluate() {
               advance_proxy: None,
               mint_proxy: None,
               redeem_proxy: None,
+            )"#]],
+    );
+}
+
+#[test]
+fn position_query_vault_loss_detected() {
+    let mut deps = init_with_registered_vault();
+
+    execute_msgs(
+        &mut deps,
+        &[
+            (
+                info!("creator"),
+                HubAdminMsg::SetDepositsEnabled {
+                    vault: VAULT.into(),
+                    enabled: true,
+                }
+                .into(),
+            ),
+            (
+                info!("creator"),
+                HubAdminMsg::SetAdvanceEnabled {
+                    vault: VAULT.into(),
+                    enabled: true,
+                }
+                .into(),
+            ),
+            (
+                info!("bob", 1_000),
+                HubUserMsg::Deposit {
+                    vault: VAULT.into(),
+                }
+                .into(),
+            ),
+        ],
+    );
+
+    reply(
+        deps.as_mut(),
+        mock_env(),
+        vault_deposit_reply(
+            DEPOSIT_REPLY_ID,
+            1_000,
+            shares_amount(1_000),
+            shares_amount(1_000),
+            1_000,
+        ),
+    )
+    .unwrap();
+
+    update_querier(&mut deps, 1100, shares_amount(1_000));
+
+    execute_msgs(
+        &mut deps,
+        &[(
+            info!("anyone"),
+            HubUserMsg::Evaluate {
+                vault: VAULT.into(),
+            }
+            .into(),
+        )],
+    );
+
+    update_querier(&mut deps, 1050, shares_amount(1_000));
+
+    check(
+        execute(
+            deps.as_mut(),
+            mock_env(),
+            info!("bob"),
+            HubExecuteMsg::from(HubUserMsg::Evaluate {
+                vault: VAULT.into(),
+            })
+            .into(),
+        )
+        .unwrap_err()
+        .to_string(),
+        expect![[r#""vault shares have suffered a loss in value""#]],
+    );
+
+    check(
+        query(
+            deps.as_ref(),
+            mock_env(),
+            HubQueryMsg::Position {
+                vault: VAULT.into(),
+                account: "bob".into(),
+            }
+            .into(),
+        )
+        .map(into_response::<PositionResponse>)
+        .unwrap(),
+        expect![[r#"
+            (
+              collateral: "1000",
+              debt: "0",
+              credit: "89",
+              sum_payment_ratio: "30625413022884461711703714668859139031",
+              vault_loss_detected: true,
             )"#]],
     );
 }

@@ -3590,6 +3590,70 @@ fn evaluate_sender_without_position_after_another_shares_value_increase() {
 }
 
 #[test]
+fn evaluate_sender_with_position_after_shares_increase_acknowledged_by_somebody_else() {
+    let world = World::default()
+        .handle_cmds(cmds![
+            VaultCmd::Register {
+                vault: VAULT.into(),
+                synthetic: SYNTHETIC.into()
+            },
+            BalanceSheetCmd::SetCollateralBalance {
+                vault: VAULT.into(),
+                balance: 1_000
+            },
+            BalanceSheetCmd::SetCollateralShares {
+                vault: VAULT.into(),
+                shares: shares_amount(1_000)
+            },
+            BalanceSheetCmd::SetAccountCollateral {
+                vault: VAULT.into(),
+                account: SENDER.into(),
+                collateral: 1_000
+            },
+            BalanceSheetCmd::SetAccountDebt {
+                vault: VAULT.into(),
+                account: SENDER.into(),
+                debt: 500
+            }
+        ])
+        .total_deposits(1_100)
+        .total_shares_issued(shares_amount(1_000));
+
+    let response = hub(&world, &world, &world)
+        .evaluate(VAULT.into(), "someone_else".into())
+        .unwrap();
+
+    check(
+        world
+            .handle_cmds(response.cmds)
+            .hub()
+            .evaluate(VAULT.into(), SENDER.into())
+            .unwrap(),
+        expect![[r#"
+            (
+              cmds: [
+                BalanceSheet(SetAccountDebt(
+                  vault: "vault",
+                  account: "sender",
+                  debt: 411,
+                )),
+                BalanceSheet(SetAccountSumPaymentRatio(
+                  vault: "vault",
+                  account: "sender",
+                  spr: (("0.08999999999999999999999999999999")),
+                )),
+              ],
+              cdp: (
+                collateral: 1000,
+                debt: 411,
+                credit: 0,
+                spr: (("0.08999999999999999999999999999999")),
+              ),
+            )"#]],
+    );
+}
+
+#[test]
 fn register_already_registered_vault_errs() {
     check_err(
         World::default()

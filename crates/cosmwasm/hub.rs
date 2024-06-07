@@ -12,7 +12,7 @@ use cosmwasm_std::{
 use amulet_core::{
     admin::Repository as AdminRepository,
     hub::{
-        configure, hub, Account, AdvanceFeeOracle as CoreAdvanceFeeOracle,
+        configure, hub, positions::update_cdp, Account, AdvanceFeeOracle as CoreAdvanceFeeOracle,
         BalanceSheet as CoreBalanceSheet, Cdp, Cmd, ConfigureHub, Error as CoreHubError, Hub,
         ProxyConfig, SyntheticMint as CoreSyntheticMint, VaultDepositReason, VaultId,
         Vaults as CoreVaults,
@@ -165,6 +165,9 @@ pub struct PositionResponse {
     pub credit: Uint128,
     /// The Sum Payment Ratio at the time of position evaluation
     pub sum_payment_ratio: Uint256,
+    /// Whether or not there was a vault loss detected.
+    /// If `true` the other fields will be based on the last stored overall SPR for the vault.
+    pub vault_loss_detected: bool,
 }
 
 #[cw_serde]
@@ -254,6 +257,7 @@ impl From<Cdp> for PositionResponse {
             debt: cdp.debt.into(),
             credit: cdp.credit.into(),
             sum_payment_ratio: Uint256::from_be_bytes(cdp.spr.into_raw().to_be_bytes()),
+            vault_loss_detected: false,
         }
     }
 }
@@ -788,9 +792,23 @@ fn position(
     vault: VaultId,
     account: Account,
 ) -> Result<PositionResponse, Error> {
-    let response = hub(vaults, balance_sheet, advance_fee_oracle).evaluate(vault, account)?;
+    let hub = hub(vaults, balance_sheet, advance_fee_oracle);
 
-    Ok(PositionResponse::from(response.cdp))
+    match hub.evaluate(vault.clone(), account.clone()) {
+        Ok(response) => Ok(PositionResponse::from(response.cdp)),
+
+        Err(CoreHubError::SharesValueLoss(_)) => Ok(PositionResponse {
+            vault_loss_detected: true,
+            // update the stored CDP using stored vault
+            ..update_cdp(
+                &hub.current_vault_position(&vault),
+                hub.current_cdp(&vault, &account),
+            )
+            .into()
+        }),
+
+        Err(err) => Err(err.into()),
+    }
 }
 
 pub fn handle_query_msg(
