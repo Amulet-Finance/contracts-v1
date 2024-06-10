@@ -9,7 +9,7 @@ use cosmwasm_std::{
 
 use amulet_core::{
     vault::{
-        DepositAmount, DepositValue, Now, Strategy as CoreStrategy, StrategyCmd,
+        ClaimAmount, DepositAmount, DepositValue, Now, Strategy as CoreStrategy, StrategyCmd,
         TotalDepositsValue, UnbondEpoch, UnbondReadyStatus,
     },
     Asset, Decimals,
@@ -32,7 +32,7 @@ fn apply_rate(rate: Decimal, amount: u128) -> u128 {
 
 impl LstRedemptionRate {
     fn lst_to_underlying(self, amount: DepositAmount) -> u128 {
-        apply_rate(self.0, amount)
+        apply_rate(self.0, amount.0)
     }
 
     fn underlying_to_lst(self, value: DepositValue) -> u128 {
@@ -41,7 +41,7 @@ impl LstRedemptionRate {
             .inv()
             .expect("redemption rate inverse should never be NaN");
 
-        apply_rate(inverse_rate, value)
+        apply_rate(inverse_rate, value.0)
     }
 }
 
@@ -88,18 +88,23 @@ impl<'a> CoreStrategy for Strategy<'a> {
     fn total_deposits_value(&self) -> TotalDepositsValue {
         let active_lst_balance = self.storage.active_lst_balance();
 
-        self.redemption_rate.lst_to_underlying(active_lst_balance)
+        let total_deposits_value = self
+            .redemption_rate
+            .lst_to_underlying(DepositAmount(active_lst_balance));
+
+        TotalDepositsValue(total_deposits_value)
     }
 
     fn deposit_value(&self, amount: DepositAmount) -> DepositValue {
-        self.redemption_rate.lst_to_underlying(amount)
+        let deposit_value = self.redemption_rate.lst_to_underlying(amount);
+        DepositValue(deposit_value)
     }
 
     fn unbond(&self, value: DepositValue) -> UnbondReadyStatus {
         let amount = self.redemption_rate.underlying_to_lst(value);
 
         UnbondReadyStatus::Ready {
-            amount,
+            amount: ClaimAmount(amount),
             epoch: UnbondEpoch {
                 start: self.now.seconds(),
                 end: self.now.seconds(),
@@ -108,7 +113,7 @@ impl<'a> CoreStrategy for Strategy<'a> {
     }
 }
 
-fn increase_active_deposits(storage: &mut dyn Storage, amount: DepositAmount) {
+fn increase_active_deposits(storage: &mut dyn Storage, DepositAmount(amount): DepositAmount) {
     let active_lst_balance = storage
         .active_lst_balance()
         .checked_add(amount)
@@ -117,7 +122,7 @@ fn increase_active_deposits(storage: &mut dyn Storage, amount: DepositAmount) {
     storage.set_active_lst_balance(active_lst_balance);
 }
 
-fn decrease_active_deposits(storage: &mut dyn Storage, amount: DepositAmount) {
+fn decrease_active_deposits(storage: &mut dyn Storage, DepositAmount(amount): DepositAmount) {
     let active_lst_balance = storage
         .active_lst_balance()
         .checked_sub(amount)
@@ -126,7 +131,7 @@ fn decrease_active_deposits(storage: &mut dyn Storage, amount: DepositAmount) {
     storage.set_active_lst_balance(active_lst_balance);
 }
 
-fn increase_claimable_deposits(storage: &mut dyn Storage, amount: DepositAmount) {
+fn increase_claimable_deposits(storage: &mut dyn Storage, DepositAmount(amount): DepositAmount) {
     let claimable_lst_balance = storage
         .claimable_lst_balance()
         .checked_add(amount)
@@ -135,7 +140,7 @@ fn increase_claimable_deposits(storage: &mut dyn Storage, amount: DepositAmount)
     storage.set_claimable_lst_balance(claimable_lst_balance);
 }
 
-fn decrease_claimable_deposits(storage: &mut dyn Storage, amount: DepositAmount) {
+fn decrease_claimable_deposits(storage: &mut dyn Storage, DepositAmount(amount): DepositAmount) {
     let claimable_lst_balance = storage
         .claimable_lst_balance()
         .checked_sub(amount)
@@ -159,15 +164,18 @@ pub fn handle_cmd<CustomMsg>(
         StrategyCmd::Unbond { value } => {
             let lst_amount = redemption_rate.underlying_to_lst(value);
 
-            decrease_active_deposits(storage, lst_amount);
+            decrease_active_deposits(storage, DepositAmount(lst_amount));
 
-            increase_claimable_deposits(storage, lst_amount);
+            increase_claimable_deposits(storage, DepositAmount(lst_amount));
 
             None
         }
 
-        StrategyCmd::SendClaimed { amount, recipient } => {
-            decrease_claimable_deposits(storage, amount);
+        StrategyCmd::SendClaimed {
+            amount: ClaimAmount(amount),
+            recipient,
+        } => {
+            decrease_claimable_deposits(storage, DepositAmount(amount));
 
             let lst_denom = storage.lst_denom();
 

@@ -1,24 +1,41 @@
 use crate::{cmds, Asset, Decimals, Rate, Recipient};
 
-// TODO: Newtype candidates
-/// An amount of deposit assets
-pub type DepositAmount = u128;
-/// The value of a deposit in terms of the *underlying* asset
-pub type DepositValue = u128;
-/// An amount of shares assets
-pub type SharesAmount = u128;
-/// An amount of claimable assets
-pub type ClaimAmount = u128;
-/// The total number of shares issued
-pub type TotalSharesIssued = u128;
-/// The total value of deposits in terms of the *underlying* asset
-pub type TotalDepositsValue = u128;
 pub type Instant = u64;
 pub type Now = u64;
 pub type Hint = u64;
 pub type BatchId = u64;
 
 pub const SHARES_DECIMAL_PLACES: Decimals = 18;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(test, derive(serde::Serialize))]
+/// An amount of deposit assets
+pub struct DepositAmount(pub u128);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(test, derive(serde::Serialize))]
+/// The value of a deposit in terms of the *underlying* asset
+pub struct DepositValue(pub u128);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(test, derive(serde::Serialize))]
+/// An amount of shares assets
+pub struct SharesAmount(pub u128);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(test, derive(serde::Serialize))]
+/// An amount of claimable deposit assets
+pub struct ClaimAmount(pub u128);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(test, derive(serde::Serialize))]
+/// The total number of shares issued
+pub struct TotalSharesIssued(pub u128);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(test, derive(serde::Serialize))]
+/// The total value of deposits in terms of the *underlying* asset
+pub struct TotalDepositsValue(pub u128);
 
 #[derive(Debug, Clone, Copy)]
 pub enum UnbondReadyStatus {
@@ -94,7 +111,7 @@ pub trait Strategy {
     /// Returns the total strategy deposits valued in terms of the underlying asset.
     fn total_deposits_value(&self) -> TotalDepositsValue;
 
-    /// Returns the deposit amount valued in terms of the underlying asset, which could be different to the *deposit asset* amount.
+    /// Returns the deposit amount valued in terms of the underlying asset.
     fn deposit_value(&self, amount: DepositAmount) -> DepositValue;
 
     /// Returns the `UnbondReadyStatus::Later(_)` with an optional start hint if unbonding is not yet possible,
@@ -196,7 +213,7 @@ impl RedemptionRate {
         total_shares_issued: TotalSharesIssued,
         total_deposits_value: TotalDepositsValue,
     ) -> Option<Self> {
-        if total_shares_issued == 0 || total_deposits_value == 0 {
+        if total_shares_issued.0 == 0 || total_deposits_value.0 == 0 {
             return None;
         }
 
@@ -206,32 +223,40 @@ impl RedemptionRate {
         })
     }
 
-    pub fn checked_shares_to_deposits(&self, shares_amount: SharesAmount) -> Option<DepositAmount> {
-        Rate::from_ratio(shares_amount, self.total_shares_issued)
-            .and_then(|rate| rate.apply_u128(self.total_deposits_value))
+    pub fn checked_shares_to_deposits(
+        &self,
+        SharesAmount(shares_amount): SharesAmount,
+    ) -> Option<DepositValue> {
+        Rate::from_ratio(shares_amount, self.total_shares_issued.0)
+            .and_then(|rate| rate.apply_u128(self.total_deposits_value.0))
+            .map(DepositValue)
     }
 
-    pub fn checked_deposits_to_shares(&self, deposit_value: DepositValue) -> Option<SharesAmount> {
-        Rate::from_ratio(deposit_value, self.total_deposits_value)
-            .and_then(|rate| rate.apply_u128(self.total_shares_issued))
+    pub fn checked_deposits_to_shares(
+        &self,
+        DepositValue(deposit_amount): DepositValue,
+    ) -> Option<SharesAmount> {
+        Rate::from_ratio(deposit_amount, self.total_deposits_value.0)
+            .and_then(|rate| rate.apply_u128(self.total_shares_issued.0))
+            .map(SharesAmount)
     }
 
     fn overflow_panic(self, shares_or_deposits: &str, amount: u128) -> ! {
         panic!(
             "overflow converting {amount} to {shares_or_deposits}. total_shares_issued = {}, total_deposit_value = {}", 
-            self.total_shares_issued,
-            self.total_deposits_value
+            self.total_shares_issued.0,
+            self.total_deposits_value.0
         );
     }
 
-    pub fn shares_to_deposits(&self, shares_amount: SharesAmount) -> DepositAmount {
+    pub fn shares_to_deposits(&self, shares_amount: SharesAmount) -> DepositValue {
         self.checked_shares_to_deposits(shares_amount)
-            .unwrap_or_else(|| self.overflow_panic("deposits", shares_amount))
+            .unwrap_or_else(|| self.overflow_panic("deposits", shares_amount.0))
     }
 
-    pub fn deposits_to_shares(&self, deposit_amount: DepositAmount) -> SharesAmount {
-        self.checked_deposits_to_shares(deposit_amount)
-            .unwrap_or_else(|| self.overflow_panic("shares", deposit_amount))
+    pub fn deposits_to_shares(&self, deposit_value: DepositValue) -> SharesAmount {
+        self.checked_deposits_to_shares(deposit_value)
+            .unwrap_or_else(|| self.overflow_panic("shares", deposit_value.0))
     }
 }
 
@@ -249,13 +274,15 @@ pub fn offset_total_deposits_value(
 ) -> TotalDepositsValue {
     let pending_batch_id = pending_batch_id(unbonding_log);
 
-    let offset = unbonding_log
+    let DepositValue(offset) = unbonding_log
         .batch_unbond_value(pending_batch_id)
         .unwrap_or_default();
 
-    strategy
-        .total_deposits_value()
+    let TotalDepositsValue(total_deposits_value) = strategy.total_deposits_value();
+
+    total_deposits_value
         .checked_sub(offset)
+        .map(TotalDepositsValue)
         .expect("pending unbond <= total deposits")
 }
 
@@ -487,12 +514,16 @@ impl<'a> ClaimableBatchIter<'a> {
             .zip(self.unbonding_log.batch_claimable_amount(batch_id))
             .expect("batch has been entered by recipient and committed");
 
+        let DepositValue(recipient_unbonded) = recipient_unbonded;
+        let DepositValue(total_unbonded) = total_unbonded;
+        let ClaimAmount(total_claimable) = total_claimable;
+
         let claim_amount = Rate::from_ratio(recipient_unbonded, total_unbonded)
             .expect("unbonded non-zero amount")
             .apply_u128(total_claimable)
             .expect("recipient unbonded <= total unbonded");
 
-        Some((claim_amount, batch_id))
+        Some((ClaimAmount(claim_amount), batch_id))
     }
 }
 
@@ -514,7 +545,7 @@ impl<'a> Vault for VaultImpl<'a> {
     fn deposit(
         &self,
         deposit_asset: Asset,
-        deposit_amount: DepositAmount,
+        DepositAmount(deposit_amount): DepositAmount,
         mint_recipient: Recipient,
     ) -> Result<DepositResponse, Error> {
         if deposit_amount == 0 {
@@ -525,24 +556,26 @@ impl<'a> Vault for VaultImpl<'a> {
             return Err(Error::InvalidDepositAsset);
         }
 
-        let previous_total_deposits_value = self.offset_total_deposits_value();
+        let TotalDepositsValue(previous_total_deposits_value) = self.offset_total_deposits_value();
 
         // Value the deposit in terms of the underlying strategy token
-        let deposit_value = self.strategy.deposit_value(deposit_amount);
-
-        let total_shares_issued = self.mint.total_shares_issued();
+        let DepositValue(deposit_value) =
+            self.strategy.deposit_value(DepositAmount(deposit_amount));
 
         let total_deposits_value = previous_total_deposits_value
             .checked_add(deposit_value)
             .ok_or(Error::DepositTooLarge)?;
 
         let deposit_cmd = StrategyCmd::Deposit {
-            amount: deposit_amount,
+            amount: DepositAmount(deposit_amount),
         };
 
-        let Some(redemption_rate) =
-            RedemptionRate::new(total_shares_issued, previous_total_deposits_value)
-        else {
+        let TotalSharesIssued(total_shares_issued) = self.mint.total_shares_issued();
+
+        let Some(redemption_rate) = RedemptionRate::new(
+            TotalSharesIssued(total_shares_issued),
+            TotalDepositsValue(previous_total_deposits_value),
+        ) else {
             // It is logically possible that a total loss occurs in the strategy and there are >0 issued shares but 0 deposits
             // In this case, new deposits should not be allowed as it would overwrite the issued shares which could be made
             // whole via a donation.
@@ -552,19 +585,20 @@ impl<'a> Vault for VaultImpl<'a> {
 
             let underlying_asset_decimals = self.strategy.underlying_asset_decimals();
 
+            // no decimal normalisation for shares amount required
             if underlying_asset_decimals == SHARES_DECIMAL_PLACES {
                 return Ok(DepositResponse {
                     cmds: cmds![
                         deposit_cmd,
                         MintCmd::Mint {
-                            amount: total_deposits_value,
+                            amount: SharesAmount(total_deposits_value),
                             recipient: mint_recipient,
                         }
                     ],
-                    deposit_value,
-                    issued_shares: total_deposits_value,
-                    total_shares_issued: total_deposits_value,
-                    total_deposits_value,
+                    deposit_value: DepositValue(deposit_value),
+                    issued_shares: SharesAmount(total_deposits_value),
+                    total_shares_issued: TotalSharesIssued(total_deposits_value),
+                    total_deposits_value: TotalDepositsValue(total_deposits_value),
                 });
             }
 
@@ -584,26 +618,26 @@ impl<'a> Vault for VaultImpl<'a> {
                 cmds: cmds![
                     deposit_cmd,
                     MintCmd::Mint {
-                        amount: mint_shares,
+                        amount: SharesAmount(mint_shares),
                         recipient: mint_recipient,
                     }
                 ],
-                deposit_value,
-                issued_shares: mint_shares,
-                total_shares_issued: mint_shares,
-                total_deposits_value,
+                deposit_value: DepositValue(deposit_value),
+                issued_shares: SharesAmount(mint_shares),
+                total_shares_issued: TotalSharesIssued(mint_shares),
+                total_deposits_value: TotalDepositsValue(total_deposits_value),
             });
         };
 
-        let mint_shares = redemption_rate
-            .checked_deposits_to_shares(deposit_value)
+        let SharesAmount(mint_shares) = redemption_rate
+            .checked_deposits_to_shares(DepositValue(deposit_value))
             .ok_or(Error::DepositTooLarge)?;
 
         if mint_shares == 0 {
             return Err(Error::DepositTooSmall);
         }
 
-        let mint_shares_value = redemption_rate.shares_to_deposits(mint_shares);
+        let mint_shares_value = redemption_rate.shares_to_deposits(SharesAmount(mint_shares));
 
         let total_shares_issued = total_shares_issued
             .checked_add(mint_shares)
@@ -613,21 +647,21 @@ impl<'a> Vault for VaultImpl<'a> {
             cmds: cmds![
                 deposit_cmd,
                 MintCmd::Mint {
-                    amount: mint_shares,
+                    amount: SharesAmount(mint_shares),
                     recipient: mint_recipient,
                 }
             ],
             deposit_value: mint_shares_value,
-            issued_shares: mint_shares,
-            total_shares_issued,
-            total_deposits_value,
+            issued_shares: SharesAmount(mint_shares),
+            total_shares_issued: TotalSharesIssued(total_shares_issued),
+            total_deposits_value: TotalDepositsValue(total_deposits_value),
         })
     }
 
     fn donate(
         &self,
         donate_asset: Asset,
-        donate_amount: DepositAmount,
+        DepositAmount(donate_amount): DepositAmount,
     ) -> Result<StrategyCmd, Error> {
         if donate_amount == 0 {
             return Err(Error::CannotDonateZero);
@@ -638,21 +672,21 @@ impl<'a> Vault for VaultImpl<'a> {
         }
 
         Ok(StrategyCmd::Deposit {
-            amount: donate_amount,
+            amount: DepositAmount(donate_amount),
         })
     }
 
     fn redeem(
         &self,
         shares_asset: Asset,
-        shares_amount: SharesAmount,
+        SharesAmount(shares_amount): SharesAmount,
         recipient: Recipient,
     ) -> Result<Vec<Cmd>, Error> {
         if shares_asset != self.mint.shares_asset() {
             return Err(Error::InvalidRedemptionAsset);
         }
 
-        let total_shares_issued = self.mint.total_shares_issued();
+        let TotalSharesIssued(total_shares_issued) = self.mint.total_shares_issued();
 
         // NOTE: The following assertions are present as it is the downstream user of the library's responsibility
         // to be 'in custody' of the shares that are to be redeemed before making this request.
@@ -670,44 +704,51 @@ impl<'a> Vault for VaultImpl<'a> {
         }
 
         // total deposits value less the value of pending unbondings
-        let offset_total_deposits_value = self.offset_total_deposits_value();
+        let TotalDepositsValue(offset_total_deposits_value) = self.offset_total_deposits_value();
 
-        let redemption_rate = RedemptionRate::new(total_shares_issued, offset_total_deposits_value)
-            .ok_or(Error::NoDepositsToRedeem)?;
+        let redemption_rate = RedemptionRate::new(
+            TotalSharesIssued(total_shares_issued),
+            TotalDepositsValue(offset_total_deposits_value),
+        )
+        .ok_or(Error::NoDepositsToRedeem)?;
 
-        let unbond_value = redemption_rate
-            .checked_shares_to_deposits(shares_amount)
-            .filter(|amount| *amount > 0)
+        let DepositValue(unbond_value) = redemption_rate
+            .checked_shares_to_deposits(SharesAmount(shares_amount))
+            .filter(|DepositValue(value)| *value > 0)
             .ok_or(Error::RedemptionTooSmall)?;
 
         let pending_batch_id = self.pending_batch_id();
 
-        let total_unbond_value = self
+        let DepositValue(total_unbond_value) = self
             .unbonding_log
             .batch_unbond_value(pending_batch_id)
-            .unwrap_or_default()
+            .unwrap_or_default();
+
+        let total_unbond_value = total_unbond_value
             .checked_add(unbond_value)
             .expect("always: total unbond value <= total deposit value <= u128::MAX");
 
-        let recipient_unbond_amount = self
+        let DepositValue(recipient_unbond_value) = self
             .unbonding_log
             .unbonded_value_in_batch(&recipient, pending_batch_id)
-            .unwrap_or_default()
+            .unwrap_or_default();
+
+        let recipient_unbond_value = recipient_unbond_value
             .checked_add(unbond_value)
             .expect("always: recipient unbond value <= total deposit value <= u128::MAX");
 
         let mut cmds: Vec<Cmd> = cmds![
             UnbondingLogSet::BatchTotalUnbondValue {
                 batch: pending_batch_id,
-                value: total_unbond_value,
+                value: DepositValue(total_unbond_value),
             },
             UnbondingLogSet::UnbondedValueInBatch {
                 recipient: recipient.clone(),
                 batch: pending_batch_id,
-                value: recipient_unbond_amount
+                value: DepositValue(recipient_unbond_value)
             },
             MintCmd::Burn {
-                amount: shares_amount
+                amount: SharesAmount(shares_amount)
             }
         ];
 
@@ -738,7 +779,7 @@ impl<'a> Vault for VaultImpl<'a> {
             _ => {}
         }
 
-        match self.strategy.unbond(total_unbond_value) {
+        match self.strategy.unbond(DepositValue(total_unbond_value)) {
             UnbondReadyStatus::Ready { amount, epoch } => {
                 cmds.add_cmd(UnbondingLogSet::LastCommittedBatchId(pending_batch_id))
                     .add_cmd(UnbondingLogSet::BatchClaimableAmount {
@@ -750,7 +791,7 @@ impl<'a> Vault for VaultImpl<'a> {
                         epoch,
                     })
                     .add_cmd(StrategyCmd::Unbond {
-                        value: unbond_value,
+                        value: DepositValue(unbond_value),
                     });
             }
 
@@ -772,7 +813,7 @@ impl<'a> Vault for VaultImpl<'a> {
 
         let iter = ClaimableBatchIter::new(&recipient, self.unbonding_log, self.strategy);
 
-        for (amount, id) in iter {
+        for (ClaimAmount(amount), id) in iter {
             // It it logically possible that a recipient's total claimable balance exceeds the max representable value.
             // In this case the claim is split by stopping the accumulation at the previous iteration.
             let Some(total) = total_claimable_amount.checked_add(amount) else {
@@ -791,7 +832,7 @@ impl<'a> Vault for VaultImpl<'a> {
                 batch: last_claimed_id
             },
             StrategyCmd::SendClaimed {
-                amount: total_claimable_amount,
+                amount: ClaimAmount(total_claimable_amount),
                 recipient
             }
         ])

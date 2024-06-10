@@ -46,7 +46,7 @@ fn total_shares_issued(storage: &dyn Storage) -> u128 {
 
 impl<'a> CoreSharesMint for SharesMint<'a> {
     fn total_shares_issued(&self) -> TotalSharesIssued {
-        total_shares_issued(self.storage)
+        TotalSharesIssued(total_shares_issued(self.storage))
     }
 
     fn shares_asset(&self) -> Asset {
@@ -54,7 +54,7 @@ impl<'a> CoreSharesMint for SharesMint<'a> {
     }
 }
 
-fn increase_total_shares_issued(storage: &mut dyn Storage, amount: SharesAmount) {
+fn increase_total_shares_issued(storage: &mut dyn Storage, SharesAmount(amount): SharesAmount) {
     let total_issued_shares = total_shares_issued(storage)
         .checked_add(amount)
         .expect("total issued shares balance should never overflow");
@@ -62,7 +62,7 @@ fn increase_total_shares_issued(storage: &mut dyn Storage, amount: SharesAmount)
     storage.set_u128(key::TOTAL_ISSUED_SHARES, total_issued_shares);
 }
 
-fn decrease_total_shares_issued(storage: &mut dyn Storage, amount: SharesAmount) {
+fn decrease_total_shares_issued(storage: &mut dyn Storage, SharesAmount(amount): SharesAmount) {
     let total_issued_shares = total_shares_issued(storage)
         .checked_sub(amount)
         .expect("amount <= total supply");
@@ -81,13 +81,13 @@ pub fn handle_cmd<Msg>(
         MintCmd::Mint { amount, recipient } => {
             increase_total_shares_issued(storage, amount);
 
-            factory.mint(full_denom, amount, recipient)
+            factory.mint(full_denom, amount.0, recipient)
         }
 
         MintCmd::Burn { amount } => {
             decrease_total_shares_issued(storage, amount);
 
-            factory.burn(full_denom, amount)
+            factory.burn(full_denom, amount.0)
         }
     }
 }

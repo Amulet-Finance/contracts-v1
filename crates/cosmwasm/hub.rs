@@ -17,6 +17,7 @@ use amulet_core::{
         ProxyConfig, SyntheticMint as CoreSyntheticMint, VaultDepositReason, VaultId,
         Vaults as CoreVaults,
     },
+    vault::{DepositAmount, DepositValue, SharesAmount},
     Identifier,
 };
 use cw_utils::{one_coin, parse_reply_execute_data, ParseReplyError, PaymentError};
@@ -286,7 +287,7 @@ fn handle_deposit<Msg>(
         vault.into(),
         info.sender.into_string().into(),
         coin.denom.into(),
-        coin.amount.u128(),
+        DepositAmount(coin.amount.u128()),
         recipient.into(),
     )?;
 
@@ -341,7 +342,7 @@ fn handle_mint<Msg>(
         vault.into(),
         info.sender.into_string().into(),
         coin.denom.into(),
-        coin.amount.u128(),
+        DepositAmount(coin.amount.u128()),
         recipient.into(),
     )?;
 
@@ -486,7 +487,7 @@ pub fn handle_user_msg<Msg>(
                 vault.into(),
                 info.sender.into_string().into(),
                 coin.denom.into(),
-                coin.amount.u128(),
+                DepositAmount(coin.amount.u128()),
             )?;
 
             Ok((cmds, Response::default()))
@@ -649,8 +650,8 @@ pub fn handle_reply<Msg>(
         vault.into(),
         recipient.into(),
         reason,
-        response.minted_shares.u128(),
-        response.deposit_value.u128(),
+        SharesAmount(response.minted_shares.u128()),
+        DepositValue(response.deposit_value.u128()),
     )?;
 
     Ok((cmds, Response::default()))
@@ -695,6 +696,7 @@ fn vault_metadata(
     let collateral_shares = balance_sheet
         .collateral_shares(&vault)
         .unwrap_or_default()
+        .0
         .into();
 
     let reserve_balance = balance_sheet
@@ -705,18 +707,24 @@ fn vault_metadata(
     let reserve_shares = balance_sheet
         .reserve_shares(&vault)
         .unwrap_or_default()
+        .0
         .into();
 
     let treasury_shares = balance_sheet
         .treasury_shares(&vault)
         .unwrap_or_default()
+        .0
         .into();
 
     let amo = vaults.amo(&vault).map(Into::into);
 
     let amo_allocation = vaults.amo_allocation(&vault).unwrap_or_default().raw();
 
-    let amo_shares = balance_sheet.amo_shares(&vault).unwrap_or_default().into();
+    let amo_shares = balance_sheet
+        .amo_shares(&vault)
+        .unwrap_or_default()
+        .0
+        .into();
 
     let sum_payment_ratio = balance_sheet.overall_sum_payment_ratio(&vault).map(|spr| {
         let timestamp = storage

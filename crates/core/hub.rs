@@ -1123,7 +1123,7 @@ impl<'a> Hub for HubImpl<'a> {
         vault: VaultId,
         sender: Sender,
         deposit_asset: Asset,
-        deposit_amount: DepositAmount,
+        DepositAmount(deposit_amount): DepositAmount,
         recipient: Recipient,
     ) -> Result<Vec<Cmd>, Error> {
         if !self.vaults.is_registered(&vault) {
@@ -1155,7 +1155,7 @@ impl<'a> Hub for HubImpl<'a> {
         cmds.push_cmd(VaultCmd::Deposit {
             vault,
             asset: deposit_asset,
-            amount: deposit_amount,
+            amount: DepositAmount(deposit_amount),
             callback_recipient: recipient,
             callback_reason: VaultDepositReason::Deposit,
         });
@@ -1251,7 +1251,7 @@ impl<'a> Hub for HubImpl<'a> {
         vault: VaultId,
         sender: Sender,
         deposit_asset: Asset,
-        deposit_amount: DepositAmount,
+        DepositAmount(deposit_amount): DepositAmount,
     ) -> Result<Vec<Cmd>, Error> {
         if !self.vaults.is_registered(&vault) {
             return Err(Error::VaultNotRegistered);
@@ -1274,7 +1274,7 @@ impl<'a> Hub for HubImpl<'a> {
         cmds.push_cmd(VaultCmd::Deposit {
             vault,
             asset: deposit_asset,
-            amount: deposit_amount,
+            amount: DepositAmount(deposit_amount),
             callback_recipient: sender,
             callback_reason: VaultDepositReason::RepayUnderlying,
         });
@@ -1578,7 +1578,7 @@ impl<'a> Hub for HubImpl<'a> {
         vault: VaultId,
         sender: Sender,
         deposit_asset: Asset,
-        deposit_amount: DepositAmount,
+        DepositAmount(deposit_amount): DepositAmount,
         recipient: Recipient,
     ) -> Result<Vec<Cmd>, Error> {
         if deposit_amount == 0 {
@@ -1610,7 +1610,7 @@ impl<'a> Hub for HubImpl<'a> {
         cmds.push_cmd(VaultCmd::Deposit {
             vault,
             asset: deposit_asset,
-            amount: deposit_amount,
+            amount: DepositAmount(deposit_amount),
             callback_recipient: recipient,
             callback_reason: VaultDepositReason::Mint,
         });
@@ -1624,7 +1624,7 @@ impl<'a> Hub for HubImpl<'a> {
         recipient: Recipient,
         reason: VaultDepositReason,
         issued_shares: SharesAmount,
-        deposit_value: DepositValue,
+        DepositValue(deposit_value): DepositValue,
     ) -> Result<Vec<Cmd>, Error> {
         assert!(self.vaults.is_registered(&vault_id));
 

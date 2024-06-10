@@ -7,8 +7,8 @@ use cosmwasm_std::{
 
 use amulet_core::{
     vault::{
-        DepositAmount, DepositValue, Now as VaultNow, Strategy as CoreStrategy, StrategyCmd,
-        TotalDepositsValue, UnbondEpoch, UnbondReadyStatus,
+        ClaimAmount, DepositAmount, DepositValue, Now as VaultNow, Strategy as CoreStrategy,
+        StrategyCmd, TotalDepositsValue, UnbondEpoch, UnbondReadyStatus,
     },
     Asset, Decimals, Identifier,
 };
@@ -57,21 +57,23 @@ impl<'a> CoreStrategy for Strategy<'a> {
         let PendingDeposit(pending_deposit) = self.storage.pending_deposit();
         let PendingUnbond(pending_unbond) = self.storage.pending_unbond();
 
-        delegated
+        let total_deposits_value = delegated
             .checked_add(inflight_delegation)
             .expect("adding inflight delegation value will not overflow 128 bits")
             .checked_add(pending_deposit)
             .expect("adding pending deposit value will not overflow 128 bits")
             .checked_sub(pending_unbond)
-            .expect("always: pending unbond <= total deposits")
+            .expect("always: pending unbond <= total deposits");
+
+        TotalDepositsValue(total_deposits_value)
     }
 
-    fn deposit_value(&self, amount: DepositAmount) -> DepositValue {
+    fn deposit_value(&self, DepositAmount(amount): DepositAmount) -> DepositValue {
         // 1:1 (no exchange/redemption rate)
-        amount
+        DepositValue(amount)
     }
 
-    fn unbond(&self, value: DepositValue) -> UnbondReadyStatus {
+    fn unbond(&self, DepositValue(value): DepositValue) -> UnbondReadyStatus {
         if self.storage.reconcile_state().is_pending() {
             return UnbondReadyStatus::Later(None);
         }
@@ -91,7 +93,7 @@ impl<'a> CoreStrategy for Strategy<'a> {
             };
 
             UnbondReadyStatus::Ready {
-                amount: value,
+                amount: ClaimAmount(value),
                 epoch,
             }
         };
@@ -171,7 +173,7 @@ pub fn handle_cmd<C>(storage: &mut dyn Storage, cmd: StrategyCmd) -> Result<Opti
             let PendingDeposit(pending_deposit) = storage.pending_deposit();
 
             let pending_deposit = pending_deposit
-                .checked_add(amount)
+                .checked_add(amount.0)
                 .expect("pending deposit will not overflow 128 bits");
 
             storage.set_pending_deposit(PendingDeposit(pending_deposit));
@@ -181,14 +183,14 @@ pub fn handle_cmd<C>(storage: &mut dyn Storage, cmd: StrategyCmd) -> Result<Opti
             let PendingUnbond(pending_unbond) = storage.pending_unbond();
 
             let pending_unbond = pending_unbond
-                .checked_add(value)
+                .checked_add(value.0)
                 .expect("pending unbond will not overflow 128 bits");
 
             storage.set_pending_unbond(PendingUnbond(pending_unbond));
         }
 
         StrategyCmd::SendClaimed { amount, recipient } => {
-            return send_claimed_unbondings(storage, amount, recipient).map(Some)
+            return send_claimed_unbondings(storage, amount.0, recipient).map(Some)
         }
     }
 

@@ -8,7 +8,7 @@ use amulet_core::{
         VaultCmd, VaultDepositReason, VaultId, Vaults as CoreVaults,
     },
     mint::Synthetic,
-    vault::{TotalDepositsValue, TotalSharesIssued},
+    vault::{DepositAmount, SharesAmount, TotalDepositsValue, TotalSharesIssued},
     Asset, Decimals, Recipient,
 };
 
@@ -255,7 +255,7 @@ impl<'a> CoreVaults for Vaults<'a> {
             Err(err) => panic!("state query failed: {err} - {vault}"),
         };
 
-        response.total_issued_shares.u128()
+        TotalSharesIssued(response.total_issued_shares.u128())
     }
 
     fn total_deposits_value(&self, vault: &VaultId) -> TotalDepositsValue {
@@ -267,7 +267,7 @@ impl<'a> CoreVaults for Vaults<'a> {
             Err(err) => panic!("state query failed: {err} - {vault}"),
         };
 
-        response.total_deposits.u128()
+        TotalDepositsValue(response.total_deposits.u128())
     }
 }
 
@@ -337,7 +337,7 @@ pub fn handle_cmd<Msg>(storage: &mut dyn Storage, cmd: VaultCmd) -> Option<SubMs
         VaultCmd::Deposit {
             vault,
             asset,
-            amount,
+            amount: DepositAmount(amount),
             callback_recipient,
             callback_reason,
         } => {
@@ -364,7 +364,7 @@ pub fn handle_cmd<Msg>(storage: &mut dyn Storage, cmd: VaultCmd) -> Option<SubMs
         VaultCmd::Redeem {
             vault,
             shares,
-            amount,
+            amount: SharesAmount(amount),
             recipient,
         } => {
             let msg = WasmMsg::Execute {

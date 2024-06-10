@@ -99,22 +99,33 @@ impl World {
         self
     }
 
-    fn deposit_amount(&self, value: DepositValue) -> DepositAmount {
-        FixedU256::from_u128(value)
+    fn deposit_amount(&self, DepositValue(value): DepositValue) -> DepositAmount {
+        let amount = FixedU256::from_u128(value)
             .checked_div(self.underlying_redemption_rate)
             .unwrap()
-            .floor()
+            .floor();
+
+        DepositAmount(amount)
     }
 
     fn handle_cmd(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::Mint(c) => match c {
-                MintCmd::Mint { amount, .. } => self.total_shares += amount,
-                MintCmd::Burn { amount } => self.total_shares -= amount,
+                MintCmd::Mint {
+                    amount: SharesAmount(amount),
+                    ..
+                } => self.total_shares += amount,
+                MintCmd::Burn {
+                    amount: SharesAmount(amount),
+                } => self.total_shares -= amount,
             },
             Cmd::Strategy(c) => match c {
-                StrategyCmd::Deposit { amount } => self.total_deposits += amount,
-                StrategyCmd::Unbond { value } => self.total_deposits -= self.deposit_amount(value),
+                StrategyCmd::Deposit {
+                    amount: DepositAmount(amount),
+                } => self.total_deposits += amount,
+                StrategyCmd::Unbond { value } => {
+                    self.total_deposits -= self.deposit_amount(value).0
+                }
                 _ => {}
             },
             Cmd::UnbondingLog(c) => match c {
@@ -164,15 +175,17 @@ impl World {
                 UnbondingLogSet::UnbondedValueInBatch {
                     recipient,
                     batch,
-                    value,
+                    value: DepositValue(value),
                 } => {
-                    self.recipient_batches
+                    let entry = self
+                        .recipient_batches
                         .entry(recipient.into_string())
                         .or_default()
                         .batches
                         .entry(batch)
-                        .or_default()
-                        .value += value;
+                        .or_default();
+
+                    entry.value = DepositValue(value + entry.value.0);
                 }
                 _ => {}
             },
@@ -196,7 +209,7 @@ fn deposit_zero_errs() {
     check_err(
         World::default()
             .vault()
-            .deposit(DEPOSIT_ASSET.into(), 0, BOB.into())
+            .deposit(DEPOSIT_ASSET.into(), DepositAmount(0), BOB.into())
             .unwrap_err(),
         expect!["cannot deposit zero"],
     )
@@ -207,7 +220,7 @@ fn deposit_invalid_asset_errs() {
     check_err(
         World::default()
             .vault()
-            .deposit("invalid_asset".into(), 100, BOB.into())
+            .deposit("invalid_asset".into(), DepositAmount(100), BOB.into())
             .unwrap_err(),
         expect!["invalid deposit asset"],
     )
@@ -219,7 +232,7 @@ fn deposit_causing_overflow_errs() {
         World::default()
             .total_deposits(u128::MAX)
             .vault()
-            .deposit(DEPOSIT_ASSET.into(), 1, BOB.into())
+            .deposit(DEPOSIT_ASSET.into(), DepositAmount(1), BOB.into())
             .unwrap_err(),
         expect!["deposit too large"],
     )
@@ -232,7 +245,7 @@ fn deposit_too_small_errs() {
             .total_deposits(shares_amount(1) + 1)
             .total_shares(shares_amount(1))
             .vault()
-            .deposit(DEPOSIT_ASSET.into(), 1, BOB.into())
+            .deposit(DEPOSIT_ASSET.into(), DepositAmount(1), BOB.into())
             .unwrap_err(),
         expect!["deposit too small"],
     )
@@ -244,7 +257,7 @@ fn deposit_after_total_loss_errs() {
         World::default()
             .total_shares(10)
             .vault()
-            .deposit(DEPOSIT_ASSET.into(), 1, BOB.into())
+            .deposit(DEPOSIT_ASSET.into(), DepositAmount(1), BOB.into())
             .unwrap_err(),
         expect!["cannot deposit in total loss state"],
     )
@@ -255,23 +268,23 @@ fn initial_deposit() {
     check(
         World::default()
             .vault()
-            .deposit(DEPOSIT_ASSET.into(), 100, BOB.into())
+            .deposit(DEPOSIT_ASSET.into(), DepositAmount(100), BOB.into())
             .unwrap(),
         expect![[r#"
             (
               cmds: [
                 Strategy(Deposit(
-                  amount: 100,
+                  amount: (100),
                 )),
                 Mint(Mint(
-                  amount: 100000000000000,
+                  amount: (100000000000000),
                   recipient: "bob",
                 )),
               ],
-              deposit_value: 100,
-              issued_shares: 100000000000000,
-              total_shares_issued: 100000000000000,
-              total_deposits_value: 100,
+              deposit_value: (100),
+              issued_shares: (100000000000000),
+              total_shares_issued: (100000000000000),
+              total_deposits_value: (100),
             )"#]],
     )
 }
@@ -282,23 +295,23 @@ fn initial_deposit_with_underlying_redemption_rate_gt_1() {
         World::default()
             .underlying_redemption_rate(11, 10)
             .vault()
-            .deposit(DEPOSIT_ASSET.into(), 100, BOB.into())
+            .deposit(DEPOSIT_ASSET.into(), DepositAmount(100), BOB.into())
             .unwrap(),
         expect![[r#"
             (
               cmds: [
                 Strategy(Deposit(
-                  amount: 100,
+                  amount: (100),
                 )),
                 Mint(Mint(
-                  amount: 109000000000000,
+                  amount: (109000000000000),
                   recipient: "bob",
                 )),
               ],
-              deposit_value: 109,
-              issued_shares: 109000000000000,
-              total_shares_issued: 109000000000000,
-              total_deposits_value: 109,
+              deposit_value: (109),
+              issued_shares: (109000000000000),
+              total_shares_issued: (109000000000000),
+              total_deposits_value: (109),
             )"#]],
     )
 }
@@ -310,23 +323,23 @@ fn regular_deposit() {
             .total_deposits(1_200)
             .total_shares(shares_amount(1_000))
             .vault()
-            .deposit(DEPOSIT_ASSET.into(), 100, BOB.into())
+            .deposit(DEPOSIT_ASSET.into(), DepositAmount(100), BOB.into())
             .unwrap(),
         expect![[r#"
             (
               cmds: [
                 Strategy(Deposit(
-                  amount: 100,
+                  amount: (100),
                 )),
                 Mint(Mint(
-                  amount: 83333333333333333333,
+                  amount: (83333333333333333333),
                   recipient: "bob",
                 )),
               ],
-              deposit_value: 99,
-              issued_shares: 83333333333333333333,
-              total_shares_issued: 1083333333333333333333,
-              total_deposits_value: 1300,
+              deposit_value: (99),
+              issued_shares: (83333333333333333333),
+              total_shares_issued: (1083333333333333333333),
+              total_deposits_value: (1300),
             )"#]],
     )
 }
@@ -339,23 +352,23 @@ fn regular_deposit_with_underlying_redemption_rate_gt_1() {
             .total_shares(shares_amount(1_000))
             .underlying_redemption_rate(11, 10)
             .vault()
-            .deposit(DEPOSIT_ASSET.into(), 100, BOB.into())
+            .deposit(DEPOSIT_ASSET.into(), DepositAmount(100), BOB.into())
             .unwrap(),
         expect![[r#"
             (
               cmds: [
                 Strategy(Deposit(
-                  amount: 100,
+                  amount: (100),
                 )),
                 Mint(Mint(
-                  amount: 99181073703366696997,
+                  amount: (99181073703366696997),
                   recipient: "bob",
                 )),
               ],
-              deposit_value: 108,
-              issued_shares: 99181073703366696997,
-              total_shares_issued: 1099181073703366696997,
-              total_deposits_value: 1208,
+              deposit_value: (108),
+              issued_shares: (99181073703366696997),
+              total_shares_issued: (1099181073703366696997),
+              total_deposits_value: (1208),
             )"#]],
     )
 }
@@ -365,7 +378,7 @@ fn donate_zero_errs() {
     check_err(
         World::default()
             .vault()
-            .donate(DEPOSIT_ASSET.into(), 0)
+            .donate(DEPOSIT_ASSET.into(), DepositAmount(0))
             .unwrap_err(),
         expect!["cannot donate zero"],
     )
@@ -376,7 +389,7 @@ fn donate_invalid_asset_errs() {
     check_err(
         World::default()
             .vault()
-            .donate("invalid_asset".into(), 100)
+            .donate("invalid_asset".into(), DepositAmount(100))
             .unwrap_err(),
         expect!["invalid donation asset"],
     )
@@ -387,11 +400,11 @@ fn donate() {
     check(
         World::default()
             .vault()
-            .donate(DEPOSIT_ASSET.into(), 100)
+            .donate(DEPOSIT_ASSET.into(), DepositAmount(100))
             .unwrap(),
         expect![[r#"
             Deposit(
-              amount: 100,
+              amount: (100),
             )"#]],
     )
 }
@@ -401,7 +414,7 @@ fn redeem_invalid_asset_errs() {
     check_err(
         World::default()
             .vault()
-            .redeem("invalid_asset".into(), 1, BOB.into())
+            .redeem("invalid_asset".into(), SharesAmount(1), BOB.into())
             .unwrap_err(),
         expect!["invalid redemption asset"],
     )
@@ -414,7 +427,7 @@ fn redeem_zero_errs() {
             .total_deposits(1_000)
             .total_shares(shares_amount(1_000))
             .vault()
-            .redeem(SHARES_ASSET.into(), 0, BOB.into())
+            .redeem(SHARES_ASSET.into(), SharesAmount(0), BOB.into())
             .unwrap_err(),
         expect!["cannot redeem zero"],
     )
@@ -426,7 +439,11 @@ fn redeem_total_loss_errs() {
         World::default()
             .total_shares(shares_amount(1_000))
             .vault()
-            .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+            .redeem(
+                SHARES_ASSET.into(),
+                SharesAmount(shares_amount(100)),
+                BOB.into(),
+            )
             .unwrap_err(),
         expect!["no deposits to redeem"],
     )
@@ -439,7 +456,7 @@ fn redeem_too_little_errs() {
             .total_deposits(1_000)
             .total_shares(shares_amount(1_000))
             .vault()
-            .redeem(SHARES_ASSET.into(), 1, BOB.into())
+            .redeem(SHARES_ASSET.into(), SharesAmount(1), BOB.into())
             .unwrap_err(),
         expect!["redemption too small"],
     )
@@ -452,21 +469,25 @@ fn redeem_first_time_unbond_ready() {
             .total_deposits(1_000)
             .total_shares(shares_amount(1_000))
             .vault()
-            .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+            .redeem(
+                SHARES_ASSET.into(),
+                SharesAmount(shares_amount(100)),
+                BOB.into(),
+            )
             .unwrap(),
         expect![[r#"
             [
               UnbondingLog(BatchTotalUnbondValue(
                 batch: 0,
-                value: 99,
+                value: (99),
               )),
               UnbondingLog(UnbondedValueInBatch(
                 recipient: "bob",
                 batch: 0,
-                value: 99,
+                value: (99),
               )),
               Mint(Burn(
-                amount: 100000000000000000000,
+                amount: (100000000000000000000),
               )),
               UnbondingLog(LastEnteredBatch(
                 recipient: "bob",
@@ -479,7 +500,7 @@ fn redeem_first_time_unbond_ready() {
               UnbondingLog(LastCommittedBatchId(0)),
               UnbondingLog(BatchClaimableAmount(
                 batch: 0,
-                amount: 99,
+                amount: (99),
               )),
               UnbondingLog(BatchEpoch(
                 batch: 0,
@@ -489,7 +510,7 @@ fn redeem_first_time_unbond_ready() {
                 ),
               )),
               Strategy(Unbond(
-                value: 99,
+                value: (99),
               )),
             ]"#]],
     )
@@ -503,21 +524,25 @@ fn redeem_first_time_unbond_ready_underlying_redemption_rate_gt_1() {
             .total_shares(shares_amount(1_000))
             .underlying_redemption_rate(11, 10)
             .vault()
-            .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+            .redeem(
+                SHARES_ASSET.into(),
+                SharesAmount(shares_amount(100)),
+                BOB.into(),
+            )
             .unwrap(),
         expect![[r#"
             [
               UnbondingLog(BatchTotalUnbondValue(
                 batch: 0,
-                value: 109,
+                value: (109),
               )),
               UnbondingLog(UnbondedValueInBatch(
                 recipient: "bob",
                 batch: 0,
-                value: 109,
+                value: (109),
               )),
               Mint(Burn(
-                amount: 100000000000000000000,
+                amount: (100000000000000000000),
               )),
               UnbondingLog(LastEnteredBatch(
                 recipient: "bob",
@@ -530,7 +555,7 @@ fn redeem_first_time_unbond_ready_underlying_redemption_rate_gt_1() {
               UnbondingLog(LastCommittedBatchId(0)),
               UnbondingLog(BatchClaimableAmount(
                 batch: 0,
-                amount: 99,
+                amount: (99),
               )),
               UnbondingLog(BatchEpoch(
                 batch: 0,
@@ -540,7 +565,7 @@ fn redeem_first_time_unbond_ready_underlying_redemption_rate_gt_1() {
                 ),
               )),
               Strategy(Unbond(
-                value: 109,
+                value: (109),
               )),
             ]"#]],
     )
@@ -554,21 +579,25 @@ fn redeem_first_time_unbond_later() {
             .total_shares(shares_amount(1_000))
             .unbond_later()
             .vault()
-            .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+            .redeem(
+                SHARES_ASSET.into(),
+                SharesAmount(shares_amount(100)),
+                BOB.into(),
+            )
             .unwrap(),
         expect![[r#"
             [
               UnbondingLog(BatchTotalUnbondValue(
                 batch: 0,
-                value: 99,
+                value: (99),
               )),
               UnbondingLog(UnbondedValueInBatch(
                 recipient: "bob",
                 batch: 0,
-                value: 99,
+                value: (99),
               )),
               Mint(Burn(
-                amount: 100000000000000000000,
+                amount: (100000000000000000000),
               )),
               UnbondingLog(LastEnteredBatch(
                 recipient: "bob",
@@ -594,7 +623,11 @@ fn multiple_redemptions_in_one_batch() {
         .unbond_later();
 
     let cmds = vault(&world, &world, &world)
-        .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+        .redeem(
+            SHARES_ASSET.into(),
+            SharesAmount(shares_amount(100)),
+            BOB.into(),
+        )
         .unwrap();
 
     check(
@@ -603,15 +636,15 @@ fn multiple_redemptions_in_one_batch() {
             [
               UnbondingLog(BatchTotalUnbondValue(
                 batch: 0,
-                value: 99,
+                value: (99),
               )),
               UnbondingLog(UnbondedValueInBatch(
                 recipient: "bob",
                 batch: 0,
-                value: 99,
+                value: (99),
               )),
               Mint(Burn(
-                amount: 100000000000000000000,
+                amount: (100000000000000000000),
               )),
               UnbondingLog(LastEnteredBatch(
                 recipient: "bob",
@@ -633,21 +666,25 @@ fn multiple_redemptions_in_one_batch() {
             .handle_cmds(cmds)
             .unbond_ready()
             .vault()
-            .redeem(SHARES_ASSET.into(), shares_amount(100), ALICE.into())
+            .redeem(
+                SHARES_ASSET.into(),
+                SharesAmount(shares_amount(100)),
+                ALICE.into(),
+            )
             .unwrap(),
         expect![[r#"
             [
               UnbondingLog(BatchTotalUnbondValue(
                 batch: 0,
-                value: 199,
+                value: (199),
               )),
               UnbondingLog(UnbondedValueInBatch(
                 recipient: "alice",
                 batch: 0,
-                value: 100,
+                value: (100),
               )),
               Mint(Burn(
-                amount: 100000000000000000000,
+                amount: (100000000000000000000),
               )),
               UnbondingLog(LastEnteredBatch(
                 recipient: "alice",
@@ -660,7 +697,7 @@ fn multiple_redemptions_in_one_batch() {
               UnbondingLog(LastCommittedBatchId(0)),
               UnbondingLog(BatchClaimableAmount(
                 batch: 0,
-                amount: 199,
+                amount: (199),
               )),
               UnbondingLog(BatchEpoch(
                 batch: 0,
@@ -670,7 +707,7 @@ fn multiple_redemptions_in_one_batch() {
                 ),
               )),
               Strategy(Unbond(
-                value: 100,
+                value: (100),
               )),
             ]"#]],
     );
@@ -683,13 +720,21 @@ fn redeem_in_multiple_batches() {
         .total_shares(shares_amount(1_000));
 
     let cmds = vault(&world, &world, &world)
-        .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+        .redeem(
+            SHARES_ASSET.into(),
+            SharesAmount(shares_amount(100)),
+            BOB.into(),
+        )
         .unwrap();
 
     let cmds = world
         .handle_cmds(cmds)
         .vault()
-        .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+        .redeem(
+            SHARES_ASSET.into(),
+            SharesAmount(shares_amount(100)),
+            BOB.into(),
+        )
         .unwrap();
 
     let next_entered_cmd = cmds
@@ -733,7 +778,11 @@ fn claim_without_finished_batches_errs() {
         .total_shares(shares_amount(1_000));
 
     let cmds = vault(&world, &world, &world)
-        .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+        .redeem(
+            SHARES_ASSET.into(),
+            SharesAmount(shares_amount(100)),
+            BOB.into(),
+        )
         .unwrap();
 
     check_err(
@@ -753,7 +802,11 @@ fn claim() {
         .total_shares(shares_amount(1_000));
 
     let cmds = vault(&world, &world, &world)
-        .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+        .redeem(
+            SHARES_ASSET.into(),
+            SharesAmount(shares_amount(100)),
+            BOB.into(),
+        )
         .unwrap();
 
     check(
@@ -770,7 +823,7 @@ fn claim() {
                 batch: 0,
               )),
               Strategy(SendClaimed(
-                amount: 99,
+                amount: (99),
                 recipient: "bob",
               )),
             ]"#]],
@@ -784,19 +837,31 @@ fn claim_multiple() {
         .total_shares(shares_amount(1_000));
 
     let cmds = vault(&world, &world, &world)
-        .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+        .redeem(
+            SHARES_ASSET.into(),
+            SharesAmount(shares_amount(100)),
+            BOB.into(),
+        )
         .unwrap();
 
     let world = world.handle_cmds(cmds).now(2);
 
     let cmds = vault(&world, &world, &world)
-        .redeem(SHARES_ASSET.into(), shares_amount(200), BOB.into())
+        .redeem(
+            SHARES_ASSET.into(),
+            SharesAmount(shares_amount(200)),
+            BOB.into(),
+        )
         .unwrap();
 
     let world = world.handle_cmds(cmds).now(3);
 
     let cmds = vault(&world, &world, &world)
-        .redeem(SHARES_ASSET.into(), shares_amount(500), BOB.into())
+        .redeem(
+            SHARES_ASSET.into(),
+            SharesAmount(shares_amount(500)),
+            BOB.into(),
+        )
         .unwrap();
 
     check(
@@ -808,7 +873,7 @@ fn claim_multiple() {
                 batch: 1,
               )),
               Strategy(SendClaimed(
-                amount: 299,
+                amount: (299),
                 recipient: "bob",
               )),
             ]"#]],
@@ -836,7 +901,11 @@ fn start_unbond_with_still_pending_batch_errs() {
         .total_shares(shares_amount(1_000));
 
     let cmds = vault(&world, &world, &world)
-        .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+        .redeem(
+            SHARES_ASSET.into(),
+            SharesAmount(shares_amount(100)),
+            BOB.into(),
+        )
         .unwrap();
 
     check_err(
@@ -853,7 +922,11 @@ fn start_unbond() {
         .total_shares(shares_amount(1_000));
 
     let cmds = vault(&world, &world, &world)
-        .redeem(SHARES_ASSET.into(), shares_amount(100), BOB.into())
+        .redeem(
+            SHARES_ASSET.into(),
+            SharesAmount(shares_amount(100)),
+            BOB.into(),
+        )
         .unwrap();
 
     check(
@@ -868,7 +941,7 @@ fn start_unbond() {
               UnbondingLog(LastCommittedBatchId(0)),
               UnbondingLog(BatchClaimableAmount(
                 batch: 0,
-                amount: 99,
+                amount: (99),
               )),
               UnbondingLog(BatchEpoch(
                 batch: 0,
@@ -878,7 +951,7 @@ fn start_unbond() {
                 ),
               )),
               Strategy(Unbond(
-                value: 99,
+                value: (99),
               )),
             ]"#]],
     )
@@ -907,27 +980,35 @@ impl Strategy for World {
     }
 
     fn total_deposits_value(&self) -> TotalDepositsValue {
-        self.deposit_value(self.total_deposits)
+        let DepositValue(total_deposit_value) =
+            self.deposit_value(DepositAmount(self.total_deposits));
+        TotalDepositsValue(total_deposit_value)
     }
 
-    fn deposit_value(&self, amount: DepositAmount) -> DepositValue {
-        self.underlying_redemption_rate
+    fn deposit_value(&self, DepositAmount(amount): DepositAmount) -> DepositValue {
+        let value = self
+            .underlying_redemption_rate
             .checked_mul(FixedU256::from_u128(amount))
             .unwrap()
-            .floor()
+            .floor();
+
+        DepositValue(value)
     }
 
     fn unbond(&self, value: DepositValue) -> UnbondReadyStatus {
         match self.unbond_mode {
             UnbondMode::Ready => {
-                let amount = self.deposit_amount(value);
+                let DepositAmount(amount) = self.deposit_amount(value);
 
                 let epoch = UnbondEpoch {
                     start: self.now(),
                     end: self.now() + 1,
                 };
 
-                UnbondReadyStatus::Ready { amount, epoch }
+                UnbondReadyStatus::Ready {
+                    amount: ClaimAmount(amount),
+                    epoch,
+                }
             }
 
             UnbondMode::Later => UnbondReadyStatus::Later(Some(1)),
@@ -991,7 +1072,7 @@ impl UnbondingLog for World {
 
 impl SharesMint for World {
     fn total_shares_issued(&self) -> TotalSharesIssued {
-        self.total_shares
+        TotalSharesIssued(self.total_shares)
     }
 
     fn shares_asset(&self) -> Asset {

@@ -1,7 +1,7 @@
 use num::{FixedU256, U256};
 
 use crate::{
-    vault::{RedemptionRate, SharesAmount},
+    vault::{DepositValue, RedemptionRate, SharesAmount},
     Rate,
 };
 
@@ -90,7 +90,9 @@ impl std::ops::Sub<Surplus> for SharesPool {
         SharesPool {
             shares: self
                 .shares
-                .checked_sub(rhs.shares)
+                .0
+                .checked_sub(rhs.shares.0)
+                .map(SharesAmount)
                 .expect("always: surplus shares < pool shares"),
             ..self
         }
@@ -101,11 +103,11 @@ fn share_pool_surplus(
     pool: SharesPool,
     redemption_rate: RedemptionRate,
 ) -> Result<Option<Surplus>, LossError> {
-    if pool.shares == 0 {
+    if pool.shares.0 == 0 {
         return Ok(None);
     }
 
-    let pool_shares_value = redemption_rate.shares_to_deposits(pool.shares);
+    let DepositValue(pool_shares_value) = redemption_rate.shares_to_deposits(pool.shares);
 
     if pool_shares_value < pool.quota {
         return Err(LossError);
@@ -119,7 +121,7 @@ fn share_pool_surplus(
         .checked_sub(pool.quota)
         .expect("checked: pool shares value > pool quota");
 
-    let shares = redemption_rate.deposits_to_shares(value);
+    let shares = redemption_rate.deposits_to_shares(DepositValue(value));
 
     Ok(Some(Surplus { shares }))
 }
@@ -135,20 +137,21 @@ impl std::ops::Add for Payments {
 
     fn add(self, rhs: Self) -> Self::Output {
         Self {
-            treasury_shares: safe_add!(self.treasury_shares, rhs.treasury_shares),
-            amo_shares: safe_add!(self.amo_shares, rhs.amo_shares),
-            reserve_shares: safe_add!(self.reserve_shares, rhs.reserve_shares),
+            treasury_shares: SharesAmount(safe_add!(self.treasury_shares.0, rhs.treasury_shares.0)),
+            amo_shares: SharesAmount(safe_add!(self.amo_shares.0, rhs.amo_shares.0)),
+            reserve_shares: SharesAmount(safe_add!(self.reserve_shares.0, rhs.reserve_shares.0)),
         }
     }
 }
 
 fn payments(surplus: Surplus, treasury_fee: Rate, amo_allocation: Rate) -> Payments {
+    let SharesAmount(surplus_shares) = surplus.shares;
+
     let treasury_shares = treasury_fee
-        .apply_u128(surplus.shares)
+        .apply_u128(surplus_shares)
         .expect("always: treasury fee <= 100%");
 
-    let leftover_shares = surplus
-        .shares
+    let leftover_shares = surplus_shares
         .checked_sub(treasury_shares)
         .expect("always: treasury shares <= surplus shares");
 
@@ -161,9 +164,9 @@ fn payments(surplus: Surplus, treasury_fee: Rate, amo_allocation: Rate) -> Payme
         .expect("always: amo shares <= leftover shares");
 
     Payments {
-        treasury_shares,
-        amo_shares,
-        reserve_shares,
+        treasury_shares: SharesAmount(treasury_shares),
+        amo_shares: SharesAmount(amo_shares),
+        reserve_shares: SharesAmount(reserve_shares),
     }
 }
 
@@ -172,28 +175,28 @@ fn apply_payments(
     payments: Payments,
     redemption_rate: RedemptionRate,
 ) -> (Vault, Debt) {
-    let treasury_shares = safe_add!(vault.treasury_shares, payments.treasury_shares);
+    let treasury_shares = safe_add!(vault.treasury_shares.0, payments.treasury_shares.0);
 
-    let amo_shares = safe_add!(vault.amo_shares, payments.amo_shares);
+    let amo_shares = safe_add!(vault.amo_shares.0, payments.amo_shares.0);
 
-    let reserve_pool_shares = safe_add!(vault.reserve_pool.shares, payments.reserve_shares);
+    let reserve_pool_shares = safe_add!(vault.reserve_pool.shares.0, payments.reserve_shares.0);
 
     let reserve_share_payment_value = redemption_rate.shares_to_deposits(payments.reserve_shares);
 
-    let reserve_pool_quota = safe_add!(vault.reserve_pool.quota, reserve_share_payment_value);
+    let reserve_pool_quota = safe_add!(vault.reserve_pool.quota, reserve_share_payment_value.0);
 
     let amo_shares_payment_value = redemption_rate.shares_to_deposits(payments.amo_shares);
 
-    let total_debt_payment = safe_add!(reserve_share_payment_value, amo_shares_payment_value);
+    let total_debt_payment = safe_add!(reserve_share_payment_value.0, amo_shares_payment_value.0);
 
     (
         Vault {
             reserve_pool: SharesPool {
-                shares: reserve_pool_shares,
+                shares: SharesAmount(reserve_pool_shares),
                 quota: reserve_pool_quota,
             },
-            treasury_shares,
-            amo_shares,
+            treasury_shares: SharesAmount(treasury_shares),
+            amo_shares: SharesAmount(amo_shares),
             ..vault
         },
         total_debt_payment,
@@ -535,17 +538,26 @@ fn withdraw_vault_collateral(
     redemption_rate: RedemptionRate,
     amount: Collateral,
 ) -> Option<(Vault, SharesAmount)> {
-    let shares = redemption_rate.checked_deposits_to_shares(amount)?;
+    let SharesAmount(shares) = redemption_rate.checked_deposits_to_shares(DepositValue(amount))?;
 
-    vault.collateral_pool.shares = vault.collateral_pool.shares.checked_sub(shares)?;
+    vault.collateral_pool.shares = vault
+        .collateral_pool
+        .shares
+        .0
+        .checked_sub(shares)
+        .map(SharesAmount)?;
 
     vault.collateral_pool.quota = vault.collateral_pool.quota.checked_sub(amount)?;
 
-    Some((vault, shares))
+    Some((vault, SharesAmount(shares)))
 }
 
-pub fn add_vault_reserves(mut vault: Vault, amount: Collateral, shares: SharesAmount) -> Vault {
-    vault.reserve_pool.shares = safe_add!(vault.reserve_pool.shares, shares);
+pub fn add_vault_reserves(
+    mut vault: Vault,
+    amount: Collateral,
+    SharesAmount(shares): SharesAmount,
+) -> Vault {
+    vault.reserve_pool.shares = SharesAmount(safe_add!(vault.reserve_pool.shares.0, shares));
     vault.reserve_pool.quota = safe_add!(vault.reserve_pool.quota, amount);
     vault
 }
@@ -555,17 +567,23 @@ fn withdraw_vault_reserves(
     redemption_rate: RedemptionRate,
     amount: Collateral,
 ) -> Option<(Vault, SharesAmount)> {
-    let shares = redemption_rate.checked_deposits_to_shares(amount)?;
+    let SharesAmount(shares) = redemption_rate.checked_deposits_to_shares(DepositValue(amount))?;
 
-    vault.reserve_pool.shares = vault.reserve_pool.shares.checked_sub(shares)?;
+    vault.reserve_pool.shares = vault
+        .reserve_pool
+        .shares
+        .0
+        .checked_sub(shares)
+        .map(SharesAmount)?;
 
     vault.reserve_pool.quota = vault.reserve_pool.quota.checked_sub(amount)?;
 
-    Some((vault, shares))
+    Some((vault, SharesAmount(shares)))
 }
 
 pub fn add_vault_collateral(mut vault: Vault, amount: Collateral, shares: SharesAmount) -> Vault {
-    vault.collateral_pool.shares = safe_add!(vault.collateral_pool.shares, shares);
+    vault.collateral_pool.shares =
+        SharesAmount(safe_add!(vault.collateral_pool.shares.0, shares.0));
     vault.collateral_pool.quota = safe_add!(vault.collateral_pool.quota, amount);
     vault
 }
@@ -716,7 +734,7 @@ pub fn convert_credit(
     let (vault, shares) = withdraw_vault_reserves(vault, redemption_rate, amount)
         .ok_or(ConvertCreditError::InsufficientReserves)?;
 
-    let shares_value = redemption_rate.shares_to_deposits(shares);
+    let DepositValue(shares_value) = redemption_rate.shares_to_deposits(shares);
 
     let vault = add_vault_collateral(vault, shares_value, shares);
 
@@ -773,33 +791,33 @@ pub fn deposit_collateral(
 pub struct NothingToClaimError;
 
 pub fn claim_treasury_shares(vault: Vault) -> Result<(Vault, SharesAmount), NothingToClaimError> {
-    let shares = vault.treasury_shares;
+    let SharesAmount(shares) = vault.treasury_shares;
 
     if shares == 0 {
         return Err(NothingToClaimError);
     }
 
     let vault = Vault {
-        treasury_shares: 0,
+        treasury_shares: SharesAmount(0),
         ..vault
     };
 
-    Ok((vault, shares))
+    Ok((vault, SharesAmount(shares)))
 }
 
 pub fn claim_amo_shares(vault: Vault) -> Result<(Vault, SharesAmount), NothingToClaimError> {
-    let shares = vault.amo_shares;
+    let SharesAmount(shares) = vault.amo_shares;
 
     if shares == 0 {
         return Err(NothingToClaimError);
     }
 
     let vault = Vault {
-        amo_shares: 0,
+        amo_shares: SharesAmount(0),
         ..vault
     };
 
-    Ok((vault, shares))
+    Ok((vault, SharesAmount(shares)))
 }
 
 // #[cfg(test)]

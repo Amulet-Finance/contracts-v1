@@ -71,7 +71,9 @@ impl<'a> CoreBalanceSheet for BalanceSheet<'a> {
     }
 
     fn collateral_shares(&self, vault: &VaultId) -> Option<SharesAmount> {
-        self.0.u128_at(key::COLLATERAL_SHARES.with(vault))
+        self.0
+            .u128_at(key::COLLATERAL_SHARES.with(vault))
+            .map(SharesAmount)
     }
 
     fn collateral_balance(&self, vault: &VaultId) -> Option<Collateral> {
@@ -79,7 +81,9 @@ impl<'a> CoreBalanceSheet for BalanceSheet<'a> {
     }
 
     fn reserve_shares(&self, vault: &VaultId) -> Option<SharesAmount> {
-        self.0.u128_at(key::RESERVE_SHARES.with(vault))
+        self.0
+            .u128_at(key::RESERVE_SHARES.with(vault))
+            .map(SharesAmount)
     }
 
     fn reserve_balance(&self, vault: &VaultId) -> Option<Collateral> {
@@ -87,11 +91,15 @@ impl<'a> CoreBalanceSheet for BalanceSheet<'a> {
     }
 
     fn treasury_shares(&self, vault: &VaultId) -> Option<TreasuryShares> {
-        self.0.u128_at(key::TREASURY_SHARES.with(vault))
+        self.0
+            .u128_at(key::TREASURY_SHARES.with(vault))
+            .map(SharesAmount)
     }
 
     fn amo_shares(&self, vault: &VaultId) -> Option<AmoShares> {
-        self.0.u128_at(key::AMO_SHARES.with(vault))
+        self.0
+            .u128_at(key::AMO_SHARES.with(vault))
+            .map(SharesAmount)
     }
 
     fn overall_sum_payment_ratio(&self, vault: &VaultId) -> Option<SumPaymentRatio> {
@@ -132,29 +140,33 @@ pub fn handle_cmd<Msg>(
     match cmd {
         BalanceSheetCmd::SetTreasury { treasury } => storage.set_string(key::TREASURY, &treasury),
 
-        BalanceSheetCmd::SetCollateralShares { vault, shares } => {
-            storage.set_u128(key::COLLATERAL_SHARES.with(vault), shares)
-        }
+        BalanceSheetCmd::SetCollateralShares {
+            vault,
+            shares: SharesAmount(shares),
+        } => storage.set_u128(key::COLLATERAL_SHARES.with(vault), shares),
 
         BalanceSheetCmd::SetCollateralBalance { vault, balance } => {
             storage.set_u128(key::COLLATERAL_BALANCE.with(vault), balance)
         }
 
-        BalanceSheetCmd::SetReserveShares { vault, shares } => {
-            storage.set_u128(key::RESERVE_SHARES.with(vault), shares)
-        }
+        BalanceSheetCmd::SetReserveShares {
+            vault,
+            shares: SharesAmount(shares),
+        } => storage.set_u128(key::RESERVE_SHARES.with(vault), shares),
 
         BalanceSheetCmd::SetReserveBalance { vault, balance } => {
             storage.set_u128(key::RESERVE_BALANCE.with(vault), balance)
         }
 
-        BalanceSheetCmd::SetTreasuryShares { vault, shares } => {
-            storage.set_u128(key::TREASURY_SHARES.with(vault), shares)
-        }
+        BalanceSheetCmd::SetTreasuryShares {
+            vault,
+            shares: SharesAmount(shares),
+        } => storage.set_u128(key::TREASURY_SHARES.with(vault), shares),
 
-        BalanceSheetCmd::SetAmoShares { vault, shares } => {
-            storage.set_u128(key::AMO_SHARES.with(vault), shares)
-        }
+        BalanceSheetCmd::SetAmoShares {
+            vault,
+            shares: SharesAmount(shares),
+        } => storage.set_u128(key::AMO_SHARES.with(vault), shares),
 
         BalanceSheetCmd::SetOverallSumPaymentRatio { vault, spr } => {
             storage.set_u256(key::OVERALL_SUM_PAYMENT_RATIO.with(&vault), spr.into_raw());
@@ -193,7 +205,7 @@ pub fn handle_cmd<Msg>(
 
         BalanceSheetCmd::SendShares {
             shares,
-            amount,
+            amount: SharesAmount(amount),
             recipient,
         } => {
             return Some(SubMsg::new(BankMsg::Send {

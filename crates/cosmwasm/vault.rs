@@ -3,10 +3,10 @@ pub mod unbonding_log;
 
 use amulet_core::{
     vault::{
-        offset_total_deposits_value, pending_batch_id, vault, BatchId, ClaimableBatchIter, Cmd,
-        DepositResponse as CoreDepositResponse, Error as CoreVaultError,
-        SharesMint as CoreSharesMint, Strategy, UnbondEpoch, UnbondingLog as CoreUnbondingLog,
-        Vault,
+        offset_total_deposits_value, pending_batch_id, vault, BatchId, ClaimAmount,
+        ClaimableBatchIter, Cmd, DepositAmount, DepositResponse as CoreDepositResponse,
+        Error as CoreVaultError, SharesAmount, SharesMint as CoreSharesMint, Strategy, UnbondEpoch,
+        UnbondingLog as CoreUnbondingLog, Vault,
     },
     Decimals,
 };
@@ -170,15 +170,15 @@ fn handle_vault_deposit<Msg>(
         total_deposits_value,
     } = vault.deposit(
         deposit_asset_coin.denom.into(),
-        deposit_asset_coin.amount.u128(),
+        DepositAmount(deposit_asset_coin.amount.u128()),
         info.sender.into_string().into(),
     )?;
 
     let data = to_json_binary(&DepositResponse {
-        total_shares_issued: total_shares_issued.into(),
-        total_deposits_value: total_deposits_value.into(),
-        minted_shares: issued_shares.into(),
-        deposit_value: deposit_value.into(),
+        total_shares_issued: total_shares_issued.0.into(),
+        total_deposits_value: total_deposits_value.0.into(),
+        minted_shares: issued_shares.0.into(),
+        deposit_value: deposit_value.0.into(),
     })?;
 
     Ok((cmds, Response::default().set_data(data)))
@@ -192,7 +192,7 @@ fn handle_vault_donation<Msg>(
 
     let cmd = vault.donate(
         deposit_asset_coin.denom.into(),
-        deposit_asset_coin.amount.u128(),
+        DepositAmount(deposit_asset_coin.amount.u128()),
     )?;
 
     Ok((vec![cmd.into()], Response::default()))
@@ -207,7 +207,7 @@ fn handle_vault_redemption<Msg>(
 
     let cmds = vault.redeem(
         redemption_asset_coin.denom.into(),
-        redemption_asset_coin.amount.u128(),
+        SharesAmount(redemption_asset_coin.amount.u128()),
         recipient.into(),
     )?;
 
@@ -264,11 +264,13 @@ pub fn pending_unbonding(
         unbonding_log
             .unbonded_value_in_batch(&recipient, pending_batch_id)
             .unwrap_or_default()
+            .0
             .into()
     } else {
         unbonding_log
             .batch_unbond_value(pending_batch_id)
             .unwrap_or_default()
+            .0
             .into()
     };
 
@@ -323,6 +325,7 @@ pub fn account_active_unbondings(
         let amount = unbonding_log
             .unbonded_value_in_batch(account, current_batch)
             .expect("always: non-zero amount unbonded in committed batch")
+            .0
             .into();
 
         unbondings.push(UnbondingStatus { amount, start, end });
@@ -363,6 +366,7 @@ pub fn all_active_unbondings(
         let amount = unbonding_log
             .batch_unbond_value(batch_id)
             .expect("always: non-zero amount unbonded in committed batch")
+            .0
             .into();
 
         unbondings.push(UnbondingStatus { amount, start, end })
@@ -386,8 +390,8 @@ pub fn handle_query_msg(
             let total_deposits = offset_total_deposits_value(strategy, unbonding_log);
 
             to_json_binary(&StateResponse {
-                total_deposits: total_deposits.into(),
-                total_issued_shares: total_shares_issue.into(),
+                total_deposits: total_deposits.0.into(),
+                total_issued_shares: total_shares_issue.0.into(),
             })
         }
 
@@ -416,7 +420,7 @@ pub fn handle_query_msg(
 
         QueryMsg::Claimable { address } => {
             let amount = ClaimableBatchIter::new(&address, unbonding_log, strategy)
-                .map(|(amount, _)| amount)
+                .map(|(ClaimAmount(amount), _)| amount)
                 .sum::<u128>()
                 .into();
 

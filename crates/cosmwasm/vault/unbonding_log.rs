@@ -58,11 +58,15 @@ impl<'a> CoreUnbondingLog for UnbondingLog<'a> {
     }
 
     fn batch_unbond_value(&self, batch: BatchId) -> Option<DepositValue> {
-        self.0.u128_at(key::BATCH_UNBOND_VALUE.with(batch))
+        self.0
+            .u128_at(key::BATCH_UNBOND_VALUE.with(batch))
+            .map(DepositValue)
     }
 
     fn batch_claimable_amount(&self, batch: BatchId) -> Option<ClaimAmount> {
-        self.0.u128_at(key::BATCH_CLAIMABLE_AMOUNT.with(batch))
+        self.0
+            .u128_at(key::BATCH_CLAIMABLE_AMOUNT.with(batch))
+            .map(ClaimAmount)
     }
 
     fn pending_batch_hint(&self, batch: BatchId) -> Option<Hint> {
@@ -99,6 +103,7 @@ impl<'a> CoreUnbondingLog for UnbondingLog<'a> {
     fn unbonded_value_in_batch(&self, recipient: &str, batch: BatchId) -> Option<DepositValue> {
         self.0
             .u128_at(key::UNBONDED_VALUE_IN_BATCH.multi([&recipient, &batch]))
+            .map(DepositValue)
     }
 }
 
@@ -109,11 +114,11 @@ pub fn handle_cmd(storage: &mut dyn Storage, cmd: UnbondingLogSet) {
         }
 
         UnbondingLogSet::BatchTotalUnbondValue { batch, value } => {
-            storage.set_u128(key::BATCH_UNBOND_VALUE.with(batch), value)
+            storage.set_u128(key::BATCH_UNBOND_VALUE.with(batch), value.0)
         }
 
         UnbondingLogSet::BatchClaimableAmount { batch, amount } => {
-            storage.set_u128(key::BATCH_CLAIMABLE_AMOUNT.with(batch), amount)
+            storage.set_u128(key::BATCH_CLAIMABLE_AMOUNT.with(batch), amount.0)
         }
 
         UnbondingLogSet::BatchHint { batch, hint } => {
@@ -157,7 +162,7 @@ pub fn handle_cmd(storage: &mut dyn Storage, cmd: UnbondingLogSet) {
         } => {
             storage.set_u128(
                 key::UNBONDED_VALUE_IN_BATCH.multi([&recipient, &batch]),
-                value,
+                value.0,
             );
         }
     }

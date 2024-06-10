@@ -15,8 +15,8 @@ const VAULT: &str = "vault";
 const VAULT_DEPOSIT_ASSET: &str = "vault_deposit_asset";
 const VAULT_SHARES_ASSET: &str = "vault_shares_asset";
 
-const fn shares_amount(n: u128) -> u128 {
-    n * 10u128.pow(SHARES_DECIMAL_PLACES)
+const fn shares_amount(n: u128) -> SharesAmount {
+    SharesAmount(n * 10u128.pow(SHARES_DECIMAL_PLACES))
 }
 
 #[derive(Debug, Default, serde::Serialize)]
@@ -77,7 +77,7 @@ fn deposit_unregistered_vault_errs() {
                 "does_not_exist".into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1_000),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -98,7 +98,7 @@ fn deposit_when_disabled_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1_000),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -129,7 +129,7 @@ fn deposit_not_from_configured_proxy_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1_000),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -156,7 +156,7 @@ fn deposit_zero_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                0,
+                DepositAmount(0),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -183,7 +183,7 @@ fn deposit_invalid_asset_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 "unknown_asset".into(),
-                1000,
+                DepositAmount(1000),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -230,7 +230,7 @@ fn deposit_while_loss_detected_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1000,
+                DepositAmount(1000),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -257,7 +257,7 @@ fn deposit() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1000,
+                DepositAmount(1000),
                 SENDER.into(),
             )
             .unwrap(),
@@ -266,7 +266,7 @@ fn deposit() {
               Vault(Deposit(
                 vault: "vault",
                 asset: "vault_deposit_asset",
-                amount: 1000,
+                amount: (1000),
                 callback_recipient: "sender",
                 callback_reason: Deposit,
               )),
@@ -308,7 +308,7 @@ fn deposit_after_share_value_increase_sender_has_position() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1000,
+                DepositAmount(1000),
                 SENDER.into(),
             )
             .unwrap(),
@@ -316,11 +316,11 @@ fn deposit_after_share_value_increase_sender_has_position() {
             [
               BalanceSheet(SetCollateralShares(
                 vault: "vault",
-                shares: 909090909090909090910,
+                shares: (909090909090909090910),
               )),
               BalanceSheet(SetReserveShares(
                 vault: "vault",
-                shares: 81818181818181818182,
+                shares: (81818181818181818182),
               )),
               BalanceSheet(SetReserveBalance(
                 vault: "vault",
@@ -328,7 +328,7 @@ fn deposit_after_share_value_increase_sender_has_position() {
               )),
               BalanceSheet(SetTreasuryShares(
                 vault: "vault",
-                shares: 9090909090909090908,
+                shares: (9090909090909090908),
               )),
               BalanceSheet(SetOverallSumPaymentRatio(
                 vault: "vault",
@@ -347,7 +347,7 @@ fn deposit_after_share_value_increase_sender_has_position() {
               Vault(Deposit(
                 vault: "vault",
                 asset: "vault_deposit_asset",
-                amount: 1000,
+                amount: (1000),
                 callback_recipient: "sender",
                 callback_reason: Deposit,
               )),
@@ -389,7 +389,7 @@ fn deposit_after_share_value_increase_sender_with_no_position() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1000,
+                DepositAmount(1000),
                 SENDER.into(),
             )
             .unwrap(),
@@ -397,11 +397,11 @@ fn deposit_after_share_value_increase_sender_with_no_position() {
             [
               BalanceSheet(SetCollateralShares(
                 vault: "vault",
-                shares: 909090909090909090910,
+                shares: (909090909090909090910),
               )),
               BalanceSheet(SetReserveShares(
                 vault: "vault",
-                shares: 81818181818181818182,
+                shares: (81818181818181818182),
               )),
               BalanceSheet(SetReserveBalance(
                 vault: "vault",
@@ -409,7 +409,7 @@ fn deposit_after_share_value_increase_sender_with_no_position() {
               )),
               BalanceSheet(SetTreasuryShares(
                 vault: "vault",
-                shares: 9090909090909090908,
+                shares: (9090909090909090908),
               )),
               BalanceSheet(SetOverallSumPaymentRatio(
                 vault: "vault",
@@ -423,7 +423,7 @@ fn deposit_after_share_value_increase_sender_with_no_position() {
               Vault(Deposit(
                 vault: "vault",
                 asset: "vault_deposit_asset",
-                amount: 1000,
+                amount: (1000),
                 callback_recipient: "sender",
                 callback_reason: Deposit,
               )),
@@ -967,7 +967,7 @@ fn repay_underlying_unregistered_vault_errs() {
                 "does_not_exist".into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1000),
             )
             .unwrap_err(),
         expect!["vault not registered"],
@@ -983,7 +983,12 @@ fn repay_underlying_with_invalid_deposit_asset_errs() {
                 synthetic: SYNTHETIC.into()
             }])
             .hub()
-            .repay_underlying(VAULT.into(), SENDER.into(), "does_not_exist".into(), 1_000)
+            .repay_underlying(
+                VAULT.into(),
+                SENDER.into(),
+                "does_not_exist".into(),
+                DepositAmount(1_000),
+            )
             .unwrap_err(),
         expect!["invalid deposit asset"],
     )
@@ -998,7 +1003,12 @@ fn repay_zero_underlying_assets_errs() {
                 synthetic: SYNTHETIC.into()
             }])
             .hub()
-            .repay_underlying(VAULT.into(), SENDER.into(), VAULT_DEPOSIT_ASSET.into(), 0)
+            .repay_underlying(
+                VAULT.into(),
+                SENDER.into(),
+                VAULT_DEPOSIT_ASSET.into(),
+                DepositAmount(0),
+            )
             .unwrap_err(),
         expect!["cannot repay zero"],
     )
@@ -1017,7 +1027,7 @@ fn repay_underlying_with_zero_debt_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1000),
             )
             .unwrap_err(),
         expect!["nothing to repay"],
@@ -1059,7 +1069,7 @@ fn repay_underlying_while_loss_detected_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1000),
             )
             .unwrap_err(),
         expect!["vault shares have suffered a loss in value"],
@@ -1101,7 +1111,7 @@ fn repay_underlying() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1000),
             )
             .unwrap(),
         expect![[r#"
@@ -1109,7 +1119,7 @@ fn repay_underlying() {
               Vault(Deposit(
                 vault: "vault",
                 asset: "vault_deposit_asset",
-                amount: 1000,
+                amount: (1000),
                 callback_recipient: "sender",
                 callback_reason: RepayUnderlying,
               )),
@@ -1152,18 +1162,18 @@ fn repay_underlying_after_share_value_increase() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1000),
             )
             .unwrap(),
         expect![[r#"
             [
               BalanceSheet(SetCollateralShares(
                 vault: "vault",
-                shares: 909090909090909090910,
+                shares: (909090909090909090910),
               )),
               BalanceSheet(SetReserveShares(
                 vault: "vault",
-                shares: 81818181818181818182,
+                shares: (81818181818181818182),
               )),
               BalanceSheet(SetReserveBalance(
                 vault: "vault",
@@ -1171,7 +1181,7 @@ fn repay_underlying_after_share_value_increase() {
               )),
               BalanceSheet(SetTreasuryShares(
                 vault: "vault",
-                shares: 9090909090909090908,
+                shares: (9090909090909090908),
               )),
               BalanceSheet(SetOverallSumPaymentRatio(
                 vault: "vault",
@@ -1190,7 +1200,7 @@ fn repay_underlying_after_share_value_increase() {
               Vault(Deposit(
                 vault: "vault",
                 asset: "vault_deposit_asset",
-                amount: 1000,
+                amount: (1000),
                 callback_recipient: "sender",
                 callback_reason: RepayUnderlying,
               )),
@@ -1405,11 +1415,11 @@ fn repay_synthetic_after_vault_shares_value_increase() {
                 )),
                 BalanceSheet(SetCollateralShares(
                   vault: "vault",
-                  shares: 909090909090909090910,
+                  shares: (909090909090909090910),
                 )),
                 BalanceSheet(SetReserveShares(
                   vault: "vault",
-                  shares: 81818181818181818182,
+                  shares: (81818181818181818182),
                 )),
                 BalanceSheet(SetReserveBalance(
                   vault: "vault",
@@ -1417,7 +1427,7 @@ fn repay_synthetic_after_vault_shares_value_increase() {
                 )),
                 BalanceSheet(SetTreasuryShares(
                   vault: "vault",
-                  shares: 9090909090909090908,
+                  shares: (9090909090909090908),
                 )),
                 BalanceSheet(SetOverallSumPaymentRatio(
                   vault: "vault",
@@ -1591,7 +1601,7 @@ fn withdraw_collateral() {
               cmds: [
                 BalanceSheet(SetCollateralShares(
                   vault: "vault",
-                  shares: 800000000000000000001,
+                  shares: (800000000000000000001),
                 )),
                 BalanceSheet(SetCollateralBalance(
                   vault: "vault",
@@ -1605,7 +1615,7 @@ fn withdraw_collateral() {
                 Vault(Redeem(
                   vault: "vault",
                   shares: "vault_shares_asset",
-                  amount: 199999999999999999999,
+                  amount: (199999999999999999999),
                   recipient: "sender",
                 )),
               ],
@@ -1657,7 +1667,7 @@ fn withdraw_collateral_after_vault_shares_value_increase() {
               cmds: [
                 BalanceSheet(SetCollateralShares(
                   vault: "vault",
-                  shares: 681818181818181818183,
+                  shares: (681818181818181818183),
                 )),
                 BalanceSheet(SetCollateralBalance(
                   vault: "vault",
@@ -1665,7 +1675,7 @@ fn withdraw_collateral_after_vault_shares_value_increase() {
                 )),
                 BalanceSheet(SetReserveShares(
                   vault: "vault",
-                  shares: 81818181818181818182,
+                  shares: (81818181818181818182),
                 )),
                 BalanceSheet(SetReserveBalance(
                   vault: "vault",
@@ -1673,7 +1683,7 @@ fn withdraw_collateral_after_vault_shares_value_increase() {
                 )),
                 BalanceSheet(SetTreasuryShares(
                   vault: "vault",
-                  shares: 9090909090909090908,
+                  shares: (9090909090909090908),
                 )),
                 BalanceSheet(SetOverallSumPaymentRatio(
                   vault: "vault",
@@ -1697,7 +1707,7 @@ fn withdraw_collateral_after_vault_shares_value_increase() {
                 Vault(Redeem(
                   vault: "vault",
                   shares: "vault_shares_asset",
-                  amount: 227272727272727272727,
+                  amount: (227272727272727272727),
                   recipient: "sender",
                 )),
               ],
@@ -1806,7 +1816,7 @@ fn self_liquidate_credit_position() {
             [
               BalanceSheet(SetCollateralShares(
                 vault: "vault",
-                shares: 1,
+                shares: (1),
               )),
               BalanceSheet(SetCollateralBalance(
                 vault: "vault",
@@ -1814,7 +1824,7 @@ fn self_liquidate_credit_position() {
               )),
               BalanceSheet(SetReserveShares(
                 vault: "vault",
-                shares: 81818181818181818182,
+                shares: (81818181818181818182),
               )),
               BalanceSheet(SetReserveBalance(
                 vault: "vault",
@@ -1822,7 +1832,7 @@ fn self_liquidate_credit_position() {
               )),
               BalanceSheet(SetTreasuryShares(
                 vault: "vault",
-                shares: 9090909090909090908,
+                shares: (9090909090909090908),
               )),
               BalanceSheet(SetOverallSumPaymentRatio(
                 vault: "vault",
@@ -1841,7 +1851,7 @@ fn self_liquidate_credit_position() {
               Vault(Redeem(
                 vault: "vault",
                 shares: "vault_shares_asset",
-                amount: 909090909090909090909,
+                amount: (909090909090909090909),
                 recipient: "sender",
               )),
             ]"#]],
@@ -1885,7 +1895,7 @@ fn self_liquidate_debt_position() {
             [
               BalanceSheet(SetCollateralShares(
                 vault: "vault",
-                shares: 0,
+                shares: (0),
               )),
               BalanceSheet(SetCollateralBalance(
                 vault: "vault",
@@ -1893,7 +1903,7 @@ fn self_liquidate_debt_position() {
               )),
               BalanceSheet(SetReserveShares(
                 vault: "vault",
-                shares: 500000000000000000000,
+                shares: (500000000000000000000),
               )),
               BalanceSheet(SetReserveBalance(
                 vault: "vault",
@@ -1912,7 +1922,7 @@ fn self_liquidate_debt_position() {
               Vault(Redeem(
                 vault: "vault",
                 shares: "vault_shares_asset",
-                amount: 500000000000000000000,
+                amount: (500000000000000000000),
                 recipient: "sender",
               )),
             ]"#]],
@@ -1956,7 +1966,7 @@ fn self_liquidate_debt_position_after_vault_shares_increase() {
             [
               BalanceSheet(SetCollateralShares(
                 vault: "vault",
-                shares: 2,
+                shares: (2),
               )),
               BalanceSheet(SetCollateralBalance(
                 vault: "vault",
@@ -1964,7 +1974,7 @@ fn self_liquidate_debt_position_after_vault_shares_increase() {
               )),
               BalanceSheet(SetReserveShares(
                 vault: "vault",
-                shares: 455454545454545454545,
+                shares: (455454545454545454545),
               )),
               BalanceSheet(SetReserveBalance(
                 vault: "vault",
@@ -1972,7 +1982,7 @@ fn self_liquidate_debt_position_after_vault_shares_increase() {
               )),
               BalanceSheet(SetTreasuryShares(
                 vault: "vault",
-                shares: 9090909090909090908,
+                shares: (9090909090909090908),
               )),
               BalanceSheet(SetOverallSumPaymentRatio(
                 vault: "vault",
@@ -1991,7 +2001,7 @@ fn self_liquidate_debt_position_after_vault_shares_increase() {
               Vault(Redeem(
                 vault: "vault",
                 shares: "vault_shares_asset",
-                amount: 535454545454545454545,
+                amount: (535454545454545454545),
                 recipient: "sender",
               )),
             ]"#]],
@@ -2157,7 +2167,7 @@ fn convert_credit() {
               cmds: [
                 BalanceSheet(SetCollateralShares(
                   vault: "vault",
-                  shares: 990000000000000000000,
+                  shares: (990000000000000000000),
                 )),
                 BalanceSheet(SetCollateralBalance(
                   vault: "vault",
@@ -2165,7 +2175,7 @@ fn convert_credit() {
                 )),
                 BalanceSheet(SetReserveShares(
                   vault: "vault",
-                  shares: 909090909090909092,
+                  shares: (909090909090909092),
                 )),
                 BalanceSheet(SetReserveBalance(
                   vault: "vault",
@@ -2173,7 +2183,7 @@ fn convert_credit() {
                 )),
                 BalanceSheet(SetTreasuryShares(
                   vault: "vault",
-                  shares: 9090909090909090908,
+                  shares: (9090909090909090908),
                 )),
                 BalanceSheet(SetOverallSumPaymentRatio(
                   vault: "vault",
@@ -2235,9 +2245,9 @@ fn convert_credit() {
 
     check(
         FixedU256::from_u128(vault.balances.collateral_shares)
-            .checked_div(FixedU256::from_u128(world.total_issued_shares))
+            .checked_div(FixedU256::from_u128(world.total_issued_shares.0))
             .unwrap()
-            .checked_mul(FixedU256::from_u128(world.total_deposits))
+            .checked_mul(FixedU256::from_u128(world.total_deposits.0))
             .unwrap(),
         expect![[r#"("1088.99999999999999999999999999999999")"#]],
     );
@@ -2436,11 +2446,11 @@ fn redeem_synthetic() {
             [
               BalanceSheet(SetCollateralShares(
                 vault: "vault",
-                shares: 909090909090909090910,
+                shares: (909090909090909090910),
               )),
               BalanceSheet(SetReserveShares(
                 vault: "vault",
-                shares: 909090909090909092,
+                shares: (909090909090909092),
               )),
               BalanceSheet(SetReserveBalance(
                 vault: "vault",
@@ -2448,7 +2458,7 @@ fn redeem_synthetic() {
               )),
               BalanceSheet(SetTreasuryShares(
                 vault: "vault",
-                shares: 9090909090909090908,
+                shares: (9090909090909090908),
               )),
               BalanceSheet(SetOverallSumPaymentRatio(
                 vault: "vault",
@@ -2467,7 +2477,7 @@ fn redeem_synthetic() {
               Vault(Redeem(
                 vault: "vault",
                 shares: "vault_shares_asset",
-                amount: 80909090909090909090,
+                amount: (80909090909090909090),
                 recipient: "sender",
               )),
               Mint(Burn(
@@ -2487,7 +2497,7 @@ fn mint_synthetic_unregistered_vault_errs() {
                 "does_not_exist".into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1000),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -2508,7 +2518,7 @@ fn mint_zero_synthetic_assets_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                0,
+                DepositAmount(0),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -2535,7 +2545,7 @@ fn mint_not_from_configured_proxy_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1000),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -2556,7 +2566,7 @@ fn mint_synthetic_with_invalid_deposit_asset_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 "unknown_asset".into(),
-                1_000,
+                DepositAmount(1000),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -2599,7 +2609,7 @@ fn mint_synthetic_while_loss_detected_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1000),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -2620,7 +2630,7 @@ fn mint_synthetic_when_deposits_disabled_errs() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1000),
                 SENDER.into(),
             )
             .unwrap_err(),
@@ -2647,7 +2657,7 @@ fn mint_synthetic() {
                 VAULT.into(),
                 SENDER.into(),
                 VAULT_DEPOSIT_ASSET.into(),
-                1_000,
+                DepositAmount(1000),
                 SENDER.into(),
             )
             .unwrap(),
@@ -2656,7 +2666,7 @@ fn mint_synthetic() {
               Vault(Deposit(
                 vault: "vault",
                 asset: "vault_deposit_asset",
-                amount: 1000,
+                amount: (1000),
                 callback_recipient: "sender",
                 callback_reason: Mint,
               )),
@@ -2678,14 +2688,14 @@ fn vault_deposit_callback_after_deposit() {
                 SENDER.into(),
                 VaultDepositReason::Deposit,
                 shares_amount(1_000),
-                1_000,
+                DepositValue(1000),
             )
             .unwrap(),
         expect![[r#"
             [
               BalanceSheet(SetCollateralShares(
                 vault: "vault",
-                shares: 1000000000000000000000,
+                shares: (1000000000000000000000),
               )),
               BalanceSheet(SetCollateralBalance(
                 vault: "vault",
@@ -2714,14 +2724,14 @@ fn vault_deposit_callback_after_repay_underlying() {
                 SENDER.into(),
                 VaultDepositReason::RepayUnderlying,
                 shares_amount(1_000),
-                1_000,
+                DepositValue(1000),
             )
             .unwrap(),
         expect![[r#"
             [
               BalanceSheet(SetReserveShares(
                 vault: "vault",
-                shares: 1000000000000000000000,
+                shares: (1000000000000000000000),
               )),
               BalanceSheet(SetReserveBalance(
                 vault: "vault",
@@ -2750,14 +2760,14 @@ fn vault_deposit_callback_after_mint() {
                 SENDER.into(),
                 VaultDepositReason::Mint,
                 shares_amount(1_000),
-                1_000,
+                DepositValue(1000),
             )
             .unwrap(),
         expect![[r#"
             [
               BalanceSheet(SetReserveShares(
                 vault: "vault",
-                shares: 1000000000000000000000,
+                shares: (1000000000000000000000),
               )),
               BalanceSheet(SetReserveBalance(
                 vault: "vault",
@@ -2862,11 +2872,11 @@ fn claim_treasury_shares() {
             [
               BalanceSheet(SetTreasuryShares(
                 vault: "vault",
-                shares: 0,
+                shares: (0),
               )),
               BalanceSheet(SendShares(
                 shares: "vault_shares_asset",
-                amount: 10000000000000000000,
+                amount: (10000000000000000000),
                 recipient: "treasury",
               )),
             ]"#]],
@@ -2966,11 +2976,11 @@ fn claim_amo_shares() {
             [
               BalanceSheet(SetAmoShares(
                 vault: "vault",
-                shares: 0,
+                shares: (0),
               )),
               BalanceSheet(SendShares(
                 shares: "vault_shares_asset",
-                amount: 5000000000000000000,
+                amount: (5000000000000000000),
                 recipient: "amo",
               )),
             ]"#]],
@@ -3125,11 +3135,11 @@ fn evaluate_open_position_with_debt_after_shares_value_increase() {
               cmds: [
                 BalanceSheet(SetCollateralShares(
                   vault: "vault",
-                  shares: 909090909090909090910,
+                  shares: (909090909090909090910),
                 )),
                 BalanceSheet(SetReserveShares(
                   vault: "vault",
-                  shares: 81818181818181818182,
+                  shares: (81818181818181818182),
                 )),
                 BalanceSheet(SetReserveBalance(
                   vault: "vault",
@@ -3137,7 +3147,7 @@ fn evaluate_open_position_with_debt_after_shares_value_increase() {
                 )),
                 BalanceSheet(SetTreasuryShares(
                   vault: "vault",
-                  shares: 9090909090909090908,
+                  shares: (9090909090909090908),
                 )),
                 BalanceSheet(SetOverallSumPaymentRatio(
                   vault: "vault",
@@ -3199,9 +3209,9 @@ fn evaluate_open_position_with_debt_after_shares_value_increase() {
 
     check(
         FixedU256::from_u128(vault.balances.collateral_shares)
-            .checked_div(FixedU256::from_u128(world.total_issued_shares))
+            .checked_div(FixedU256::from_u128(world.total_issued_shares.0))
             .unwrap()
-            .checked_mul(FixedU256::from_u128(world.total_deposits))
+            .checked_mul(FixedU256::from_u128(world.total_deposits.0))
             .unwrap()
             .floor(),
         expect!["1000"],
@@ -3244,11 +3254,11 @@ fn evaluate_open_position_without_debt_after_shares_value_increase() {
               cmds: [
                 BalanceSheet(SetCollateralShares(
                   vault: "vault",
-                  shares: 909090909090909090910,
+                  shares: (909090909090909090910),
                 )),
                 BalanceSheet(SetReserveShares(
                   vault: "vault",
-                  shares: 81818181818181818182,
+                  shares: (81818181818181818182),
                 )),
                 BalanceSheet(SetReserveBalance(
                   vault: "vault",
@@ -3256,7 +3266,7 @@ fn evaluate_open_position_without_debt_after_shares_value_increase() {
                 )),
                 BalanceSheet(SetTreasuryShares(
                   vault: "vault",
-                  shares: 9090909090909090908,
+                  shares: (9090909090909090908),
                 )),
                 BalanceSheet(SetOverallSumPaymentRatio(
                   vault: "vault",
@@ -3318,9 +3328,9 @@ fn evaluate_open_position_without_debt_after_shares_value_increase() {
 
     check(
         FixedU256::from_u128(vault.balances.collateral_shares)
-            .checked_div(FixedU256::from_u128(world.total_issued_shares))
+            .checked_div(FixedU256::from_u128(world.total_issued_shares.0))
             .unwrap()
-            .checked_mul(FixedU256::from_u128(world.total_deposits))
+            .checked_mul(FixedU256::from_u128(world.total_deposits.0))
             .unwrap()
             .floor(),
         expect!["1000"],
@@ -3368,11 +3378,11 @@ fn evaluate_open_position_with_repaid_debt_after_shares_value_increase() {
               cmds: [
                 BalanceSheet(SetCollateralShares(
                   vault: "vault",
-                  shares: 909090909090909090910,
+                  shares: (909090909090909090910),
                 )),
                 BalanceSheet(SetReserveShares(
                   vault: "vault",
-                  shares: 81818181818181818182,
+                  shares: (81818181818181818182),
                 )),
                 BalanceSheet(SetReserveBalance(
                   vault: "vault",
@@ -3380,7 +3390,7 @@ fn evaluate_open_position_with_repaid_debt_after_shares_value_increase() {
                 )),
                 BalanceSheet(SetTreasuryShares(
                   vault: "vault",
-                  shares: 9090909090909090908,
+                  shares: (9090909090909090908),
                 )),
                 BalanceSheet(SetOverallSumPaymentRatio(
                   vault: "vault",
@@ -3447,9 +3457,9 @@ fn evaluate_open_position_with_repaid_debt_after_shares_value_increase() {
 
     check(
         FixedU256::from_u128(vault.balances.collateral_shares)
-            .checked_div(FixedU256::from_u128(world.total_issued_shares))
+            .checked_div(FixedU256::from_u128(world.total_issued_shares.0))
             .unwrap()
-            .checked_mul(FixedU256::from_u128(world.total_deposits))
+            .checked_mul(FixedU256::from_u128(world.total_deposits.0))
             .unwrap()
             .floor(),
         expect!["1000"],
@@ -3555,11 +3565,11 @@ fn evaluate_sender_without_position_after_another_shares_value_increase() {
               cmds: [
                 BalanceSheet(SetCollateralShares(
                   vault: "vault",
-                  shares: 834090909090909090911,
+                  shares: (834090909090909090911),
                 )),
                 BalanceSheet(SetReserveShares(
                   vault: "vault",
-                  shares: 142651515151515151516,
+                  shares: (142651515151515151516),
                 )),
                 BalanceSheet(SetReserveBalance(
                   vault: "vault",
@@ -3567,7 +3577,7 @@ fn evaluate_sender_without_position_after_another_shares_value_increase() {
                 )),
                 BalanceSheet(SetTreasuryShares(
                   vault: "vault",
-                  shares: 23257575757575757573,
+                  shares: (23257575757575757573),
                 )),
                 BalanceSheet(SetOverallSumPaymentRatio(
                   vault: "vault",
@@ -4177,13 +4187,13 @@ fn set_proxy_config() {
 }
 
 impl World {
-    fn total_deposits(mut self, deposits: TotalDepositsValue) -> Self {
-        self.total_deposits = deposits;
+    fn total_deposits(mut self, deposits: u128) -> Self {
+        self.total_deposits = TotalDepositsValue(deposits);
         self
     }
 
-    fn total_shares_issued(mut self, shares: TotalSharesIssued) -> Self {
-        self.total_issued_shares = shares;
+    fn total_shares_issued(mut self, SharesAmount(shares): SharesAmount) -> Self {
+        self.total_issued_shares = TotalSharesIssued(shares);
         self
     }
 
@@ -4252,24 +4262,28 @@ impl World {
             },
             Cmd::BalanceSheet(c) => match c {
                 BalanceSheetCmd::SetTreasury { treasury } => self.treasury = Some(treasury),
-                BalanceSheetCmd::SetCollateralShares { vault, shares } => {
-                    self.balances_mut(vault).collateral_shares = shares
-                }
+                BalanceSheetCmd::SetCollateralShares {
+                    vault,
+                    shares: SharesAmount(shares),
+                } => self.balances_mut(vault).collateral_shares = shares,
                 BalanceSheetCmd::SetCollateralBalance { vault, balance } => {
                     self.balances_mut(vault).collateral_balance = balance
                 }
-                BalanceSheetCmd::SetReserveShares { vault, shares } => {
-                    self.balances_mut(vault).reserve_shares = shares
-                }
+                BalanceSheetCmd::SetReserveShares {
+                    vault,
+                    shares: SharesAmount(shares),
+                } => self.balances_mut(vault).reserve_shares = shares,
                 BalanceSheetCmd::SetReserveBalance { vault, balance } => {
                     self.balances_mut(vault).reserve_balance = balance
                 }
-                BalanceSheetCmd::SetTreasuryShares { vault, shares } => {
-                    self.balances_mut(vault).treasury_shares = shares
-                }
-                BalanceSheetCmd::SetAmoShares { vault, shares } => {
-                    self.balances_mut(vault).amo_shares = shares
-                }
+                BalanceSheetCmd::SetTreasuryShares {
+                    vault,
+                    shares: SharesAmount(shares),
+                } => self.balances_mut(vault).treasury_shares = shares,
+                BalanceSheetCmd::SetAmoShares {
+                    vault,
+                    shares: SharesAmount(shares),
+                } => self.balances_mut(vault).amo_shares = shares,
                 BalanceSheetCmd::SetOverallSumPaymentRatio { vault, spr } => {
                     self.balances_mut(vault).spr = Some(spr)
                 }
@@ -4475,7 +4489,7 @@ impl BalanceSheet for World {
     fn collateral_shares(&self, vault: &VaultId) -> Option<SharesAmount> {
         self.vaults
             .get(vault.as_str())
-            .map(|v| v.balances.collateral_shares)
+            .map(|v| SharesAmount(v.balances.collateral_shares))
     }
 
     fn collateral_balance(&self, vault: &VaultId) -> Option<Collateral> {
@@ -4487,7 +4501,7 @@ impl BalanceSheet for World {
     fn reserve_shares(&self, vault: &VaultId) -> Option<SharesAmount> {
         self.vaults
             .get(vault.as_str())
-            .map(|v| v.balances.reserve_shares)
+            .map(|v| SharesAmount(v.balances.reserve_shares))
     }
 
     fn reserve_balance(&self, vault: &VaultId) -> Option<Collateral> {
@@ -4499,13 +4513,13 @@ impl BalanceSheet for World {
     fn treasury_shares(&self, vault: &VaultId) -> Option<TreasuryShares> {
         self.vaults
             .get(vault.as_str())
-            .map(|v| v.balances.treasury_shares)
+            .map(|v| SharesAmount(v.balances.treasury_shares))
     }
 
     fn amo_shares(&self, vault: &VaultId) -> Option<AmoShares> {
         self.vaults
             .get(vault.as_str())
-            .map(|v| v.balances.amo_shares)
+            .map(|v| SharesAmount(v.balances.amo_shares))
     }
 
     fn overall_sum_payment_ratio(&self, vault: &VaultId) -> Option<SumPaymentRatio> {
