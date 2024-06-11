@@ -11,7 +11,7 @@ use test_utils::prelude::*;
 
 use amulet_cw::{
     hub::{
-        vaults::{DEPOSIT_REPLY_ID, MINT_REPLY_ID, REPAY_UNDERLYING_REPLY_ID},
+        vault_registry::{DEPOSIT_REPLY_ID, MINT_REPLY_ID, REPAY_UNDERLYING_REPLY_ID},
         AdminMsg as HubAdminMsg, ListVaultsResponse, PositionResponse, TreasuryResponse,
         UserMsg as HubUserMsg, VaultMetadata,
     },

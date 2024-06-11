@@ -5,7 +5,7 @@ use cosmwasm_std::{entry_point, Binary, Deps, DepsMut, Env, MessageInfo, Reply, 
 
 use amulet_cw::{
     admin::{self, Repository as AdminRespository},
-    hub::{self, AdvanceFeeOracle, BalanceSheet, Ctx, SyntheticMint, Vaults},
+    hub::{self, AdvanceFeeOracle, BalanceSheet, Ctx, SyntheticMint, VaultRegistry},
     MigrateMsg,
 };
 
@@ -31,7 +31,7 @@ pub fn execute_hub_msg(
     info: MessageInfo,
     msg: HubExecuteMsg,
 ) -> Result<Response, Error> {
-    let vaults = &Vaults::new(deps.storage, deps.querier);
+    let vaults = &VaultRegistry::new(deps.storage, deps.querier);
 
     let admin_repository = &AdminRespository::new(deps.storage);
 
@@ -89,7 +89,7 @@ pub fn execute(
 
 #[entry_point]
 pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Error> {
-    let vaults = &Vaults::new(deps.storage, deps.querier);
+    let vaults = &VaultRegistry::new(deps.storage, deps.querier);
 
     let balance_sheet = &BalanceSheet::new(deps.storage);
 
@@ -119,7 +119,7 @@ pub fn query(deps: Deps, _: Env, msg: QueryMsg) -> Result<Binary, Error> {
 
         QueryMsg::Hub(hub_query) => hub::handle_query_msg(
             deps.storage,
-            &Vaults::new(deps.storage, deps.querier),
+            &VaultRegistry::new(deps.storage, deps.querier),
             &BalanceSheet::new(deps.storage),
             &AdvanceFeeOracle::new(deps.querier),
             hub_query,

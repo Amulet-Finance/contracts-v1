@@ -5,7 +5,7 @@ use cosmwasm_std::{
 use amulet_core::{
     hub::{
         AdvanceFee, Amo, AmoAllocation, CollateralYieldFee, MaxLtv, Oracle, Proxy, ReserveYieldFee,
-        VaultCmd, VaultDepositReason, VaultId, Vaults as CoreVaults,
+        VaultCmd, VaultDepositReason, VaultId, VaultRegistry as CoreVaultRegistry,
     },
     mint::Synthetic,
     vault::{DepositAmount, SharesAmount, TotalDepositsValue, TotalSharesIssued},
@@ -24,12 +24,12 @@ pub const DEPOSIT_REPLY_ID: u64 = VaultDepositReason::Deposit as u64;
 pub const REPAY_UNDERLYING_REPLY_ID: u64 = VaultDepositReason::RepayUnderlying as u64;
 pub const MINT_REPLY_ID: u64 = VaultDepositReason::Mint as u64;
 
-pub struct Vaults<'a> {
+pub struct VaultRegistry<'a> {
     storage: &'a dyn Storage,
     querier: QuerierWrapper<'a>,
 }
 
-impl<'a> Vaults<'a> {
+impl<'a> VaultRegistry<'a> {
     pub fn new(storage: &'a dyn Storage, querier: QuerierWrapper<'a, impl CustomQuery>) -> Self {
         Self {
             storage,
@@ -113,7 +113,7 @@ pub trait StorageExt: Storage {
 
 impl<T> StorageExt for T where T: Storage + ?Sized {}
 
-impl<'a> CoreVaults for Vaults<'a> {
+impl<'a> CoreVaultRegistry for VaultRegistry<'a> {
     fn underlying_asset_decimals(&self, vault: &VaultId) -> Option<Decimals> {
         let response: UnderlyingAssetDecimalsResponse = self
             .querier

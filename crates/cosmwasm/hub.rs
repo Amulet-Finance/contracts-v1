@@ -1,7 +1,7 @@
 pub mod advance_fee_oracle;
 pub mod balance_sheet;
 pub mod synthetic_mint;
-pub mod vaults;
+pub mod vault_registry;
 
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{
@@ -15,7 +15,7 @@ use amulet_core::{
         configure, hub, positions::update_cdp, Account, AdvanceFeeOracle as CoreAdvanceFeeOracle,
         BalanceSheet as CoreBalanceSheet, Cdp, Cmd, ConfigureHub, Error as CoreHubError, Hub,
         ProxyConfig, SyntheticMint as CoreSyntheticMint, VaultDepositReason, VaultId,
-        Vaults as CoreVaults,
+        VaultRegistry as CoreVaultRegistry,
     },
     vault::{DepositAmount, DepositValue, SharesAmount},
     Identifier,
@@ -29,14 +29,14 @@ use crate::{
 
 use self::{
     balance_sheet::StorageExt as _,
-    vaults::{StorageExt as _, DEPOSIT_REPLY_ID, MINT_REPLY_ID, REPAY_UNDERLYING_REPLY_ID},
+    vault_registry::{StorageExt as _, DEPOSIT_REPLY_ID, MINT_REPLY_ID, REPAY_UNDERLYING_REPLY_ID},
 };
 
 pub use self::{
     advance_fee_oracle::AdvanceFeeOracle,
     balance_sheet::{handle_cmd as handle_balance_sheet_cmd, BalanceSheet},
     synthetic_mint::{handle_cmd as handle_mint_cmd, init as init_mint, SyntheticMint},
-    vaults::{handle_cmd as handle_vault_cmd, Vaults},
+    vault_registry::{handle_cmd as handle_vault_cmd, VaultRegistry},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -352,7 +352,7 @@ fn handle_mint<Msg>(
 pub fn handle_admin_msg<Msg>(
     api: &dyn Api,
     admin_repository: &dyn AdminRepository,
-    vaults: &dyn CoreVaults,
+    vaults: &dyn CoreVaultRegistry,
     mint: &dyn CoreSyntheticMint,
     info: MessageInfo,
     msg: AdminMsg,
@@ -453,7 +453,7 @@ pub fn handle_admin_msg<Msg>(
 
 pub fn handle_user_msg<Msg>(
     api: &dyn Api,
-    vaults: &dyn CoreVaults,
+    vaults: &dyn CoreVaultRegistry,
     balance_sheet: &dyn CoreBalanceSheet,
     advance_fee_oracle: &dyn CoreAdvanceFeeOracle,
     info: MessageInfo,
@@ -589,7 +589,7 @@ pub fn handle_user_msg<Msg>(
 
 pub struct Ctx<'a> {
     pub api: &'a dyn Api,
-    pub vaults: &'a dyn CoreVaults,
+    pub vaults: &'a dyn CoreVaultRegistry,
     pub admin_repository: &'a dyn AdminRepository,
     pub mint: &'a dyn CoreSyntheticMint,
     pub balance_sheet: &'a dyn CoreBalanceSheet,
@@ -624,7 +624,7 @@ pub fn handle_execute_msg<Msg>(
 
 pub fn handle_reply<Msg>(
     storage: &dyn Storage,
-    vaults: &dyn CoreVaults,
+    vaults: &dyn CoreVaultRegistry,
     balance_sheet: &dyn CoreBalanceSheet,
     advance_fee_oracle: &dyn CoreAdvanceFeeOracle,
     reply: Reply,
@@ -659,7 +659,7 @@ pub fn handle_reply<Msg>(
 
 fn vault_metadata(
     storage: &dyn Storage,
-    vaults: &dyn CoreVaults,
+    vaults: &dyn CoreVaultRegistry,
     balance_sheet: &dyn CoreBalanceSheet,
     vault: VaultId,
 ) -> Result<VaultMetadata, StdError> {
@@ -775,7 +775,7 @@ fn vault_metadata(
 
 fn list_vaults(
     storage: &dyn Storage,
-    vaults: &dyn CoreVaults,
+    vaults: &dyn CoreVaultRegistry,
     balance_sheet: &dyn CoreBalanceSheet,
 ) -> Result<Vec<VaultMetadata>, StdError> {
     let mut all_vaults = vec![];
@@ -794,7 +794,7 @@ fn list_vaults(
 }
 
 fn position(
-    vaults: &dyn CoreVaults,
+    vaults: &dyn CoreVaultRegistry,
     balance_sheet: &dyn CoreBalanceSheet,
     advance_fee_oracle: &dyn CoreAdvanceFeeOracle,
     vault: VaultId,
@@ -821,7 +821,7 @@ fn position(
 
 pub fn handle_query_msg(
     storage: &dyn Storage,
-    vaults: &dyn CoreVaults,
+    vaults: &dyn CoreVaultRegistry,
     balance_sheet: &dyn CoreBalanceSheet,
     advance_fee_oracle: &dyn CoreAdvanceFeeOracle,
     msg: QueryMsg,
@@ -866,7 +866,7 @@ pub fn handle_hub_cmd<Msg>(
         }
 
         Cmd::Vault(vault_cmd) => {
-            if let Some(sub_msg) = vaults::handle_cmd(storage, vault_cmd) {
+            if let Some(sub_msg) = vault_registry::handle_cmd(storage, vault_cmd) {
                 response.messages.push(sub_msg);
             }
         }

@@ -4345,7 +4345,7 @@ impl World {
     }
 }
 
-impl Vaults for World {
+impl VaultRegistry for World {
     fn underlying_asset_decimals(&self, vault: &VaultId) -> Option<Decimals> {
         match vault.as_str() {
             VAULT => Some(6),

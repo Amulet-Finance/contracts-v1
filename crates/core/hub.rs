@@ -237,8 +237,7 @@ pub enum VaultCmd {
     },
 }
 
-// TODO: better name
-pub trait Vaults {
+pub trait VaultRegistry {
     /// Returns the decimals used in the underlying asset value (collateral), if the vault exists at all
     fn underlying_asset_decimals(&self, vault: &VaultId) -> Option<Decimals>;
 
@@ -629,11 +628,14 @@ pub trait Hub {
 }
 
 pub struct ConfigureHubImpl<'a> {
-    vaults: &'a dyn Vaults,
+    vaults: &'a dyn VaultRegistry,
     mint: &'a dyn SyntheticMint,
 }
 
-pub fn configure<'a>(vaults: &'a dyn Vaults, mint: &'a dyn SyntheticMint) -> ConfigureHubImpl<'a> {
+pub fn configure<'a>(
+    vaults: &'a dyn VaultRegistry,
+    mint: &'a dyn SyntheticMint,
+) -> ConfigureHubImpl<'a> {
     ConfigureHubImpl { vaults, mint }
 }
 
@@ -846,13 +848,13 @@ impl<'a> ConfigureHub for ConfigureHubImpl<'a> {
 }
 
 pub struct HubImpl<'a> {
-    vaults: &'a dyn Vaults,
+    vaults: &'a dyn VaultRegistry,
     balance_sheet: &'a dyn BalanceSheet,
     advance_fee_oracle: &'a dyn AdvanceFeeOracle,
 }
 
 pub fn hub<'a>(
-    vaults: &'a dyn Vaults,
+    vaults: &'a dyn VaultRegistry,
     balance_sheet: &'a dyn BalanceSheet,
     advance_fee_oracle: &'a dyn AdvanceFeeOracle,
 ) -> HubImpl<'a> {
