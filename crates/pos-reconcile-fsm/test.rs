@@ -4,8 +4,27 @@ use test_utils::prelude::*;
 
 use super::*;
 
+fn weights(n_slots: u32) -> Weights {
+    assert!(n_slots > 0);
+
+    let weight = 10_000 / n_slots;
+    let rem = 10_000 % weight;
+    let mut weights = vec![weight; n_slots as usize];
+    weights[0] += rem;
+
+    let weights = weights
+        .iter()
+        .copied()
+        .map(Weight::checked_from_bps)
+        .collect::<Option<Vec<_>>>()
+        .unwrap();
+
+    Weights::new(&weights).unwrap()
+}
+
 #[derive(Default, serde::Serialize)]
 struct Context {
+    starting_weights: Option<Weights>,
     current_height: u64,
     delegate_start_slot: Option<DelegateStartSlot>,
     delegated: Option<Delegated>,
@@ -22,6 +41,7 @@ struct Context {
     pending_unbond: Option<PendingUnbond>,
     phase: Option<Phase>,
     redelegation_request: Option<RedelegationSlot>,
+    delegations_report: Option<DelegationsReport>,
     rewards_balance_report: Option<RemoteBalanceReport>,
     state: Option<State>,
     undelegate_start_slot: Option<UndelegateStartSlot>,
@@ -31,6 +51,26 @@ struct Context {
 macro_rules! progress_fsm {
     ($ctx:ident) => {{
         let response = fsm(&$ctx, &$ctx, &$ctx).reconcile();
+
+        for cmd in response.cmds.clone() {
+            $ctx.handle_cmd(cmd);
+        }
+
+        if let Some(tx_msgs) = response.tx_msgs.clone() {
+            for tx_msg in tx_msgs.msgs {
+                $ctx.handle_tx_msg(tx_msg);
+            }
+        }
+
+        response
+    }};
+}
+
+macro_rules! force_next {
+    ($ctx:ident) => {{
+        let response = fsm(&$ctx, &$ctx, &$ctx)
+            .force_next()
+            .expect("failed undelegate or delegate phase");
 
         for cmd in response.cmds.clone() {
             $ctx.handle_cmd(cmd);
@@ -93,9 +133,9 @@ impl Context {
         }
     }
 
-    #[allow(dead_code)]
-    fn increment_height(&mut self) {
-        self.current_height += 1
+    fn with_current_height(mut self, height: u64) -> Self {
+        self.current_height = height;
+        self
     }
 
     fn with_pending_deposit(mut self, pending_deposit: u128) -> Self {
@@ -112,6 +152,25 @@ impl Context {
         self.rewards_balance_report = Some(RemoteBalanceReport {
             height,
             amount: RemoteBalance(amount),
+        });
+        self
+    }
+
+    fn with_delegations_report(
+        mut self,
+        height: u64,
+        total_delegated: u128,
+        delegated_amounts_per_slot: Vec<u128>,
+    ) -> Self {
+        assert_eq!(
+            delegated_amounts_per_slot.len(),
+            self.validator_set_size().0
+        );
+
+        self.delegations_report = Some(DelegationsReport {
+            height,
+            total_delegated,
+            delegated_amounts_per_slot,
         });
         self
     }
@@ -139,18 +198,22 @@ impl Config for Context {
     }
 
     fn starting_weights(&self) -> Weights {
-        Weights::new(&[
-            Weight::checked_from_bps(2000u32).unwrap(),
-            Weight::checked_from_bps(2000u32).unwrap(),
-            Weight::checked_from_bps(2000u32).unwrap(),
-            Weight::checked_from_bps(2000u32).unwrap(),
-            Weight::checked_from_bps(2000u32).unwrap(),
-        ])
-        .unwrap()
+        if let Some(weights) = self.starting_weights.as_ref() {
+            return weights.clone();
+        }
+
+        let ValidatorSetSize(n) = self.validator_set_size();
+
+        weights(n as u32)
     }
 
     fn validator_set_size(&self) -> ValidatorSetSize {
-        ValidatorSetSize(5)
+        let size = self
+            .starting_weights
+            .as_ref()
+            .map_or(5, |ws| ws.as_slice().len());
+
+        ValidatorSetSize(size)
     }
 }
 
@@ -248,7 +311,7 @@ impl Env for Context {
     }
 
     fn delegations_report(&self) -> Option<DelegationsReport> {
-        None
+        self.delegations_report.clone()
     }
 
     fn rewards_balance_report(&self) -> Option<RemoteBalanceReport> {
@@ -368,6 +431,7 @@ fn initial_deposit() {
             (
               cmds: [
                 Delegated((200)),
+                DelegateStartSlot((0)),
                 InflightDelegation((0)),
                 InflightDeposit((0)),
                 InflightFeePayable((0)),
@@ -431,11 +495,11 @@ fn collect_rewards() {
                   Authz([
                     SendRewardsReceivable((100)),
                   ]),
-                  Delegate((0), 24),
-                  Delegate((1), 19),
-                  Delegate((2), 19),
-                  Delegate((3), 19),
-                  Delegate((4), 19),
+                  Delegate((0), 18),
+                  Delegate((1), 22),
+                  Delegate((2), 20),
+                  Delegate((3), 20),
+                  Delegate((4), 20),
                 ],
               )),
               tx_skip_count: 4,
@@ -450,6 +514,7 @@ fn collect_rewards() {
             (
               cmds: [
                 Delegated((300)),
+                DelegateStartSlot((0)),
                 InflightDelegation((0)),
                 InflightDeposit((0)),
                 InflightFeePayable((0)),
@@ -457,11 +522,11 @@ fn collect_rewards() {
                 MsgIssuedCount((0)),
                 MsgSuccessCount((0)),
                 Weights(([
-                  (("0.22333333333333333333333333333333")),
-                  (("0.18999999999999999999999999999999")),
-                  (("0.18999999999999999999999999999999")),
-                  (("0.18999999999999999999999999999999")),
-                  (("0.18999999999999999999999999999999")),
+                  (("0.20333333333333333333333333333333")),
+                  (("0.19999999999999999999999999999999")),
+                  (("0.19333333333333333333333333333333")),
+                  (("0.19333333333333333333333333333333")),
+                  (("0.19333333333333333333333333333333")),
                 ])),
                 LastReconcileHeight((0)),
                 Phase(StartReconcile),
@@ -520,22 +585,15 @@ fn withdraw_rewards_only() {
         expect![[r#"
             (
               cmds: [
-                MsgIssuedCount((5)),
+                MsgIssuedCount((0)),
                 MsgSuccessCount((0)),
-                Phase(Delegate),
-                State(Pending),
+                LastReconcileHeight((0)),
+                Phase(StartReconcile),
+                State(Idle),
               ],
               events: [],
-              tx_msgs: Some((
-                msgs: [
-                  WithdrawRewards((0)),
-                  WithdrawRewards((1)),
-                  WithdrawRewards((2)),
-                  WithdrawRewards((3)),
-                  WithdrawRewards((4)),
-                ],
-              )),
-              tx_skip_count: 4,
+              tx_msgs: None,
+              tx_skip_count: 5,
             )"#]],
     );
 
@@ -554,7 +612,7 @@ fn withdraw_rewards_only() {
               ],
               events: [],
               tx_msgs: None,
-              tx_skip_count: 0,
+              tx_skip_count: 5,
             )"#]],
     );
 }
@@ -789,6 +847,7 @@ fn pending_deposits_unbonded_before_delegation() {
             (
               cmds: [
                 Delegated((500000)),
+                DelegateStartSlot((0)),
                 InflightDelegation((0)),
                 InflightDeposit((0)),
                 InflightFeePayable((0)),
@@ -850,25 +909,18 @@ fn pending_deposits_unbonded_before_delegation() {
               cmds: [
                 Delegated((0)),
                 InflightUnbond((0)),
-                MsgIssuedCount((5)),
+                MsgIssuedCount((0)),
                 MsgSuccessCount((0)),
                 PendingUnbond((0)),
-                Phase(Delegate),
-                State(Pending),
+                LastReconcileHeight((0)),
+                Phase(StartReconcile),
+                State(Idle),
               ],
               events: [
                 UnbondStarted(500000),
               ],
-              tx_msgs: Some((
-                msgs: [
-                  WithdrawRewards((0)),
-                  WithdrawRewards((1)),
-                  WithdrawRewards((2)),
-                  WithdrawRewards((3)),
-                  WithdrawRewards((4)),
-                ],
-              )),
-              tx_skip_count: 2,
+              tx_msgs: None,
+              tx_skip_count: 3,
             )"#]],
     );
 
@@ -887,7 +939,7 @@ fn pending_deposits_unbonded_before_delegation() {
               ],
               events: [],
               tx_msgs: None,
-              tx_skip_count: 0,
+              tx_skip_count: 5,
             )"#]],
     );
 
@@ -906,7 +958,21 @@ fn pending_deposits_unbonded_before_delegation() {
 
 #[test]
 fn total_unbonding() {
-    let deposits: Vec<Vec<u128>> = vec![vec![1_000_000, 200_000, 500_000, 123_456_789]];
+    let deposits: Vec<Vec<u128>> = vec![
+        vec![1_000_000, 200_000, 500_000, 123_456_789],
+        vec![500_000, 600_000, 700_000, 800_000],
+        vec![2_000, 3_000, 4_000, 5_000],
+        vec![50, 100, 150, 200],
+        vec![999_999, 888_888, 777_777, 666_666],
+        vec![1, 2, 3, 4],
+        vec![100_000, 200_000, 300_000, 400_000],
+        vec![10, 20, 30, 40],
+        vec![123_123, 234_234, 345_345, 456_456],
+        vec![123, 456, 789, 1011],
+        vec![1500, 2500, 3500, 4500],
+        vec![10_000, 20_000, 30_000, 40_000],
+        vec![5, 10, 15, 20],
+    ];
 
     for deposit_seq in deposits {
         let mut ctx = Context::default();
@@ -919,8 +985,797 @@ fn total_unbonding() {
 
         let Delegated(delegated) = ctx.delegated();
 
+        assert!(delegated > 0);
+
         ctx = ctx.with_pending_unbond(delegated);
 
         while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+        assert_eq!(ctx.delegated, Some(Delegated(0)));
     }
+}
+
+#[test]
+fn detect_slashing() {
+    let mut ctx = Context::default();
+
+    ctx = ctx.with_pending_deposit(1_234_567_891);
+
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    check(
+        &ctx.delegations,
+        expect![[r#"
+        {
+          0: 246913579,
+          1: 246913578,
+          2: 246913578,
+          3: 246913578,
+          4: 246913578,
+        }"#]],
+    );
+
+    let slashed_delegations = vec![
+        246913579, 246913578, 246913578, 246913578, 239506170, // slashed 3%
+    ];
+
+    let total_delegated = slashed_delegations.iter().sum();
+
+    let report_height = ctx.last_reconcile_height.as_ref().unwrap().0 + 1;
+
+    ctx = ctx
+        .with_delegations_report(report_height, total_delegated, slashed_delegations)
+        .with_current_height(report_height + 1);
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+        (
+          cmds: [
+            Delegated((1227160483)),
+            MsgIssuedCount((5)),
+            MsgSuccessCount((0)),
+            Weights(([
+              (("0.20120724421990697365048708140319")),
+              (("0.20120724340501763044467265492935")),
+              (("0.20120724340501763044467265492935")),
+              (("0.20120724340501763044467265492935")),
+              (("0.19517102556504013501549495380874")),
+            ])),
+            Phase(Delegate),
+            State(Pending),
+          ],
+          events: [],
+          tx_msgs: Some((
+            msgs: [
+              WithdrawRewards((0)),
+              WithdrawRewards((1)),
+              WithdrawRewards((2)),
+              WithdrawRewards((3)),
+              WithdrawRewards((4)),
+            ],
+          )),
+          tx_skip_count: 4,
+        )"#]],
+    );
+
+    // finish round
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    ctx = ctx.with_pending_unbond(total_delegated);
+
+    // next round
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    assert_eq!(ctx.delegated, Some(Delegated(0)));
+}
+
+#[test]
+fn undelegate_force_next() {
+    let mut ctx = Context {
+        starting_weights: Some(weights(20)),
+        ..Default::default()
+    }
+    .with_pending_deposit(1_000_000_000);
+
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    ctx = ctx.with_pending_unbond(500_000_000);
+
+    check(
+        &ctx.weights,
+        expect![[r#"
+        Some(([
+          (("0.05000001899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+          (("0.04999999899999999999999999999999")),
+        ]))"#]],
+    );
+
+    // first undelegate batch
+    progress_fsm!(ctx);
+
+    check(
+        &ctx.delegations,
+        expect![[r#"
+            {
+              0: 25000010,
+              1: 25000000,
+              2: 25000000,
+              3: 25000000,
+              4: 25000000,
+              5: 25000000,
+              6: 25000000,
+              7: 25000000,
+              8: 25000000,
+              9: 25000000,
+              10: 25000000,
+              11: 25000000,
+              12: 25000000,
+              13: 25000000,
+              14: 25000000,
+              15: 25000000,
+              16: 49999999,
+              17: 49999999,
+              18: 49999999,
+              19: 49999999,
+            }"#]],
+    );
+
+    assert_eq!(ctx.phase, Some(Phase::Undelegate));
+
+    // second undelegate batch
+    let response = fsm(&ctx, &ctx, &ctx).reconcile();
+
+    for cmd in response.cmds.clone() {
+        ctx.handle_cmd(cmd);
+    }
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                MsgIssuedCount((4)),
+                MsgSuccessCount((16)),
+                Phase(Undelegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Undelegate((16), 24999999),
+                  Undelegate((17), 24999999),
+                  Undelegate((18), 24999999),
+                  Undelegate((19), 24999999),
+                ],
+              )),
+              tx_skip_count: 0,
+            )"#]],
+    );
+
+    assert_eq!(ctx.phase, Some(Phase::Undelegate));
+    assert_eq!(ctx.state, Some(State::Pending));
+
+    failure!(ctx);
+
+    let response = force_next!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((600000006)),
+                InflightUnbond((100000006)),
+                MsgIssuedCount((16)),
+                MsgSuccessCount((0)),
+                PendingUnbond((100000006)),
+                UndelegateStartSlot((16)),
+                Weights(([
+                  (("0.04166668124999985416666812499998")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.04166666458333335416666645833333")),
+                  (("0.08333332916666670833333291666667")),
+                  (("0.08333332916666670833333291666667")),
+                  (("0.08333332916666670833333291666667")),
+                  (("0.08333332916666670833333291666667")),
+                ])),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [
+                UnbondStarted(399999994),
+              ],
+              tx_msgs: Some((
+                msgs: [
+                  WithdrawRewards((0)),
+                  WithdrawRewards((1)),
+                  WithdrawRewards((2)),
+                  WithdrawRewards((3)),
+                  WithdrawRewards((4)),
+                  WithdrawRewards((5)),
+                  WithdrawRewards((6)),
+                  WithdrawRewards((7)),
+                  WithdrawRewards((8)),
+                  WithdrawRewards((9)),
+                  WithdrawRewards((10)),
+                  WithdrawRewards((11)),
+                  WithdrawRewards((12)),
+                  WithdrawRewards((13)),
+                  WithdrawRewards((14)),
+                  WithdrawRewards((15)),
+                ],
+              )),
+              tx_skip_count: 2,
+            )"#]],
+    );
+
+    // finish round
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    // resume undelegation
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                MsgIssuedCount((4)),
+                MsgSuccessCount((0)),
+                Phase(Undelegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Undelegate((16), 25000001),
+                  Undelegate((17), 25000001),
+                  Undelegate((18), 25000001),
+                  Undelegate((19), 25000001),
+                ],
+              )),
+              tx_skip_count: 2,
+            )"#]],
+    );
+
+    // resume undelegation
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((500000000)),
+                InflightUnbond((0)),
+                MsgIssuedCount((16)),
+                MsgSuccessCount((0)),
+                PendingUnbond((0)),
+                UndelegateStartSlot((0)),
+                Weights(([
+                  (("0.05000001599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999599999999999999999999999")),
+                  (("0.04999999199999999999999999999999")),
+                  (("0.04999999199999999999999999999999")),
+                  (("0.04999999199999999999999999999999")),
+                  (("0.04999999199999999999999999999999")),
+                ])),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [
+                UnbondStarted(100000006),
+              ],
+              tx_msgs: Some((
+                msgs: [
+                  WithdrawRewards((0)),
+                  WithdrawRewards((1)),
+                  WithdrawRewards((2)),
+                  WithdrawRewards((3)),
+                  WithdrawRewards((4)),
+                  WithdrawRewards((5)),
+                  WithdrawRewards((6)),
+                  WithdrawRewards((7)),
+                  WithdrawRewards((8)),
+                  WithdrawRewards((9)),
+                  WithdrawRewards((10)),
+                  WithdrawRewards((11)),
+                  WithdrawRewards((12)),
+                  WithdrawRewards((13)),
+                  WithdrawRewards((14)),
+                  WithdrawRewards((15)),
+                ],
+              )),
+              tx_skip_count: 2,
+            )"#]],
+    );
+
+    check(
+        ctx.delegations,
+        expect![[r#"
+            {
+              0: 25000010,
+              1: 25000000,
+              2: 25000000,
+              3: 25000000,
+              4: 25000000,
+              5: 25000000,
+              6: 25000000,
+              7: 25000000,
+              8: 25000000,
+              9: 25000000,
+              10: 25000000,
+              11: 25000000,
+              12: 25000000,
+              13: 25000000,
+              14: 25000000,
+              15: 25000000,
+              16: 24999998,
+              17: 24999998,
+              18: 24999998,
+              19: 24999998,
+            }"#]],
+    )
+}
+
+#[test]
+fn undelegate_all_force_next() {
+    let mut ctx = Context {
+        starting_weights: Some(weights(20)),
+        ..Default::default()
+    }
+    .with_pending_deposit(1_000_000_000);
+
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    ctx = ctx.with_pending_unbond(1_000_000_000);
+
+    // first undelegate batch
+    progress_fsm!(ctx);
+
+    assert_eq!(ctx.phase, Some(Phase::Undelegate));
+
+    // second undelegate batch
+    let response = fsm(&ctx, &ctx, &ctx).reconcile();
+
+    for cmd in response.cmds.clone() {
+        ctx.handle_cmd(cmd);
+    }
+
+    assert_eq!(ctx.phase, Some(Phase::Undelegate));
+    assert_eq!(ctx.state, Some(State::Pending));
+
+    failure!(ctx);
+
+    let response = force_next!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((200000012)),
+                InflightUnbond((200000012)),
+                MsgIssuedCount((16)),
+                MsgSuccessCount((0)),
+                PendingUnbond((200000012)),
+                UndelegateStartSlot((16)),
+                Weights(([
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.0")),
+                  (("0.24999997500000149999991000000539")),
+                  (("0.24999997500000149999991000000539")),
+                  (("0.24999997500000149999991000000539")),
+                  (("0.24999997500000149999991000000539")),
+                ])),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [
+                UnbondStarted(799999988),
+              ],
+              tx_msgs: Some((
+                msgs: [
+                  WithdrawRewards((0)),
+                  WithdrawRewards((1)),
+                  WithdrawRewards((2)),
+                  WithdrawRewards((3)),
+                  WithdrawRewards((4)),
+                  WithdrawRewards((5)),
+                  WithdrawRewards((6)),
+                  WithdrawRewards((7)),
+                  WithdrawRewards((8)),
+                  WithdrawRewards((9)),
+                  WithdrawRewards((10)),
+                  WithdrawRewards((11)),
+                  WithdrawRewards((12)),
+                  WithdrawRewards((13)),
+                  WithdrawRewards((14)),
+                  WithdrawRewards((15)),
+                ],
+              )),
+              tx_skip_count: 2,
+            )"#]],
+    );
+
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    // resume undelegation
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                MsgIssuedCount((4)),
+                MsgSuccessCount((0)),
+                Phase(Undelegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Undelegate((16), 49999997),
+                  Undelegate((17), 49999997),
+                  Undelegate((18), 49999997),
+                  Undelegate((19), 49999997),
+                ],
+              )),
+              tx_skip_count: 2,
+            )"#]],
+    );
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((0)),
+                InflightUnbond((0)),
+                MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
+                PendingUnbond((0)),
+                UndelegateStartSlot((0)),
+                Weights(([
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                  (("0.04999999999999999999999999999999")),
+                ])),
+                LastReconcileHeight((0)),
+                Phase(StartReconcile),
+                State(Idle),
+              ],
+              events: [
+                UnbondStarted(200000012),
+              ],
+              tx_msgs: None,
+              tx_skip_count: 4,
+            )"#]],
+    );
+}
+
+#[test]
+fn delegate_force_next() {
+    let mut ctx = Context {
+        starting_weights: Some(weights(20)),
+        ..Default::default()
+    }
+    .with_pending_deposit(1_000_000_000);
+
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    ctx = ctx
+        .with_rewards_balance_report(1, 1_000_000)
+        .with_current_height(2)
+        .with_pending_deposit(200_000_000);
+
+    // transfer out deposits
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+        (
+          cmds: [
+            InflightDeposit((200000000)),
+            MsgIssuedCount((1)),
+            MsgSuccessCount((0)),
+            Phase(TransferPendingDeposits),
+            State(Pending),
+          ],
+          events: [],
+          tx_msgs: Some((
+            msgs: [
+              TransferOutPendingDeposit(200000000),
+            ],
+          )),
+          tx_skip_count: 5,
+        )"#]],
+    );
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                InflightDelegation((201000000)),
+                InflightRewardsReceivable((1000000)),
+                MsgIssuedCount((16)),
+                MsgSuccessCount((0)),
+                PendingDeposit((0)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [
+                DepositsTransferred(200000000),
+              ],
+              tx_msgs: Some((
+                msgs: [
+                  Authz([
+                    SendRewardsReceivable((1000000)),
+                  ]),
+                  Delegate((0), 10049996),
+                  Delegate((1), 10050004),
+                  Delegate((2), 10050000),
+                  Delegate((3), 10050000),
+                  Delegate((4), 10050000),
+                  Delegate((5), 10050000),
+                  Delegate((6), 10050000),
+                  Delegate((7), 10050000),
+                  Delegate((8), 10050000),
+                  Delegate((9), 10050000),
+                  Delegate((10), 10050000),
+                  Delegate((11), 10050000),
+                  Delegate((12), 10050000),
+                  Delegate((13), 10050000),
+                  Delegate((14), 10050000),
+                ],
+              )),
+              tx_skip_count: 0,
+            )"#]],
+    );
+
+    let response = fsm(&ctx, &ctx, &ctx).reconcile();
+
+    for cmd in response.cmds.clone() {
+        ctx.handle_cmd(cmd);
+    }
+
+    failure!(ctx);
+
+    let response = force_next!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((1160800000)),
+                InflightDelegation((0)),
+                InflightDeposit((39200000)),
+                InflightRewardsReceivable((0)),
+                InflightFeePayable((0)),
+                DelegateStartSlot((16)),
+                Weights(([
+                  (("0.05173157649896623018607856650585")),
+                  (("0.05173156616126809097174362508614")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.05173156271536871123363197794624")),
+                  (("0.04307374052377670572019297036526")),
+                  (("0.04307374052377670572019297036526")),
+                  (("0.04307374052377670572019297036526")),
+                  (("0.04307374052377670572019297036526")),
+                ])),
+                MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
+                LastReconcileHeight((2)),
+                Phase(StartReconcile),
+                State(Idle),
+              ],
+              events: [
+                DelegationsIncreased(160800000),
+              ],
+              tx_msgs: None,
+              tx_skip_count: 0,
+            )"#]],
+    );
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                InflightDelegation((39200000)),
+                MsgIssuedCount((4)),
+                MsgSuccessCount((0)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Delegate((16), 9800000),
+                  Delegate((17), 9800000),
+                  Delegate((18), 9800000),
+                  Delegate((19), 9800000),
+                ],
+              )),
+              tx_skip_count: 6,
+            )"#]],
+    );
+
+    // resume delegation
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((1200000000)),
+                DelegateStartSlot((0)),
+                InflightDelegation((0)),
+                InflightDeposit((0)),
+                InflightFeePayable((0)),
+                InflightRewardsReceivable((0)),
+                MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
+                Weights(([
+                  (("0.05004167749999999999999999999999")),
+                  (("0.05004166749999999999999999999999")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.05004166416666666666666666666666")),
+                  (("0.04323687416666666666666666666666")),
+                  (("0.04323687416666666666666666666666")),
+                  (("0.04323687499999999999999999999999")),
+                  (("0.04323687499999999999999999999999")),
+                ])),
+                LastReconcileHeight((2)),
+                Phase(StartReconcile),
+                State(Idle),
+              ],
+              events: [
+                DelegationsIncreased(39200000),
+              ],
+              tx_msgs: None,
+              tx_skip_count: 0,
+            )"#]],
+    );
+
+    check(
+        ctx.delegations,
+        expect![[r#"
+            {
+              0: 60050015,
+              1: 60050003,
+              2: 60049999,
+              3: 60049999,
+              4: 60049999,
+              5: 60049999,
+              6: 60049999,
+              7: 60049999,
+              8: 60049999,
+              9: 60049999,
+              10: 60049999,
+              11: 60049999,
+              12: 60049999,
+              13: 60049999,
+              14: 60049999,
+              15: 49999999,
+              16: 59799999,
+              17: 59799999,
+              18: 59799999,
+              19: 59799999,
+            }"#]],
+    );
 }

@@ -111,12 +111,14 @@ pub struct ValidatorSetSize(pub usize);
 pub struct ValidatorSetSlot(pub usize);
 
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(serde::Serialize))]
 pub struct Delegation {
     pub validator: String,
     pub amount: u128,
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(serde::Serialize))]
 pub struct DelegationsIcqResult {
     pub last_submitted_height: u64,
     pub delegations: Vec<Delegation>,
@@ -124,6 +126,7 @@ pub struct DelegationsIcqResult {
 
 /// A processed 'Delegations' ICQ
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct DelegationsReport {
     pub height: u64,
