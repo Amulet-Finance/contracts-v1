@@ -433,8 +433,16 @@ impl Weight {
         Self(FixedU256::raw(raw))
     }
 
+    pub const fn zero() -> Self {
+        Self(FixedU256::zero())
+    }
+
     pub const fn into_raw(self) -> U256 {
         self.0.into_raw()
+    }
+
+    pub const fn into_fixed(self) -> FixedU256 {
+        self.0
     }
 
     /// Returns `None` if `bps` > `Self::MAX_BPS`, otherwise `Some(Weight(bps / 10,000))`
@@ -465,6 +473,15 @@ impl Weight {
             .map(Self)
     }
 
+    /// Returns `Some(weight)` if `fixed` <= 1.0, otherwise `None`
+    pub fn checked_from_fixed(fixed: FixedU256) -> Option<Self> {
+        if fixed > FixedU256::from_u128(1) {
+            return None;
+        }
+
+        Some(Self(fixed))
+    }
+
     /// Apply the weight to `rhs` rounding towards zero
     pub fn apply(self, rhs: u128) -> u128 {
         if rhs == 0 {
@@ -482,13 +499,6 @@ impl Weight {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(test, derive(serde::Serialize))]
 pub struct Weights(Vec<Weight>);
-
-pub trait SplitBalance {
-    /// Splits the balance across a number of slots, returning `(total_allocated, Vec<allocations>)`
-    /// `total_allocated` can be less than `balance` if there are rounding errors.
-    /// `Vec<allocations>` will always be the same length as the number of slots, even if `balance == 0`.
-    fn split_balance(&self, balance: u128) -> (u128, Vec<u128>);
-}
 
 impl Weights {
     pub fn new_unchecked(weights: Vec<Weight>) -> Self {
@@ -519,70 +529,11 @@ impl Weights {
     }
 }
 
-fn split_balance_according_to_weight(weights: &[Weight], balance: u128) -> (u128, Vec<u128>) {
-    if balance == 0 {
-        return (0, vec![0; weights.len()]);
-    }
+impl IntoIterator for Weights {
+    type Item = Weight;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
 
-    let mut allocations = Vec::with_capacity(weights.len());
-    let mut total_allocated = 0u128;
-
-    for weight in weights {
-        let slot_balance = weight.apply(balance);
-
-        allocations.push(slot_balance);
-
-        total_allocated += slot_balance
-    }
-
-    assert!(
-        total_allocated <= balance,
-        "total allocated cannot be > total balance to split"
-    );
-
-    (total_allocated, allocations)
-}
-
-impl SplitBalance for Weights {
-    fn split_balance(&self, balance: u128) -> (u128, Vec<u128>) {
-        // no scaling is required, all weights are being used
-        split_balance_according_to_weight(self.as_slice(), balance)
-    }
-}
-
-impl<'a> SplitBalance for &'a Weights {
-    fn split_balance(&self, balance: u128) -> (u128, Vec<u128>) {
-        Weights::split_balance(self, balance)
-    }
-}
-
-impl<'a> SplitBalance for &'a [Weight] {
-    fn split_balance(&self, balance: u128) -> (u128, Vec<u128>) {
-        // only a subset of weights might be being used, scaling is required so the sum of the weights is as close to 1.0 as possible
-        let mut total_weight = FixedU256::zero();
-
-        for weight in *self {
-            total_weight = total_weight
-                .checked_add(weight.0)
-                .expect("always: weights total <= 1.0");
-        }
-
-        if total_weight.is_zero() {
-            return (0, vec![0; self.len()]);
-        }
-
-        let mut scaled_weights = Vec::with_capacity(self.len());
-
-        for weight in *self {
-            let scaled_w = weight
-                .0
-                .checked_div(total_weight)
-                .map(Weight)
-                .expect("checked: total_weight > 0");
-
-            scaled_weights.push(scaled_w);
-        }
-
-        split_balance_according_to_weight(&scaled_weights, balance)
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }

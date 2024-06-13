@@ -2,14 +2,15 @@ pub mod types;
 
 use std::{collections::BTreeMap, num::NonZeroU128};
 
+use num::FixedU256;
 use types::{
     Account, CurrentHeight, DelegateStartSlot, Delegated, DelegationsReport, FeeBpsBlockIncrement,
     FeeMetadata, FeePaymentCooldownBlocks, FeeRecipient, InflightDelegation, InflightDeposit,
     InflightFeePayable, InflightRewardsReceivable, InflightUnbond, LastReconcileHeight, MaxFeeBps,
     MaxMsgCount, MsgIssuedCount, MsgSuccessCount, Now, PendingDeposit, PendingUnbond, Phase,
-    ReconcilerFee, RedelegationSlot, RemoteBalance, RemoteBalanceReport, RewardsReceivable,
-    SplitBalance, State, UnbondingTimeSecs, UndelegateStartSlot, UndelegatedBalanceReport,
-    ValidatorSetSize, ValidatorSetSlot, Weight, Weights,
+    ReconcilerFee, RedelegationSlot, RemoteBalance, RemoteBalanceReport, RewardsReceivable, State,
+    UnbondingTimeSecs, UndelegateStartSlot, UndelegatedBalanceReport, ValidatorSetSize,
+    ValidatorSetSlot, Weight, Weights,
 };
 
 /// Access fixed config
@@ -134,13 +135,14 @@ impl TxMsgs {
         Some(Self { msgs })
     }
 
-    pub fn one(msg: TxMsg) -> Self {
+    pub fn single(msg: TxMsg) -> Self {
         Self { msgs: vec![msg] }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(test, derive(serde::Serialize))]
+/// Commands used to update the mutable state
 pub enum Cmd {
     ClearRedelegationRequest,
     Delegated(Delegated),
@@ -202,6 +204,7 @@ impl_cmd_from![
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(serde::Serialize))]
+/// Events that occur during the state machine execution
 pub enum Event {
     UndelegatedAssetsTransferred,
     DepositsTransferred(u128),
@@ -363,6 +366,7 @@ impl Cache {
             self.clear_redelegation
                 .then_some(Cmd::ClearRedelegationRequest),
             self.delegated.map(Cmd::from),
+            self.delegate_start_slot.map(Cmd::from),
             self.inflight_delegation.map(Cmd::from),
             self.inflight_deposit.map(Cmd::from),
             self.inflight_fee_payable.map(Cmd::from),
@@ -373,6 +377,7 @@ impl Cache {
             self.msg_success_count.map(Cmd::from),
             self.pending_deposit.map(Cmd::from),
             self.pending_unbond.map(Cmd::from),
+            self.undelegate_start_slot.map(Cmd::from),
             self.weights.map(Cmd::from),
         ]
         .into_iter()
@@ -519,10 +524,11 @@ fn start_setup_rewards_address(Context { env, .. }: Context) -> Transition {
         .delegation_account_address()
         .zip(env.rewards_account_address())
     else {
+        // cannot continue until ICAs have been setup
         return Transition::abort();
     };
 
-    let tx_msgs = TxMsgs::one(TxMsg::SetRewardsWithdrawalAddress(
+    let tx_msgs = TxMsgs::single(TxMsg::SetRewardsWithdrawalAddress(
         delegation_account,
         rewards_account,
     ));
@@ -540,7 +546,7 @@ fn start_setup_authz(Context { env, .. }: Context) -> Transition {
         .zip(env.rewards_account_address())
         .expect("always: there must be delegation and rewards addresses to access this phase");
 
-    let tx_msgs = TxMsgs::one(TxMsg::GrantAuthzSend(rewards_account, delegation_account));
+    let tx_msgs = TxMsgs::single(TxMsg::GrantAuthzSend(rewards_account, delegation_account));
 
     Transition::tx(tx_msgs, vec![])
 }
@@ -554,18 +560,20 @@ struct Slashing {
     adjusted_weights: Weights,
     /// The post-slashing delegated amount
     delegated: u128,
+    /// The post-slashing pending unbond amount
+    pending_unbond: u128,
+    /// The post-slashing inflight unbond amount
+    inflight_unbond: u128,
 }
 
 // determine whether a slashing has occured
 fn check_for_slashing(
-    delegated: Delegated,
-    last_reconcile_height: LastReconcileHeight,
+    Delegated(delegated): Delegated,
+    PendingUnbond(pending_unbond): PendingUnbond,
+    InflightUnbond(inflight_unbond): InflightUnbond,
+    LastReconcileHeight(last_reconcile_height): LastReconcileHeight,
     delegations: DelegationsReport,
 ) -> Option<Slashing> {
-    let LastReconcileHeight(last_reconcile_height) = last_reconcile_height;
-
-    let Delegated(delegated) = delegated;
-
     if delegated == 0 {
         return None;
     }
@@ -593,9 +601,25 @@ fn check_for_slashing(
     let adjusted_weights =
         Weights::new(&adjusted_weights).expect("always: one weight per slot & total weight == 1.0");
 
+    let slashed_ratio = FixedU256::from_u128(delegations.total_delegated)
+        .checked_div(FixedU256::from_u128(delegated))
+        .expect("checked: delegated > 0");
+
+    let pending_unbond = slashed_ratio
+        .checked_mul(FixedU256::from_u128(pending_unbond))
+        .expect("always: slashed ratio < 1.0")
+        .floor();
+
+    let inflight_unbond = slashed_ratio
+        .checked_mul(FixedU256::from_u128(inflight_unbond))
+        .expect("always: slashed ratio < 1.0")
+        .floor();
+
     Some(Slashing {
         adjusted_weights,
         delegated: delegations.total_delegated,
+        pending_unbond,
+        inflight_unbond,
     })
 }
 
@@ -608,12 +632,25 @@ fn start_reconcile(Context { repo, env, .. }: Context) -> Transition {
         return Transition::next(vec![]);
     };
 
-    let Some(slashing) = check_for_slashing(repo.delegated(), last_reconcile_height, delegations)
-    else {
+    let Some(slashing) = check_for_slashing(
+        repo.delegated(),
+        repo.pending_unbond(),
+        repo.inflight_unbond(),
+        last_reconcile_height,
+        delegations,
+    ) else {
         return Transition::next(vec![]);
     };
 
-    let cmds = set![slashing.adjusted_weights, Delegated(slashing.delegated)];
+    let mut cmds = set![slashing.adjusted_weights, Delegated(slashing.delegated)];
+
+    if slashing.pending_unbond > 0 {
+        cmds.push(PendingUnbond(slashing.pending_unbond).into());
+    }
+
+    if slashing.inflight_unbond > 0 {
+        cmds.push(InflightUnbond(slashing.inflight_unbond).into());
+    }
 
     Transition::next(cmds)
 }
@@ -641,7 +678,7 @@ fn start_redelegate(Context { repo, env, .. }: Context) -> Transition {
         .get(slot)
         .expect("valid slot index");
 
-    let tx_msgs = TxMsgs::one(TxMsg::Redelegate(ValidatorSetSlot(slot), *delegated_amount));
+    let tx_msgs = TxMsgs::single(TxMsg::Redelegate(ValidatorSetSlot(slot), *delegated_amount));
 
     Transition::tx(tx_msgs, vec![])
 }
@@ -657,16 +694,80 @@ fn on_redelegate_failure(_: Context) -> Transition {
 
 type Undelegation = (ValidatorSetSlot, NonZeroU128);
 
-fn undelegations(
-    weights: impl SplitBalance,
+// Normalize the weights so they add up to 1.0 if they do not already.
+// If all the given weights are 0, the scaled weights will all be: 1.0 / n weights.
+// Panics if the `weights` add up to > 1.0
+fn normalize_weights(weights: &[Weight]) -> Option<Weights> {
+    if weights.is_empty() {
+        return None;
+    }
+
+    let total_weight = weights
+        .iter()
+        .copied()
+        .map(Weight::into_fixed)
+        .reduce(|acc, w| {
+            acc.checked_add(w)
+                .expect("always: total weights should never overflow Q128.128")
+        })
+        .expect("checked: weights len > 0");
+
+    let one = FixedU256::from_u128(1);
+
+    assert!(
+        total_weight <= one,
+        "cannot scale weights that already add up to > 1.0"
+    );
+
+    if total_weight == one {
+        return Some(Weights::new_unchecked(weights.to_vec()));
+    }
+
+    if total_weight.is_zero() {
+        let equal_weight = FixedU256::from_u128(1)
+            .checked_div(FixedU256::from_u128(weights.len() as u128))
+            .map(Weight::checked_from_fixed)
+            .expect("checked: weights len > 0")
+            .expect("always: 1 divided by non zero <= 1.0");
+
+        let equal_weights = vec![equal_weight; weights.len()];
+
+        return Some(Weights::new_unchecked(equal_weights));
+    }
+
+    let scaled_weights = weights
+        .iter()
+        .copied()
+        .map(Weight::into_fixed)
+        .map(|w| {
+            w.checked_div(total_weight)
+                .map(Weight::checked_from_fixed)
+                .expect("checked: weights len > 0")
+                .expect("always: w <= total weight")
+        })
+        .collect();
+
+    Some(Weights::new_unchecked(scaled_weights))
+}
+
+fn distribute_undelegations(
+    weights: &[Weight],
+    Delegated(delegated): Delegated,
     unbond_amount: u128,
     slot_offset: usize,
-) -> impl Iterator<Item = Undelegation> {
-    let (_, unbonding_amounts) = weights.split_balance(unbond_amount);
+) -> impl Iterator<Item = Undelegation> + '_ {
+    assert!(!weights.is_empty(), "cannot undelegate from 0 slots");
 
-    unbonding_amounts
+    normalize_weights(weights)
+        .expect("checked: weights len > 0")
         .into_iter()
-        // get the indexes of the slots
+        .zip(weights)
+        .map(move |(scaled_w, original_w)| {
+            // take the minimum of the total delegated amount to a slot and the scaled allocated unbond amount
+            original_w
+                .apply(delegated)
+                .min(scaled_w.apply(unbond_amount))
+        })
         .enumerate()
         // skip slots where the split amount is zero
         .filter_map(move |(idx, amount)| {
@@ -685,16 +786,22 @@ fn undelegate_tx_msgs(
 
     if start_slot_idx == 0 {
         // no need to take a subset of slot weights
-        let undelegate_msgs = undelegations(weights, unbond_amount, start_slot_idx)
-            .map(|(slot, amount)| TxMsg::Undelegate(slot, amount.get()));
+        let undelegate_msgs = distribute_undelegations(
+            weights.as_slice(),
+            repo.delegated(),
+            unbond_amount,
+            start_slot_idx,
+        )
+        .map(|(slot, amount)| TxMsg::Undelegate(slot, amount.get()));
 
         return TxMsgBatcher::new(config, repo).batch_msgs(undelegate_msgs);
     }
 
     let weights = &weights.as_slice()[start_slot_idx..];
 
-    let undelegate_msgs = undelegations(weights, unbond_amount, start_slot_idx)
-        .map(|(slot, amount)| TxMsg::Undelegate(slot, amount.get()));
+    let undelegate_msgs =
+        distribute_undelegations(weights, repo.delegated(), unbond_amount, start_slot_idx)
+            .map(|(slot, amount)| TxMsg::Undelegate(slot, amount.get()));
 
     TxMsgBatcher::new(config, repo).batch_msgs(undelegate_msgs)
 }
@@ -794,8 +901,9 @@ fn on_undelegate_success(Context { repo, config, .. }: Context) -> Transition {
 
         let weights = repo.weights();
 
-        let undelegations = undelegations(
+        let undelegations = distribute_undelegations(
             &weights.as_slice()[start_slot_idx..],
+            Delegated(prev_delegated),
             inflight_unbond,
             start_slot_idx,
         );
@@ -840,9 +948,14 @@ fn undelegate_force_next(Context { repo, config, .. }: Context) -> (Vec<Event>, 
 
     let weights = repo.weights();
 
-    let undelegations: Vec<_> = undelegations(&weights, inflight_unbond, start_slot_idx)
-        .take(msg_success_count)
-        .collect();
+    let undelegations: Vec<_> = distribute_undelegations(
+        weights.as_slice(),
+        Delegated(prev_delegated),
+        inflight_unbond,
+        start_slot_idx,
+    )
+    .take(msg_success_count)
+    .collect();
 
     let total_unbonded: u128 = undelegations
         .iter()
@@ -901,7 +1014,7 @@ fn start_transfer_undelegated(Context { repo, env, .. }: Context) -> Transition 
         return Transition::next(vec![]);
     };
 
-    let tx_msgs = TxMsgs::one(TxMsg::TransferInUndelegated(amount));
+    let tx_msgs = TxMsgs::single(TxMsg::TransferInUndelegated(amount));
 
     Transition::tx(tx_msgs, vec![])
 }
@@ -919,7 +1032,7 @@ fn start_transfer_pending_deposits(Context { repo, .. }: Context) -> Transition 
         return Transition::next(vec![]);
     }
 
-    let tx_msgs = TxMsgs::one(TxMsg::TransferOutPendingDeposit(pending_deposit));
+    let tx_msgs = TxMsgs::single(TxMsg::TransferOutPendingDeposit(pending_deposit));
 
     let cmds = set![InflightDeposit(pending_deposit)];
 
@@ -1025,16 +1138,81 @@ fn delegate_phase_balances(
 
 type Delegation = (ValidatorSetSlot, NonZeroU128);
 
-fn delegations(
-    weights: impl SplitBalance,
-    total: u128,
+// Invert the weights and then normalize to 1.0
+// `[ 0.4 0.4 0.1 0.1 ]` would become `[ 0.1 0.1 0.4 0.4 ]`
+fn rebalance_weights(weights: Weights) -> Weights {
+    let mut total_inverted_weight = FixedU256::zero();
+
+    let mut inverted_weights = Vec::with_capacity(weights.as_slice().len());
+
+    let one = FixedU256::from_u128(1);
+
+    for weight in weights.into_iter().map(Weight::into_fixed) {
+        if weight.is_zero() {
+            inverted_weights.push(FixedU256::zero());
+            continue;
+        }
+
+        let inverted_weight = one.checked_div(weight).expect("checked: weight > 0");
+
+        total_inverted_weight = total_inverted_weight
+            .checked_add(inverted_weight)
+            .expect("always: total inverted weights should never overflow Q128.128");
+
+        inverted_weights.push(inverted_weight);
+    }
+
+    let rebalance_weights = inverted_weights
+        .into_iter()
+        .map(|iw| {
+            iw.checked_div(total_inverted_weight)
+                .map(Weight::checked_from_fixed)
+                .expect("always: total inverted weights > 0 if total weights > 0")
+                .expect("always: 1 divided by non zero <= 1.0")
+        })
+        .collect();
+
+    Weights::new_unchecked(rebalance_weights)
+}
+
+// distribute delegations so that the weights trend towards equalisation, i.e. lower weighted slots receive more
+fn distribute_delegations(
+    weights: &[Weight],
+    total_delegation: u128,
     slot_offset: usize,
 ) -> impl Iterator<Item = Delegation> {
-    let (allocated, mut delegations) = weights.split_balance(total);
+    assert!(
+        !weights.is_empty(),
+        "cannot distribute delegations across 0 slots"
+    );
 
-    let unallocated = allocated.abs_diff(total);
+    let scaled_weights = normalize_weights(weights).expect("checked: weights len > 0");
 
-    delegations[0] = delegations[0]
+    let rebalance_weights = rebalance_weights(scaled_weights);
+
+    let mut total_allocated = 0u128;
+    let mut delegations = Vec::with_capacity(weights.len());
+
+    for weight in rebalance_weights.as_slice() {
+        let delegation = weight.apply(total_delegation);
+
+        total_allocated = total_allocated
+            .checked_add(delegation)
+            .expect("always: total allocated <= total delegation");
+
+        delegations.push(delegation);
+    }
+
+    let unallocated = total_allocated.abs_diff(total_delegation);
+
+    // assign any unallocated delegation to the lowest weighted slot
+    let (lowest_weight_slot_idx, _) = weights
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, w)| w.into_fixed())
+        .expect("checked: weights len > 0");
+
+    delegations[lowest_weight_slot_idx] = delegations[lowest_weight_slot_idx]
         .checked_add(unallocated)
         .expect("always: any slot allocation + unallocated <= total delegation");
 
@@ -1049,14 +1227,14 @@ fn delegations(
 }
 
 fn delegate_phase_msgs(
-    weights: impl SplitBalance,
+    weights: &[Weight],
     balances: DelegatePhaseBalances,
     slot_offset: usize,
     fee_recipient: Option<FeeRecipient>,
 ) -> impl Iterator<Item = TxMsg> {
     let InflightDelegation(inflight_delegation) = balances.delegation;
 
-    let delegate_msgs = delegations(weights, inflight_delegation, slot_offset)
+    let delegate_msgs = distribute_delegations(weights, inflight_delegation, slot_offset)
         // create undelegate msg
         .map(|(slot, amount)| TxMsg::Delegate(slot, amount.get()));
 
@@ -1093,11 +1271,17 @@ fn delegate_tx_msgs(
 
     if start_slot_idx == 0 {
         // no need to take a subset of slot weights
-        let msgs = delegate_phase_msgs(weights, balances, start_slot_idx, env.fee_recipient());
+        let msgs = delegate_phase_msgs(
+            weights.as_slice(),
+            balances,
+            start_slot_idx,
+            env.fee_recipient(),
+        );
 
         return TxMsgBatcher::new(config, repo).batch_msgs(msgs);
     }
 
+    // take a subset of the slots starting at the start slot index set in a previous round
     let weights = &weights.as_slice()[start_slot_idx..];
 
     let msgs = delegate_phase_msgs(weights, balances, start_slot_idx, env.fee_recipient());
@@ -1136,7 +1320,9 @@ fn delegate_adjust_weights(
 }
 
 fn try_withdraw_rewards(config: &dyn Config, repo: &dyn Repository) -> Transition {
-    if repo.last_reconcile_height().is_none() {
+    let Delegated(delegated) = repo.delegated();
+
+    if repo.last_reconcile_height().is_none() || delegated == 0 {
         return Transition::next(vec![]);
     }
 
@@ -1199,7 +1385,7 @@ fn on_delegate_success(Context { config, repo, env }: Context) -> Transition {
 
     let DelegateStartSlot(start_slot) = repo.delegate_start_slot();
 
-    let delegations = delegations(&weights, inflight_delegation, start_slot);
+    let delegations = distribute_delegations(weights.as_slice(), inflight_delegation, start_slot);
 
     let adjusted_weights =
         delegate_adjust_weights(&weights, prev_delegated, delegated, delegations);
@@ -1245,19 +1431,19 @@ fn delegate_force_next(Context { repo, .. }: Context) -> (Vec<Event>, Vec<Cmd>) 
 
     let weights = repo.weights();
 
-    let delegations: Vec<_> = delegations(&weights, inflight_delegation, start_slot_idx)
-        .take(msg_success_count)
-        .collect();
+    let delegations: Vec<_> =
+        distribute_delegations(weights.as_slice(), inflight_delegation, start_slot_idx)
+            .take(msg_success_count)
+            .collect();
 
-    let total_delegated: u128 = delegations
+    let successfully_delegated: u128 = delegations
         .iter()
-        .take(msg_success_count)
         .try_fold(0u128, |sum, (_, amount)| sum.checked_add(amount.get()))
-        .expect("always: total delegated < inflight delegation");
+        .expect("always: successfully delegated < inflight delegation");
 
     let delegated = prev_delegated
-        .checked_sub(total_delegated)
-        .expect("always: total delegated < inflight delegation <= delegated");
+        .checked_add(successfully_delegated)
+        .expect("always: total delegated amount should never overflow u128");
 
     // The delegation should recommence at the slot after the last successful undelegation
     let delegate_start_slot = delegations
@@ -1272,10 +1458,10 @@ fn delegate_force_next(Context { repo, .. }: Context) -> (Vec<Event>, Vec<Cmd>) 
     let InflightRewardsReceivable(rewards) = repo.inflight_rewards_receivable();
 
     // draw down rewards first
-    let rewards = rewards.saturating_sub(total_delegated);
+    let rewards = rewards.saturating_sub(successfully_delegated);
 
     let inflight_deposit = inflight_deposit
-        .checked_sub(total_delegated.abs_diff(rewards))
+        .checked_sub(successfully_delegated.abs_diff(rewards))
         .expect("always: inflight deposit == (inflight delegation - rewards)");
 
     let cmds = set![
@@ -1290,12 +1476,12 @@ fn delegate_force_next(Context { repo, .. }: Context) -> (Vec<Event>, Vec<Cmd>) 
         adjusted_weights
     ];
 
-    let events = vec![Event::DelegationsIncreased(total_delegated)];
+    let events = vec![Event::DelegationsIncreased(successfully_delegated)];
 
     (events, cmds)
 }
 
-fn handler(phase: Phase, state: State) -> Handler {
+const fn handler(phase: Phase, state: State) -> Handler {
     match (phase, state) {
         (Phase::SetupRewardsAddress, State::Idle | State::Failed) => start_setup_rewards_address,
         (Phase::SetupRewardsAddress, State::Pending) => on_setup_rewards_address_success,
@@ -1353,25 +1539,26 @@ fn reconcile(
                     tx_skip_count += phase_tx_count;
                 }
 
-                let Some(next_phase) = phase.next() else {
-                    let mut cmds = intermediate_repo.cache.into_cmds();
+                if let Some(next_phase) = phase.next() {
+                    phase = next_phase;
+                    state = State::Idle;
+                    continue;
+                }
 
-                    let CurrentHeight(current_height) = ctx.env.current_height();
+                let mut cmds = intermediate_repo.cache.into_cmds();
 
-                    cmds.push(LastReconcileHeight(current_height).into());
-                    cmds.push(Phase::StartReconcile.into());
-                    cmds.push(State::Idle.into());
+                let CurrentHeight(current_height) = ctx.env.current_height();
 
-                    return Response {
-                        cmds,
-                        events: all_events,
-                        tx_msgs: None,
-                        tx_skip_count,
-                    };
+                cmds.push(LastReconcileHeight(current_height).into());
+                cmds.push(Phase::StartReconcile.into());
+                cmds.push(State::Idle.into());
+
+                return Response {
+                    cmds,
+                    events: all_events,
+                    tx_msgs: None,
+                    tx_skip_count,
                 };
-
-                phase = next_phase;
-                state = State::Idle;
             }
 
             TransitionKind::Tx(tx_msgs) => {
