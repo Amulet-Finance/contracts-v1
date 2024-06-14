@@ -1136,8 +1136,6 @@ fn delegate_phase_balances(
     })
 }
 
-type Delegation = (ValidatorSetSlot, NonZeroU128);
-
 // Invert the weights and then normalize to 1.0
 // `[ 0.4 0.4 0.1 0.1 ]` would become `[ 0.1 0.1 0.4 0.4 ]`
 fn rebalance_weights(weights: Weights) -> Weights {
@@ -1174,6 +1172,8 @@ fn rebalance_weights(weights: Weights) -> Weights {
 
     Weights::new_unchecked(rebalance_weights)
 }
+
+type Delegation = (ValidatorSetSlot, NonZeroU128);
 
 // distribute delegations so that the weights trend towards equalisation, i.e. lower weighted slots receive more
 fn distribute_delegations(
@@ -1385,7 +1385,11 @@ fn on_delegate_success(Context { config, repo, env }: Context) -> Transition {
 
     let DelegateStartSlot(start_slot) = repo.delegate_start_slot();
 
-    let delegations = distribute_delegations(weights.as_slice(), inflight_delegation, start_slot);
+    let delegations = distribute_delegations(
+        &weights.as_slice()[start_slot..],
+        inflight_delegation,
+        start_slot,
+    );
 
     let adjusted_weights =
         delegate_adjust_weights(&weights, prev_delegated, delegated, delegations);
@@ -1428,12 +1432,20 @@ fn delegate_force_next(Context { repo, .. }: Context) -> (Vec<Event>, Vec<Cmd>) 
 
     let InflightDelegation(inflight_delegation) = repo.inflight_delegation();
     let Delegated(prev_delegated) = repo.delegated();
+    let InflightRewardsReceivable(rewards) = repo.inflight_rewards_receivable();
 
     let weights = repo.weights();
 
+    let delegate_msg_success_count = if start_slot_idx == 0 && rewards > 0 {
+        // The first message is not a delegate msgs, but an authz bank send
+        msg_success_count - 1
+    } else {
+        msg_success_count
+    };
+
     let delegations: Vec<_> =
         distribute_delegations(weights.as_slice(), inflight_delegation, start_slot_idx)
-            .take(msg_success_count)
+            .take(delegate_msg_success_count)
             .collect();
 
     let successfully_delegated: u128 = delegations
@@ -1455,13 +1467,14 @@ fn delegate_force_next(Context { repo, .. }: Context) -> (Vec<Event>, Vec<Cmd>) 
         delegate_adjust_weights(&weights, prev_delegated, delegated, delegations.into_iter());
 
     let InflightDeposit(inflight_deposit) = repo.inflight_deposit();
-    let InflightRewardsReceivable(rewards) = repo.inflight_rewards_receivable();
+
+    let deposits_delegated = successfully_delegated.abs_diff(rewards);
 
     // draw down rewards first
     let rewards = rewards.saturating_sub(successfully_delegated);
 
     let inflight_deposit = inflight_deposit
-        .checked_sub(successfully_delegated.abs_diff(rewards))
+        .checked_sub(deposits_delegated)
         .expect("always: inflight deposit == (inflight delegation - rewards)");
 
     let cmds = set![
