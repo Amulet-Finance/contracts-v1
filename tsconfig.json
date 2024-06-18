@@ -14,5 +14,6 @@
     "composite": true,
     "downlevelIteration": true,
     "allowSyntheticDefaultImports": true
-  }
+  },
+  "include": ["scripts", "scripts/types/suite.d.ts"]
 }

@@ -30,10 +30,12 @@
         pkgs.bun
         pkgs.cargo-llvm-cov
         pkgs.cargo-nextest
+        pkgs.jq
+        pkgs.docker-compose
+        pkgs.go
         # nice to have
         pkgs.nodePackages_latest.typescript-language-server
         pkgs.rust-analyzer-unwrapped
-        pkgs.go
         pkgs.gopls
         pkgs.tokei
       ];
