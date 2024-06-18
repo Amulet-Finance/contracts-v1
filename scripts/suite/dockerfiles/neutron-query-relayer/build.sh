@@ -1,5 +1,5 @@
-#!/bin/bash
-#!/bin/bash
+#! /usr/bin/env bash
+
 ORG="${ORG:-amulet}"
 VERSION="${VERSION:-0.0.1}"
 NEUTRON_RELAYER_TAG="neutron-relayer-$ORG-$VERSION"

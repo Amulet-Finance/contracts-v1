@@ -1,4 +1,5 @@
-#!/bin/bash
+#! /usr/bin/env bash
+
 DEFAULT_BRANCH="v15.0.0"
 ORG="${ORG:-amulet}"
 VERSION="${VERSION:-0.0.1}"

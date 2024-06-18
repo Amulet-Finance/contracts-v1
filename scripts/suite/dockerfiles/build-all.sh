@@ -1,4 +1,5 @@
-#!/bin/bash
+#! /usr/bin/env bash
+
 # Function to find the project root directory
 find_project_root() {
   local dir="$PWD"

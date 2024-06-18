@@ -1,4 +1,5 @@
-#!/bin/bash
+#! /usr/bin/env bash
+
 ORG="${ORG:-amulet}"
 VERSION="${VERSION:-v0.1.0}"
 HERMES_TAG="hermes-$ORG-$VERSION"
