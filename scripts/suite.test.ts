@@ -6,6 +6,9 @@ import {
     WALLET_MNEMONIC_WORD_COUNT,
 } from "./suite/constants";
 import { isContainerPaused } from "./utils";
+import { StargateClient, StakingExtension, QueryClient, setupStakingExtension } from "@cosmjs/stargate";
+import { Client } from "@neutron-org/client-ts";
+import { Tendermint37Client } from "@cosmjs/tendermint-rpc";
 
 let suite: ITestSuite;
 
@@ -86,4 +89,35 @@ describe("TestSuite sanity check", () => {
         const validator = await suite.slashValidator();
         expect(validator).toMatch(/^cosmosvalcons/);
     });
+
+    it("should allow connections to the host RPC", async () => {
+        const rpc = suite.getHostRpc("neutron");
+        const client = await StargateClient.connect(`http://${rpc}`);
+        const block = await client.getBlock();
+        expect(block.header.height).toBeGreaterThan(0);
+    })
+
+    it("should allow connections to the remote RPC", async () => {
+        const rpc = suite.getRemoteRpc("gaia");
+        const client = await StargateClient.connect(`http://${rpc}`);
+        const block = await client.getBlock();
+        expect(block.header.height).toBeGreaterThan(0);
+    })
+
+    it("should have the specified number of validators", async () => {
+        const rpc = suite.getRemoteRpc("gaia");
+        const tmClient = await Tendermint37Client.connect(`http://${rpc}`);
+        const queryClient = QueryClient.withExtensions(tmClient, setupStakingExtension)
+
+        const bondedValidators = await queryClient.staking.validators("BOND_STATUS_BONDED");
+        const unbondedValidators = await queryClient.staking.validators("BOND_STATUS_UNBONDED");
+        const unbondingValidators = await queryClient.staking.validators("BOND_STATUS_UNBONDING");
+
+        const totalValidatorCount = 
+            bondedValidators.validators.length 
+            + unbondedValidators.validators.length 
+            + unbondingValidators.validators.length;
+
+        expect(totalValidatorCount).toBe(6)
+    })
 });
