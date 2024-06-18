@@ -1,11 +1,20 @@
 {
   "name": "amulet-contract-scripts",
+  "version": "0.0.1",
   "private": true,
+  "scripts": {
+    "build-images": "./scripts/suite/dockerfiles/build-all.sh"
+  },
   "workspaces": [
     "scripts/*"
   ],
   "dependencies": {
-    "@cosmjs/cosmwasm-stargate": "^0.32.2"
+    "@cosmjs/cosmwasm-stargate": "^0.32.2",
+    "@cosmjs/proto-signing": "^0.32.2",
+    "@cosmjs/stargate": "^0.32.2",
+    "@cosmjs/tendermint-rpc": "^0.32.3",
+    "@neutron-org/cosmopark": "^1.6.3",
+    "@neutron-org/client-ts": "^1.4.0"
   },
   "devDependencies": {
     "@cosmwasm/ts-codegen": "^0.35.7",
