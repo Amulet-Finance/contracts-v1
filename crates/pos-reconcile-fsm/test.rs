@@ -1782,3 +1782,248 @@ fn delegate_force_next() {
             }"#]],
     );
 }
+
+#[test]
+fn delegate_force_next_rewards_only() {
+    let mut ctx = Context {
+        starting_weights: Some(weights(20)),
+        ..Default::default()
+    }
+    .with_pending_deposit(1_000_000_000);
+
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    ctx = ctx
+        .with_rewards_balance_report(1, 1_000_000)
+        .with_current_height(2);
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                InflightDelegation((1000000)),
+                InflightRewardsReceivable((1000000)),
+                MsgIssuedCount((16)),
+                MsgSuccessCount((0)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Authz([
+                    SendRewardsReceivable((1000000)),
+                  ]),
+                  Delegate((0), 49999),
+                  Delegate((1), 50001),
+                  Delegate((2), 50000),
+                  Delegate((3), 50000),
+                  Delegate((4), 50000),
+                  Delegate((5), 50000),
+                  Delegate((6), 50000),
+                  Delegate((7), 50000),
+                  Delegate((8), 50000),
+                  Delegate((9), 50000),
+                  Delegate((10), 50000),
+                  Delegate((11), 50000),
+                  Delegate((12), 50000),
+                  Delegate((13), 50000),
+                  Delegate((14), 50000),
+                ],
+              )),
+              tx_skip_count: 6,
+            )"#]],
+    );
+
+    let response = fsm(&ctx, &ctx, &ctx).reconcile();
+
+    for cmd in response.cmds.clone() {
+        ctx.handle_cmd(cmd);
+    }
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                MsgIssuedCount((5)),
+                MsgSuccessCount((16)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Delegate((15), 50000),
+                  Delegate((16), 50000),
+                  Delegate((17), 50000),
+                  Delegate((18), 50000),
+                  Delegate((19), 50000),
+                ],
+              )),
+              tx_skip_count: 0,
+            )"#]],
+    );
+
+    failure!(ctx);
+
+    let response = force_next!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((1000750000)),
+                InflightDelegation((0)),
+                InflightDeposit((0)),
+                InflightRewardsReceivable((250000)),
+                InflightFeePayable((0)),
+                DelegateStartSlot((15)),
+                Weights(([
+                  (("0.05001250761928553584811391456407")),
+                  (("0.05001248963277541843617287034723")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.05001248863352485635773170122408")),
+                  (("0.04996252610542093429927554334249")),
+                  (("0.04996252610542093429927554334249")),
+                  (("0.04996252610542093429927554334249")),
+                  (("0.04996252610542093429927554334249")),
+                  (("0.04996252610542093429927554334249")),
+                ])),
+                MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
+                LastReconcileHeight((2)),
+                Phase(StartReconcile),
+                State(Idle),
+              ],
+              events: [
+                DelegationsIncreased(750000),
+              ],
+              tx_msgs: None,
+              tx_skip_count: 0,
+            )"#]],
+    );
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                InflightDelegation((250000)),
+                InflightRewardsReceivable((250000)),
+                MsgIssuedCount((6)),
+                MsgSuccessCount((0)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Authz([
+                    SendRewardsReceivable((250000)),
+                  ]),
+                  Delegate((15), 50004),
+                  Delegate((16), 49999),
+                  Delegate((17), 49999),
+                  Delegate((18), 49999),
+                  Delegate((19), 49999),
+                ],
+              )),
+              tx_skip_count: 6,
+            )"#]],
+    );
+
+    // resume delegation
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((1001000000)),
+                DelegateStartSlot((0)),
+                InflightDelegation((0)),
+                InflightDeposit((0)),
+                InflightFeePayable((0)),
+                InflightRewardsReceivable((0)),
+                MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
+                Weights(([
+                  (("0.05000001598401598401598401598401")),
+                  (("0.04999999800199800199800199800199")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.04999999700299700299700299700299")),
+                  (("0.050000000999000999000999000999")),
+                  (("0.04999999600399600399600399600399")),
+                  (("0.04999999600399600399600399600399")),
+                  (("0.04999999600399600399600399600399")),
+                  (("0.04999999600399600399600399600399")),
+                ])),
+                LastReconcileHeight((2)),
+                Phase(StartReconcile),
+                State(Idle),
+              ],
+              events: [
+                DelegationsIncreased(250000),
+              ],
+              tx_msgs: None,
+              tx_skip_count: 0,
+            )"#]],
+    );
+
+    check(
+        ctx.delegations,
+        expect![[r#"
+            {
+              0: 50050018,
+              1: 50050000,
+              2: 50049999,
+              3: 50049999,
+              4: 50049999,
+              5: 50049999,
+              6: 50049999,
+              7: 50049999,
+              8: 50049999,
+              9: 50049999,
+              10: 50049999,
+              11: 50049999,
+              12: 50049999,
+              13: 50049999,
+              14: 50049999,
+              15: 50050003,
+              16: 50049998,
+              17: 50049998,
+              18: 50049998,
+              19: 50049998,
+            }"#]],
+    );
+}

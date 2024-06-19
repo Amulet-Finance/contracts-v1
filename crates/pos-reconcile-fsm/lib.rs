@@ -1436,11 +1436,11 @@ fn delegate_force_next(Context { repo, .. }: Context) -> (Vec<Event>, Vec<Cmd>) 
 
     let InflightDelegation(inflight_delegation) = repo.inflight_delegation();
     let Delegated(prev_delegated) = repo.delegated();
-    let InflightRewardsReceivable(rewards) = repo.inflight_rewards_receivable();
+    let InflightRewardsReceivable(previous_rewards) = repo.inflight_rewards_receivable();
 
     let weights = repo.weights();
 
-    let delegate_msg_success_count = if start_slot_idx == 0 && rewards > 0 {
+    let delegate_msg_success_count = if start_slot_idx == 0 && previous_rewards > 0 {
         // The first message is not a delegate msgs, but an authz bank send
         msg_success_count - 1
     } else {
@@ -1470,23 +1470,23 @@ fn delegate_force_next(Context { repo, .. }: Context) -> (Vec<Event>, Vec<Cmd>) 
     let adjusted_weights =
         delegate_adjust_weights(&weights, prev_delegated, delegated, delegations.into_iter());
 
-    let InflightDeposit(inflight_deposit) = repo.inflight_deposit();
-
-    let deposits_delegated = successfully_delegated.abs_diff(rewards);
+    let InflightDeposit(mut inflight_deposit) = repo.inflight_deposit();
 
     // draw down rewards first
-    let rewards = rewards.saturating_sub(successfully_delegated);
+    let remaining_rewards = previous_rewards.saturating_sub(successfully_delegated);
 
-    let inflight_deposit = inflight_deposit
-        .checked_sub(deposits_delegated)
-        .expect("always: inflight deposit == (inflight delegation - rewards)");
+    if remaining_rewards == 0 {
+        inflight_deposit = inflight_deposit
+            .checked_sub(successfully_delegated.abs_diff(previous_rewards))
+            .expect("always: inflight deposit == (inflight delegation - inflight rewards)");
+    }
 
     let cmds = set![
         Delegated(delegated),
         // Clear inflight delegation so it is recalculated on the next pass
         InflightDelegation(0),
         InflightDeposit(inflight_deposit),
-        InflightRewardsReceivable(rewards),
+        InflightRewardsReceivable(remaining_rewards),
         // Discard any fee payment
         InflightFeePayable(0),
         DelegateStartSlot(delegate_start_slot),
