@@ -40,7 +40,7 @@ use pos_reconcile_fsm::{
     Response as FsmResponse, TxMsg,
 };
 
-use crate::{msg::StrategyExecuteMsg, state::StorageExt, types::Ica};
+use crate::{msg::StrategyExecuteMsg, state::StorageExt, strategy, types::Ica};
 
 pub enum Status {
     Success,
@@ -803,6 +803,10 @@ fn refund_msg(deps: Deps<NeutronQuery>, tx_count: usize) -> Result<SubMsg<Neutro
 
 fn handle_reconcile_event(storage: &mut dyn Storage, env: &CwEnv, event: Event) {
     match event {
+        Event::SlashDetected(slashed_ratio) => {
+            strategy::acknowledge_slashing(storage, slashed_ratio)
+        }
+
         Event::UndelegatedAssetsTransferred => {
             let icq_update_timestamp = storage
                 .last_main_ica_balance_icq_update()

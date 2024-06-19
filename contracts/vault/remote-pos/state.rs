@@ -55,6 +55,7 @@ mod key {
     pub const MSG_ISSUED_COUNT: &str                      = key!("msg_issued_count");
     pub const MSG_SUCCESS_COUNT: &str                     = key!("msg_success_count");
     pub const NEXT_DELEGATIONS_ICQ: &str                  = key!("next_delegations_icq");
+    pub const PENDING_BATCH_SLASHED_AMOUNT: &str          = key!("pending_batch_slashed_amount");
     pub const PENDING_DEPOSIT: &str                       = key!("pending_deposit");
     pub const PENDING_UNBOND: &str                        = key!("pending_unbond");
     pub const RECONCILE_PHASE: &str                       = key!("reconcile_phase");
@@ -388,6 +389,15 @@ pub trait StorageExt: Storage {
 
     fn set_next_delegations_icq(&mut self, icq: u64) {
         self.set_u64(key::NEXT_DELEGATIONS_ICQ, icq)
+    }
+
+    fn pending_batch_slashed_amount(&self) -> u128 {
+        self.u128_at(key::PENDING_BATCH_SLASHED_AMOUNT)
+            .unwrap_or_default()
+    }
+
+    fn set_pending_batch_slashed_amount(&mut self, amount: u128) {
+        self.set_u128(key::PENDING_BATCH_SLASHED_AMOUNT, amount)
     }
 
     fn pending_deposit(&self) -> PendingDeposit {

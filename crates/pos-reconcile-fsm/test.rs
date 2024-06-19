@@ -1032,33 +1032,35 @@ fn detect_slashing() {
     check(
         response,
         expect![[r#"
-        (
-          cmds: [
-            Delegated((1227160483)),
-            MsgIssuedCount((5)),
-            MsgSuccessCount((0)),
-            Weights(([
-              (("0.20120724421990697365048708140319")),
-              (("0.20120724340501763044467265492935")),
-              (("0.20120724340501763044467265492935")),
-              (("0.20120724340501763044467265492935")),
-              (("0.19517102556504013501549495380874")),
-            ])),
-            Phase(Delegate),
-            State(Pending),
-          ],
-          events: [],
-          tx_msgs: Some((
-            msgs: [
-              WithdrawRewards((0)),
-              WithdrawRewards((1)),
-              WithdrawRewards((2)),
-              WithdrawRewards((3)),
-              WithdrawRewards((4)),
-            ],
-          )),
-          tx_skip_count: 4,
-        )"#]],
+            (
+              cmds: [
+                Delegated((1227160483)),
+                MsgIssuedCount((5)),
+                MsgSuccessCount((0)),
+                Weights(([
+                  (("0.20120724421990697365048708140319")),
+                  (("0.20120724340501763044467265492935")),
+                  (("0.20120724340501763044467265492935")),
+                  (("0.20120724340501763044467265492935")),
+                  (("0.19517102556504013501549495380874")),
+                ])),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [
+                SlashDetected(("0.99399999947025999560845536359409")),
+              ],
+              tx_msgs: Some((
+                msgs: [
+                  WithdrawRewards((0)),
+                  WithdrawRewards((1)),
+                  WithdrawRewards((2)),
+                  WithdrawRewards((3)),
+                  WithdrawRewards((4)),
+                ],
+              )),
+              tx_skip_count: 4,
+            )"#]],
     );
 
     // finish round

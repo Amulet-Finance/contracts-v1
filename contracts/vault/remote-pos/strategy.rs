@@ -1,3 +1,4 @@
+use amulet_cw::vault::{unbonding_log, UnbondingLog};
 use amulet_ntrn::query::QuerierExt;
 use anyhow::{bail, ensure, Result};
 use bech32::{Bech32, Hrp};
@@ -8,7 +9,8 @@ use cosmwasm_std::{
 use amulet_core::{
     vault::{
         ClaimAmount, DepositAmount, DepositValue, Now as VaultNow, Strategy as CoreStrategy,
-        StrategyCmd, TotalDepositsValue, UnbondEpoch, UnbondReadyStatus,
+        StrategyCmd, TotalDepositsValue, UnbondEpoch, UnbondReadyStatus, UnbondingLog as _,
+        UnbondingLogSet,
     },
     Asset, Decimals, Identifier,
 };
@@ -35,6 +37,30 @@ impl<'a> Strategy<'a> {
             now: env.block.time,
         }
     }
+}
+
+fn unbond_ready(storage: &dyn Storage, now: Timestamp, unbond_amount: u128) -> UnbondReadyStatus {
+    let unbonding_period = storage.unbonding_period();
+
+    let estimated_block_time = storage.estimated_block_interval_seconds();
+
+    let fee_payment_cooldown_blocks = storage.fee_payment_cooldown_blocks();
+
+    let buffer_period = (fee_payment_cooldown_blocks * 3) * estimated_block_time;
+
+    let pending_batch_slashed_amount = storage.pending_batch_slashed_amount();
+
+    let amount = unbond_amount
+        .checked_sub(pending_batch_slashed_amount)
+        .map(ClaimAmount)
+        .expect("always: pending batch slashed amount <= pending batch amount");
+
+    let epoch = UnbondEpoch {
+        start: now.seconds(),
+        end: now.seconds() + unbonding_period + buffer_period,
+    };
+
+    UnbondReadyStatus::Ready { amount, epoch }
 }
 
 impl<'a> CoreStrategy for Strategy<'a> {
@@ -73,33 +99,13 @@ impl<'a> CoreStrategy for Strategy<'a> {
         DepositValue(amount)
     }
 
-    fn unbond(&self, DepositValue(value): DepositValue) -> UnbondReadyStatus {
+    fn unbond(&self, DepositValue(unbond_amount): DepositValue) -> UnbondReadyStatus {
         if self.storage.reconcile_state().is_pending() {
             return UnbondReadyStatus::Later(None);
         }
 
-        let unbond_ready = || {
-            let unbonding_period = self.storage.unbonding_period();
-
-            let estimated_block_time = self.storage.estimated_block_interval_seconds();
-
-            let fee_payment_cooldown_blocks = self.storage.fee_payment_cooldown_blocks();
-
-            let buffer_period = (fee_payment_cooldown_blocks * 3) * estimated_block_time;
-
-            let epoch = UnbondEpoch {
-                start: self.now.seconds(),
-                end: self.now.seconds() + unbonding_period + buffer_period,
-            };
-
-            UnbondReadyStatus::Ready {
-                amount: ClaimAmount(value),
-                epoch,
-            }
-        };
-
         let Some(last_unbond_timestamp) = self.storage.last_unbond_timestamp() else {
-            return unbond_ready();
+            return unbond_ready(self.storage, self.now, unbond_amount);
         };
 
         let minimun_unbond_interval = self.storage.minimum_unbond_interval();
@@ -110,7 +116,14 @@ impl<'a> CoreStrategy for Strategy<'a> {
             return UnbondReadyStatus::Later(Some(elapsed.abs_diff(minimun_unbond_interval)));
         }
 
-        unbond_ready()
+        let PendingUnbond(pending_unbond) = self.storage.pending_unbond();
+
+        // Only ready to submit the batch once the previous one has been unbonded.
+        if pending_unbond > 0 {
+            return UnbondReadyStatus::Later(None);
+        }
+
+        unbond_ready(self.storage, self.now, unbond_amount)
     }
 }
 
@@ -187,6 +200,8 @@ pub fn handle_cmd<C>(storage: &mut dyn Storage, cmd: StrategyCmd) -> Result<Opti
                 .expect("pending unbond will not overflow 128 bits");
 
             storage.set_pending_unbond(PendingUnbond(pending_unbond));
+            // clear pending batch slashed amount now there is a new pending batch
+            storage.set_pending_batch_slashed_amount(0);
         }
 
         StrategyCmd::SendClaimed { amount, recipient } => {
@@ -222,6 +237,68 @@ fn ica_ibc_hook_address(channel: &str, ica_address: &str) -> String {
     bech32::encode::<Bech32>(hrp, &address_bytes)
         .expect("infallible bech32 encoding")
         .to_string()
+}
+
+fn increase_pending_batch_slashed_amount(storage: &mut dyn Storage, slashed_ratio: FixedU256) {
+    let unbonding_log = UnbondingLog::new(storage);
+
+    let pending_batch_slashed_amount = storage.pending_batch_slashed_amount();
+
+    let pending_batch_id = unbonding_log
+        .last_committed_batch_id()
+        .map_or(0, |id| id + 1);
+
+    let DepositValue(pending_batch_unbond_value) = unbonding_log
+        .batch_unbond_value(pending_batch_id)
+        .unwrap_or_default();
+
+    if pending_batch_unbond_value == 0 {
+        return;
+    }
+
+    let increase = pending_batch_unbond_value
+        .checked_sub(pending_batch_slashed_amount)
+        .map(FixedU256::from_u128)
+        .expect("always: pending batch slashed amount <= pending batch amount")
+        .checked_mul(slashed_ratio)
+        .expect("always: slashed ratio <= 1.0")
+        .floor();
+
+    let pending_batch_slashed_amount = pending_batch_slashed_amount
+        .checked_add(increase)
+        .expect("always: pending batch slashed amount <= pending batch value <= u128::MAX");
+
+    storage.set_pending_batch_slashed_amount(pending_batch_slashed_amount);
+}
+
+fn slash_last_committed_batch(storage: &mut dyn Storage, slashed_ratio: FixedU256) {
+    let unbonding_log = UnbondingLog::new(storage);
+
+    let Some(last_committed_batch_id) = unbonding_log.last_committed_batch_id() else {
+        return;
+    };
+
+    let ClaimAmount(claimable_amount) = unbonding_log
+        .batch_claimable_amount(last_committed_batch_id)
+        .expect("always: committed batches have claimable amounts set");
+
+    let slashed_amount = FixedU256::from_u128(claimable_amount)
+        .checked_mul(slashed_ratio)
+        .expect("always: slashed ratio <= 1.0")
+        .floor();
+
+    unbonding_log::handle_cmd(
+        storage,
+        UnbondingLogSet::BatchClaimableAmount {
+            batch: last_committed_batch_id,
+            amount: ClaimAmount(slashed_amount),
+        },
+    );
+}
+
+pub fn acknowledge_slashing(storage: &mut dyn Storage, slashed_ratio: FixedU256) {
+    increase_pending_batch_slashed_amount(storage, slashed_ratio);
+    slash_last_committed_batch(storage, slashed_ratio);
 }
 
 pub fn acknowledge_expected_unbondings(storage: &mut dyn Storage) -> u128 {

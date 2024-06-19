@@ -206,6 +206,7 @@ impl_cmd_from![
 #[cfg_attr(test, derive(serde::Serialize))]
 /// Events that occur during the state machine execution
 pub enum Event {
+    SlashDetected(FixedU256),
     UndelegatedAssetsTransferred,
     DepositsTransferred(u128),
     UnbondStarted(u128),
@@ -564,6 +565,8 @@ struct Slashing {
     pending_unbond: u128,
     /// The post-slashing inflight unbond amount
     inflight_unbond: u128,
+    /// The ratio of post-slashed-delegations / pre-slashed-delegations
+    slashed_ratio: FixedU256,
 }
 
 // determine whether a slashing has occured
@@ -620,6 +623,7 @@ fn check_for_slashing(
         delegated: delegations.total_delegated,
         pending_unbond,
         inflight_unbond,
+        slashed_ratio,
     })
 }
 
@@ -652,7 +656,7 @@ fn start_reconcile(Context { repo, env, .. }: Context) -> Transition {
         cmds.push(InflightUnbond(slashing.inflight_unbond).into());
     }
 
-    Transition::next(cmds)
+    Transition::next(cmds).event(Event::SlashDetected(slashing.slashed_ratio))
 }
 
 fn start_redelegate(Context { repo, env, .. }: Context) -> Transition {
