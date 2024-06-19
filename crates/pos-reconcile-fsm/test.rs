@@ -1075,6 +1075,109 @@ fn detect_slashing() {
 }
 
 #[test]
+fn undelegate_post_slashing() {
+    let mut ctx = Context::default();
+
+    ctx = ctx.with_pending_deposit(1_000_000_000);
+
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    let last_slot_delegation = ctx.delegations.values_mut().last().unwrap();
+
+    *last_slot_delegation = (*last_slot_delegation * 97) / 100;
+
+    let slashed_delegations = ctx.delegations.values().copied().collect();
+
+    let total_delegated = ctx.delegations.values().sum();
+
+    let report_height = ctx.last_reconcile_height.as_ref().unwrap().0 + 1;
+
+    ctx = ctx
+        .with_pending_unbond(500_000_000)
+        .with_delegations_report(report_height, total_delegated, slashed_delegations)
+        .with_current_height(report_height + 1);
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((994000000)),
+                InflightUnbond((496999999)),
+                MsgIssuedCount((5)),
+                MsgSuccessCount((0)),
+                PendingUnbond((496999999)),
+                Weights(([
+                  (("0.20120724748490945674044265593561")),
+                  (("0.20120724245472837022132796780684")),
+                  (("0.20120724245472837022132796780684")),
+                  (("0.20120724245472837022132796780684")),
+                  (("0.19517102515090543259557344064386")),
+                ])),
+                Phase(Undelegate),
+                State(Pending),
+              ],
+              events: [
+                SlashDetected(("0.99399999999999999999999999999999")),
+              ],
+              tx_msgs: Some((
+                msgs: [
+                  Undelegate((0), 100000001),
+                  Undelegate((1), 99999999),
+                  Undelegate((2), 99999999),
+                  Undelegate((3), 99999999),
+                  Undelegate((4), 96999999),
+                ],
+              )),
+              tx_skip_count: 1,
+            )"#]],
+    );
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((497000001)),
+                InflightUnbond((0)),
+                MsgIssuedCount((5)),
+                MsgSuccessCount((0)),
+                PendingUnbond((0)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [
+                UnbondStarted(496999999),
+              ],
+              tx_msgs: Some((
+                msgs: [
+                  WithdrawRewards((0)),
+                  WithdrawRewards((1)),
+                  WithdrawRewards((2)),
+                  WithdrawRewards((3)),
+                  WithdrawRewards((4)),
+                ],
+              )),
+              tx_skip_count: 2,
+            )"#]],
+    );
+
+    // finish round
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    ctx = ctx.with_pending_unbond(497_000_001);
+
+    // next round
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    assert_eq!(ctx.delegated, Some(Delegated(0)));
+}
+
+#[test]
 fn undelegate_force_next() {
     let mut ctx = Context {
         starting_weights: Some(weights(20)),
