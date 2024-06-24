@@ -35,9 +35,11 @@
         pkgs.go
         # nice to have
         pkgs.nodePackages_latest.typescript-language-server
+        pkgs.nodePackages_latest.prettier
         pkgs.rust-analyzer-unwrapped
         pkgs.gopls
         pkgs.tokei
+        pkgs.lazydocker
       ];
 
       RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";    
