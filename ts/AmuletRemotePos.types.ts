@@ -176,6 +176,7 @@ export interface Metadata {
   minimum_unbond_interval: number;
   msg_issued_count: number;
   msg_success_count: number;
+  next_delegations_icq?: number | null;
   pending_deposit: Uint128;
   pending_unbond: Uint128;
   rewards_ica_address?: string | null;
@@ -216,6 +217,8 @@ export interface UnderlyingAssetDecimalsResponse {
   decimals: number;
 }
 export interface ValidatorSet {
+  pending_redelegate_to?: string | null;
+  pending_redelegation_slot?: number | null;
   size: number;
   validators: string[];
   weights: string[];

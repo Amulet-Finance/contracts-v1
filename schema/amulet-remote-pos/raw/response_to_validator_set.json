@@ -8,6 +8,20 @@
     "weights"
   ],
   "properties": {
+    "pending_redelegate_to": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pending_redelegation_slot": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint",
+      "minimum": 0.0
+    },
     "size": {
       "type": "integer",
       "format": "uint",

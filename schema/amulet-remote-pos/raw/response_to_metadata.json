@@ -119,6 +119,14 @@
       "format": "uint",
       "minimum": 0.0
     },
+    "next_delegations_icq": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0.0
+    },
     "pending_deposit": {
       "$ref": "#/definitions/Uint128"
     },
