@@ -907,6 +907,11 @@ pub fn reconcile_cost(deps: Deps<NeutronQuery>, phase: Phase, state: State) -> R
     Ok(coin(cost, IBC_FEE_DENOM))
 }
 
+pub fn current_deposits(storage: &dyn Storage) -> u128 {
+    let storage_wrapper = StorageWrapper { storage };
+    pos_reconcile_fsm::current_deposits(&storage_wrapper)
+}
+
 fn trigger(
     deps: DepsMut<NeutronQuery>,
     env: CwEnv,

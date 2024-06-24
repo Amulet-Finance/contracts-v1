@@ -17,10 +17,11 @@ use amulet_core::{
 use cw_utils::must_pay;
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 use num::FixedU256;
-use pos_reconcile_fsm::types::{Delegated, InflightDelegation, PendingDeposit, PendingUnbond};
+use pos_reconcile_fsm::types::{PendingDeposit, PendingUnbond};
 
 use crate::{
     icq,
+    reconcile::current_deposits,
     state::StorageExt,
     types::{AvailableToClaim, Ica, Icq, TotalActualUnbonded, TotalExpectedUnbonded},
 };
@@ -77,20 +78,7 @@ impl<'a> CoreStrategy for Strategy<'a> {
     }
 
     fn total_deposits_value(&self) -> TotalDepositsValue {
-        // Delegated + Inflight Delegation + Pending Deposits - Pending Unbond
-        let Delegated(delegated) = self.storage.delegated();
-        let InflightDelegation(inflight_delegation) = self.storage.inflight_delegation();
-        let PendingDeposit(pending_deposit) = self.storage.pending_deposit();
-        let PendingUnbond(pending_unbond) = self.storage.pending_unbond();
-
-        let total_deposits_value = delegated
-            .checked_add(inflight_delegation)
-            .expect("adding inflight delegation value will not overflow 128 bits")
-            .checked_add(pending_deposit)
-            .expect("adding pending deposit value will not overflow 128 bits")
-            .checked_sub(pending_unbond)
-            .expect("always: pending unbond <= total deposits");
-
+        let total_deposits_value = current_deposits(self.storage);
         TotalDepositsValue(total_deposits_value)
     }
 

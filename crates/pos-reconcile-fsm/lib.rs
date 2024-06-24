@@ -299,6 +299,31 @@ pub fn fsm<'a>(config: &'a dyn Config, repo: &'a dyn Repository, env: &'a dyn En
     }
 }
 
+/// The current deposits being tracked by the state machine excluding any deposits pending unbonding.
+/// This includes successfully redelegated rewards, delegated deposits and pending deposits but not rewards pending redelegation.
+pub fn current_deposits(repo: &dyn Repository) -> u128 {
+    // Delegated + Pending Deposits + Inflight Deposits* - Pending Unbond
+    // * if the reconcile state is not TransferPendingDeposits:Pending
+    let Delegated(delegated) = repo.delegated();
+    let PendingDeposit(pending_deposit) = repo.pending_deposit();
+    let PendingUnbond(pending_unbond) = repo.pending_unbond();
+
+    let inflight_deposit =
+        if repo.phase().is_transfer_pending_deposits() && repo.state().is_pending() {
+            0
+        } else {
+            repo.inflight_deposit().0
+        };
+
+    delegated
+        .checked_add(pending_deposit)
+        .expect("adding pending deposit value will not overflow 128 bits")
+        .checked_add(inflight_deposit)
+        .expect("adding inflight deposit value will not overflow 128 bits")
+        .checked_sub(pending_unbond)
+        .expect("always: pending unbond <= total deposits")
+}
+
 enum TransitionKind {
     Abort,
     Next,
