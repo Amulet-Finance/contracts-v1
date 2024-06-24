@@ -3,11 +3,11 @@ import { TestSuite } from "./suite";
 import {
     GAIA_GAS_PRICE,
     NEUTRON_GAS_PRICE,
+    WALLET_KEYS,
     WALLET_MNEMONIC_WORD_COUNT,
 } from "./suite/constants";
 import { isContainerPaused } from "./utils";
-import { StargateClient, StakingExtension, QueryClient, setupStakingExtension } from "@cosmjs/stargate";
-import { Client } from "@neutron-org/client-ts";
+import { StargateClient, QueryClient, setupStakingExtension } from "@cosmjs/stargate";
 import { Tendermint37Client } from "@cosmjs/tendermint-rpc";
 
 let suite: ITestSuite;
@@ -68,9 +68,13 @@ describe("TestSuite sanity check", () => {
         expect(price).toBe(priceStr);
     });
 
-    it("should get the master mnemonic", () => {
-        const mnemonic = suite.getMasterMnemonic();
-        expect(mnemonic.split(" ").length).toBe(WALLET_MNEMONIC_WORD_COUNT);
+    it("should get the wallet mnemonics", () => {
+        const mnemonics = suite.getWalletMnemonics();
+        expect(Object.keys(mnemonics).length).toBe(WALLET_KEYS.length - 3)
+
+        for (const [_, mnemonic] of Object.entries(mnemonics)) {
+            expect(mnemonic.split(" ").length).toBe(WALLET_MNEMONIC_WORD_COUNT);
+        }
     });
 
     it("should pause the ICQ relayer", async () => {

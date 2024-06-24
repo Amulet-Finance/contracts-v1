@@ -48,7 +48,7 @@ declare global {
         getRemoteRpc(network: RemoteNetworkKeys = "gaia"): string;
         getRemoteGasPrices(network: RemoteNetworkKeys = "gaia"): string;
 
-        getMasterMnemonic(): string;
+        getWalletMnemonics(): Record<string, string>;
 
         slashValidator(): Promise<string>;
         pauseIcqRelaying(): Promise<void>;

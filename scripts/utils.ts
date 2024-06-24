@@ -2,6 +2,10 @@ import * as path from "node:path";
 import { exec } from "child_process";
 import { BunFile } from "bun";
 
+export function artifact(name: string): string {
+  return `${__dirname}/../artifacts/${name}.wasm`
+}
+
 export async function readContractFileBytes(
     filePath: string
 ): Promise<Uint8Array> {
