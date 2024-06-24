@@ -1043,6 +1043,16 @@ fn start_transfer_undelegated(Context { repo, env, .. }: Context) -> Transition 
         return Transition::next(vec![]);
     };
 
+    let InflightDeposit(inflight_deposit) = repo.inflight_deposit();
+
+    let amount = amount.checked_sub(inflight_deposit).expect(
+        "always: remote balance >= inflight deposit when report height > last reconcile height",
+    );
+
+    if amount == 0 {
+        return Transition::next(vec![]);
+    };
+
     let tx_msgs = TxMsgs::single(TxMsg::TransferInUndelegated(amount));
 
     Transition::tx(tx_msgs, vec![])
