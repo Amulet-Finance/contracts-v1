@@ -395,6 +395,7 @@ pub fn handle_strategy_query(deps: Deps<NeutronQuery>, query: StrategyQueryMsg) 
             minimum_unbond_interval: deps.storage.minimum_unbond_interval(),
             msg_issued_count: deps.storage.msg_issued_count().0,
             msg_success_count: deps.storage.msg_success_count().0,
+            next_delegations_icq: deps.storage.next_delegations_icq(),
             pending_deposit: deps.storage.pending_deposit().0.into(),
             pending_unbond: deps.storage.pending_unbond().0.into(),
             rewards_ica_address: deps.storage.rewards_ica_address(),
@@ -429,6 +430,8 @@ pub fn handle_strategy_query(deps: Deps<NeutronQuery>, query: StrategyQueryMsg) 
                 .iter()
                 .map(ToString::to_string)
                 .collect(),
+            pending_redelegation_slot: deps.storage.redelegate_slot(),
+            pending_redelegate_to: deps.storage.redelegate_to(),
         })?,
     };
 

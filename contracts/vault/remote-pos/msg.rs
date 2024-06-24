@@ -54,6 +54,7 @@ pub struct Metadata {
     pub minimum_unbond_interval: u64,
     pub msg_issued_count: usize,
     pub msg_success_count: usize,
+    pub next_delegations_icq: Option<u64>,
     pub pending_deposit: Uint128,
     pub pending_unbond: Uint128,
     pub rewards_ica_address: Option<String>,
@@ -78,6 +79,8 @@ pub struct ValidatorSet {
     pub size: usize,
     pub validators: Vec<String>,
     pub weights: Vec<String>,
+    pub pending_redelegation_slot: Option<usize>,
+    pub pending_redelegate_to: Option<String>,
 }
 
 #[cw_serde]
