@@ -86,7 +86,7 @@ pub fn handle_register_next_set_delegations_icq(
 ) -> Result<Response<NeutronMsg>> {
     let delegations_icq_id = parse_icq_registration_reply(reply);
 
-    deps.storage.set_delegations_icq(delegations_icq_id);
+    deps.storage.set_next_delegations_icq(delegations_icq_id);
 
     Ok(Response::default())
 }

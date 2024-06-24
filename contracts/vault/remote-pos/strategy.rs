@@ -415,6 +415,9 @@ pub fn handle_redelegate_slot(
         bail!("invalid slot index");
     };
 
+    deps.storage.set_redelegate_slot(slot);
+    deps.storage.set_redelegate_to(&validator);
+
     *slot_validator = validator;
 
     let msg = icq::main_ica_next_delegations_registration_msg(deps.storage, validators);

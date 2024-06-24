@@ -36,7 +36,7 @@ pub fn ica_balance_registration_msg(storage: &dyn Storage, ica: Ica) -> SubMsg<N
     )
     .expect("infallible message construction");
 
-    SubMsg::reply_always(
+    SubMsg::reply_on_success(
         balance_icq_register_msg,
         ReplyState {
             kind: ReplyKind::RegisterBalanceIcq,
@@ -67,7 +67,7 @@ fn delegations_registration_msg(
     )
     .expect("infallible message construction");
 
-    SubMsg::reply_always(
+    SubMsg::reply_on_success(
         msg,
         ReplyState {
             kind,
