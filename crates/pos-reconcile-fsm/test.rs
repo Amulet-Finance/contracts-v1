@@ -40,7 +40,8 @@ struct Context {
     pending_deposit: Option<PendingDeposit>,
     pending_unbond: Option<PendingUnbond>,
     phase: Option<Phase>,
-    redelegation_request: Option<RedelegationSlot>,
+    redelegation_slot: Option<RedelegationSlot>,
+    redelegate_to_validator: Option<Validator>,
     delegations_report: Option<DelegationsReport>,
     rewards_balance_report: Option<RemoteBalanceReport>,
     state: Option<State>,
@@ -101,7 +102,7 @@ macro_rules! failure {
 impl Context {
     fn handle_cmd(&mut self, cmd: Cmd) {
         match cmd {
-            Cmd::ClearRedelegationRequest => self.redelegation_request = None,
+            Cmd::ClearRedelegationRequest => self.redelegation_slot = None,
             Cmd::DelegateStartSlot(v) => self.delegate_start_slot = Some(v),
             Cmd::Delegated(v) => self.delegated = Some(v),
             Cmd::InflightDelegation(v) => self.inflight_delegation = Some(v),
@@ -275,7 +276,11 @@ impl Repository for Context {
     }
 
     fn redelegation_slot(&self) -> Option<RedelegationSlot> {
-        self.redelegation_request.clone()
+        self.redelegation_slot.clone()
+    }
+
+    fn redelegate_to_validator(&self) -> Option<Validator> {
+        self.redelegate_to_validator.clone()
     }
 
     fn undelegate_start_slot(&self) -> UndelegateStartSlot {

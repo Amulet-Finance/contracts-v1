@@ -9,7 +9,7 @@ use types::{
     InflightFeePayable, InflightRewardsReceivable, InflightUnbond, LastReconcileHeight, MaxFeeBps,
     MaxMsgCount, MsgIssuedCount, MsgSuccessCount, Now, PendingDeposit, PendingUnbond, Phase,
     ReconcilerFee, RedelegationSlot, RemoteBalance, RemoteBalanceReport, RewardsReceivable, State,
-    UnbondingTimeSecs, UndelegateStartSlot, UndelegatedBalanceReport, ValidatorSetSize,
+    UnbondingTimeSecs, UndelegateStartSlot, UndelegatedBalanceReport, Validator, ValidatorSetSize,
     ValidatorSetSlot, Weight, Weights,
 };
 
@@ -62,6 +62,8 @@ pub trait Repository {
 
     fn redelegation_slot(&self) -> Option<RedelegationSlot>;
 
+    fn redelegate_to_validator(&self) -> Option<Validator>;
+
     fn undelegate_start_slot(&self) -> UndelegateStartSlot;
 
     fn weights(&self) -> Weights;
@@ -112,7 +114,11 @@ pub enum TxMsg {
     TransferInUndelegated(u128),
     TransferOutPendingDeposit(u128),
     WithdrawRewards(ValidatorSetSlot),
-    Redelegate(ValidatorSetSlot, u128),
+    Redelegate {
+        slot: ValidatorSetSlot,
+        to: Validator,
+        amount: u128,
+    },
     Undelegate(ValidatorSetSlot, u128),
     Delegate(ValidatorSetSlot, u128),
     Authz(Vec<AuthzMsg>),
@@ -202,7 +208,7 @@ impl_cmd_from![
     Weights
 ];
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[cfg_attr(test, derive(serde::Serialize))]
 /// Events that occur during the state machine execution
 pub enum Event {
@@ -211,7 +217,10 @@ pub enum Event {
     DepositsTransferred(u128),
     UnbondStarted(u128),
     DelegationsIncreased(u128),
-    RedelegationSuccessful,
+    RedelegationSuccessful {
+        slot: ValidatorSetSlot,
+        validator: Validator,
+    },
 }
 
 #[cfg_attr(test, derive(serde::Serialize))]
@@ -529,6 +538,14 @@ impl<'a> Repository for IntermediateRepo<'a> {
         self.repo.redelegation_slot()
     }
 
+    fn redelegate_to_validator(&self) -> Option<Validator> {
+        if self.cache.clear_redelegation {
+            return None;
+        }
+
+        self.repo.redelegate_to_validator()
+    }
+
     fn undelegate_start_slot(&self) -> UndelegateStartSlot {
         self.cache
             .undelegate_start_slot
@@ -702,18 +719,35 @@ fn start_redelegate(Context { repo, env, .. }: Context) -> Transition {
         return Transition::next(vec![]);
     }
 
+    let to = repo
+        .redelegate_to_validator()
+        .expect("always: redelegation validator set when redelegation slot set");
+
     let delegated_amount = delegations
         .delegated_amounts_per_slot
         .get(slot)
         .expect("valid slot index");
 
-    let tx_msgs = TxMsgs::single(TxMsg::Redelegate(ValidatorSetSlot(slot), *delegated_amount));
+    let tx_msgs = TxMsgs::single(TxMsg::Redelegate {
+        slot: ValidatorSetSlot(slot),
+        to,
+        amount: *delegated_amount,
+    });
 
     Transition::tx(tx_msgs, vec![])
 }
 
-fn on_redelegate_success(_: Context) -> Transition {
-    Transition::next(set![Cmd::ClearRedelegationRequest]).event(Event::RedelegationSuccessful)
+fn on_redelegate_success(Context { repo, .. }: Context) -> Transition {
+    let RedelegationSlot(slot) = repo
+        .redelegation_slot()
+        .expect("always: redelegation slot set for a redelegation to be successful");
+
+    let validator = repo
+        .redelegate_to_validator()
+        .expect("always: redelegation validator set for a redelegation to be successful");
+
+    Transition::next(set![Cmd::ClearRedelegationRequest])
+        .event(Event::RedelegationSuccessful { slot, validator })
 }
 
 // Do not retry on failure, clear request and move on

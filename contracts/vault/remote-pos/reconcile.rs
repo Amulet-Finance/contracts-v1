@@ -34,7 +34,7 @@ use pos_reconcile_fsm::{
         MsgIssuedCount, MsgSuccessCount, Now as ReconcilePosNow, PendingDeposit, PendingUnbond,
         Phase, ReconcilerFee, RedelegationSlot, RemoteBalance, RemoteBalanceReport,
         RewardsReceivable, State, UnbondingTimeSecs, UndelegateStartSlot, UndelegatedBalanceReport,
-        ValidatorSetSize, ValidatorSetSlot, Weights,
+        Validator, ValidatorSetSize, ValidatorSetSlot, Weights,
     },
     AuthzMsg, Cmd as ReconcileCmd, Config, Env as FsmEnv, Event, Fsm, Repository,
     Response as FsmResponse, TxMsg,
@@ -154,6 +154,10 @@ impl<'a> Repository for StorageWrapper<'a> {
             .redelegate_slot()
             .map(ValidatorSetSlot)
             .map(RedelegationSlot)
+    }
+
+    fn redelegate_to_validator(&self) -> Option<Validator> {
+        self.storage.redelegate_to()
     }
 
     fn undelegate_start_slot(&self) -> UndelegateStartSlot {
@@ -547,6 +551,7 @@ fn withdraw_rewards(
 fn redelegate(
     storage: &dyn Storage,
     ValidatorSetSlot(slot): ValidatorSetSlot,
+    validator_dst_address: Validator,
     amount: u128,
 ) -> ProtobufAny {
     use cosmos_sdk_proto::cosmos::base::v1beta1::Coin;
@@ -556,10 +561,6 @@ fn redelegate(
         .expect("must have a main ica address address for request to be issued");
 
     let validator_src_address = storage.validator(slot);
-
-    let validator_dst_address = storage
-        .redelegate_to()
-        .expect("must have an 'redelegate to' address for request to be issued");
 
     let remote_denom = storage.remote_denom();
 
@@ -757,8 +758,8 @@ fn handle_reconcile_tx_msg(
             response.push_main_ica_msg(msg);
         }
 
-        TxMsg::Redelegate(slot, amount) => {
-            let msg = redelegate(storage, slot, amount);
+        TxMsg::Redelegate { slot, to, amount } => {
+            let msg = redelegate(storage, slot, to, amount);
 
             response.push_main_ica_msg(msg);
         }
@@ -828,12 +829,17 @@ fn handle_reconcile_event(storage: &mut dyn Storage, env: &CwEnv, event: Event) 
         }
 
         // swap in delegations icq for the new set
-        Event::RedelegationSuccessful => {
+        Event::RedelegationSuccessful {
+            slot: ValidatorSetSlot(slot),
+            validator,
+        } => {
             let next_delegations_icq = storage
                 .next_delegations_icq()
                 .expect("always: set during redelegations");
 
             storage.set_delegations_icq(next_delegations_icq);
+
+            storage.set_validator(slot, &validator);
         }
 
         _ => {}
