@@ -279,7 +279,11 @@ pub fn handle_cmd<Msg>(
             }
 
             ConfigCmd::Whitelist { minter, enabled } => {
-                storage.set_bool(key::WHITELIST.with(minter), enabled);
+                if enabled {
+                    storage.set_bool(key::WHITELIST.with(minter), enabled);
+                } else {
+                    storage.remove(key::WHITELIST.with(minter).as_bytes())
+                }
 
                 vec![]
             }
