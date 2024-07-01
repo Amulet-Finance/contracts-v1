@@ -78,6 +78,7 @@ pub struct PendingUnbondingResponse {
 }
 
 #[cw_serde]
+#[derive(Default)]
 pub struct ActiveUnbondingsResponse {
     /// The active unbondings
     pub unbondings: Vec<UnbondingStatus>,
@@ -131,9 +132,13 @@ pub enum QueryMsg {
     #[returns(PendingUnbondingResponse)]
     PendingUnbonding { address: Option<String> },
 
-    /// Returns all the unbondings for the given address if present, otherwise the whole contract
+    /// Returns all the unbondings for the given address if present, otherwise the whole contract.
+    /// The unbondings are in descending order according to the epoch start and will only contain up to `limit` entries, if provided
     #[returns(ActiveUnbondingsResponse)]
-    ActiveUnbondings { address: Option<String> },
+    ActiveUnbondings {
+        address: Option<String>,
+        limit: Option<u32>,
+    },
 
     /// Returns all the unbonding log metadata for the given address
     #[returns(UnbondingLogMetadata)]
@@ -284,15 +289,14 @@ pub fn account_active_unbondings(
     unbonding_log: &dyn CoreUnbondingLog,
     env: &Env,
     account: &str,
+    limit: Option<u32>,
 ) -> ActiveUnbondingsResponse {
-    let mut unbondings = vec![];
-
     let Some(last_entered_batch) = unbonding_log.last_entered_batch(account) else {
-        return ActiveUnbondingsResponse { unbondings };
+        return ActiveUnbondingsResponse::default();
     };
 
     let Some(last_committed_batch) = unbonding_log.last_committed_batch_id() else {
-        return ActiveUnbondingsResponse { unbondings };
+        return ActiveUnbondingsResponse::default();
     };
 
     // determine the first batch to look at, i.e. latest committed batch entered by the account
@@ -305,13 +309,15 @@ pub fn account_active_unbondings(
             storage.previously_entered_batch(account, last_entered_batch)
         else {
             // no previously entered batches, nothing left to do
-            return ActiveUnbondingsResponse { unbondings };
+            return ActiveUnbondingsResponse::default();
         };
 
         previously_entered_batch
     };
 
     let now = env.block.time.seconds();
+
+    let mut unbondings = vec![];
 
     loop {
         let UnbondEpoch { start, end } = unbonding_log
@@ -330,6 +336,12 @@ pub fn account_active_unbondings(
 
         unbondings.push(UnbondingStatus { amount, start, end });
 
+        if let Some(limit) = limit {
+            if unbondings.len() == limit as usize {
+                break;
+            }
+        }
+
         let Some(previously_entered_batch) =
             storage.previously_entered_batch(account, last_entered_batch)
         else {
@@ -345,14 +357,15 @@ pub fn account_active_unbondings(
 pub fn all_active_unbondings(
     unbonding_log: &dyn CoreUnbondingLog,
     env: &Env,
+    limit: Option<u32>,
 ) -> ActiveUnbondingsResponse {
-    let mut unbondings = vec![];
-
     let Some(last_committed_batch) = unbonding_log.last_committed_batch_id() else {
-        return ActiveUnbondingsResponse { unbondings };
+        return ActiveUnbondingsResponse::default();
     };
 
     let now = env.block.time.seconds();
+
+    let mut unbondings = vec![];
 
     for batch_id in (0..=last_committed_batch).rev() {
         let UnbondEpoch { start, end } = unbonding_log
@@ -369,7 +382,13 @@ pub fn all_active_unbondings(
             .0
             .into();
 
-        unbondings.push(UnbondingStatus { amount, start, end })
+        unbondings.push(UnbondingStatus { amount, start, end });
+
+        if let Some(limit) = limit {
+            if unbondings.len() == limit as usize {
+                break;
+            }
+        }
     }
 
     ActiveUnbondingsResponse { unbondings }
@@ -401,11 +420,11 @@ pub fn handle_query_msg(
             to_json_binary(&pending_unbonding)
         }
 
-        QueryMsg::ActiveUnbondings { address } => {
+        QueryMsg::ActiveUnbondings { address, limit } => {
             let active_unbondings = if let Some(address) = address {
-                account_active_unbondings(storage, unbonding_log, env, &address)
+                account_active_unbondings(storage, unbonding_log, env, &address, limit)
             } else {
-                all_active_unbondings(unbonding_log, env)
+                all_active_unbondings(unbonding_log, env, limit)
             };
 
             to_json_binary(&active_unbondings)

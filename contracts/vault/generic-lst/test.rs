@@ -360,6 +360,7 @@ fn redeem() {
             mock_env(),
             VaultQueryMsg::ActiveUnbondings {
                 address: Some("bob".into()),
+                limit: None,
             }
             .into(),
         )
