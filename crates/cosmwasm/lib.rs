@@ -8,6 +8,7 @@ pub mod strategy;
 pub mod vault;
 
 pub use storage::{MapKey, StorageExt};
+pub mod query;
 
 #[cw_serde]
 pub struct MigrateMsg {}

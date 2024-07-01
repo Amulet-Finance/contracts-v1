@@ -15,6 +15,7 @@ use cw_utils::{one_coin, PaymentError};
 
 use crate::{
     admin::{get_admin_role, Error as AdminError},
+    query::page_bounds,
     StorageExt,
 };
 
@@ -83,17 +84,26 @@ pub struct Metadata {
 #[cw_serde]
 pub struct AllAssetsResponse {
     pub assets: Vec<Metadata>,
+    pub total_count: u32,
 }
 
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
+    /// Query whether the `minter` address is whitelisted to mint assets
     #[returns(WhitelistedResponse)]
     Whitelisted { minter: String },
+    /// Query the metadata for the synthetic with the given `denom`
     #[returns(Metadata)]
     Synthetic { denom: String },
+    /// All the synthetic assets issued by the mint with optional pagination.
+    /// If a `page` is provided but no `limit`, `amulet_cw::query::DEFAULT_PAGE_LIMIT` will be used.
+    /// If neither `page` or `limit` is provided, all the assets are returned.
     #[returns(AllAssetsResponse)]
-    AllAssets {},
+    AllAssets {
+        page: Option<u32>,
+        limit: Option<u32>,
+    },
 }
 
 pub fn handle_execute_msg(
@@ -174,12 +184,15 @@ pub fn handle_query_msg(storage: &dyn Storage, msg: QueryMsg) -> Result<Binary, 
             })
         }
 
-        QueryMsg::AllAssets {} => {
-            let count = storage.u32_at(key::COUNT).unwrap_or_default();
+        QueryMsg::AllAssets { page, limit } => {
+            let total_count = storage.u32_at(key::COUNT).unwrap_or_default();
+
+            let (start, end) = page_bounds(total_count, page, limit)
+                .ok_or_else(|| StdError::generic_err("pagination start out of bounds"))?;
 
             let mut assets = vec![];
 
-            for idx in 0..count {
+            for idx in start..end {
                 let denom = storage
                     .string_at(key::SYNTHETIC.with(idx))
                     .expect("always: set during denom creation");
@@ -199,7 +212,10 @@ pub fn handle_query_msg(storage: &dyn Storage, msg: QueryMsg) -> Result<Binary, 
                 });
             }
 
-            to_json_binary(&AllAssetsResponse { assets })
+            to_json_binary(&AllAssetsResponse {
+                assets,
+                total_count,
+            })
         }
     }
 }

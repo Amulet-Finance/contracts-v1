@@ -109,10 +109,18 @@ fn create_synthetic() {
     );
 
     check(
-        query(deps.as_ref(), mock_env(), MintQueryMsg::AllAssets {}.into())
-            .map(from_json::<AllAssetsResponse>)
-            .unwrap()
-            .unwrap(),
+        query(
+            deps.as_ref(),
+            mock_env(),
+            MintQueryMsg::AllAssets {
+                page: None,
+                limit: None,
+            }
+            .into(),
+        )
+        .map(from_json::<AllAssetsResponse>)
+        .unwrap()
+        .unwrap(),
         expect![[r#"
             (
               assets: [
@@ -122,6 +130,7 @@ fn create_synthetic() {
                   decimals: 6,
                 ),
               ],
+              total_count: 1,
             )"#]],
     );
 
