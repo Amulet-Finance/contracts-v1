@@ -250,7 +250,9 @@ pub fn execute_strategy_msg(
             reconcile(deps, env, Source::Trigger(info, fee_recipient))
         }
 
-        StrategyExecuteMsg::ReceiveUndelegated {} => strategy::handle_receive_unbonded(deps, info),
+        StrategyExecuteMsg::ReceiveUndelegated {
+            balance_icq_timestamp,
+        } => strategy::handle_receive_unbonded(deps, info, balance_icq_timestamp),
 
         StrategyExecuteMsg::RedelegateSlot { slot, validator } => {
             let repository = AdminRepository::new(deps.storage);
@@ -386,9 +388,6 @@ pub fn handle_strategy_query(deps: Deps<NeutronQuery>, query: StrategyQueryMsg) 
             last_reconcile_height: deps.storage.last_reconcile_height().map(|height| height.0),
             last_unbond_timestamp: deps.storage.last_unbond_timestamp(),
             last_main_ica_balance_icq_update: deps.storage.last_main_ica_balance_icq_update(),
-            last_used_main_ica_balance_icq_update: deps
-                .storage
-                .last_used_main_ica_balance_icq_update(),
             main_ica_address: deps.storage.main_ica_address(),
             main_ica_balance_icq: deps.storage.main_ica_balance_icq(),
             max_ibc_msg_count: deps.storage.max_ibc_msg_count(),

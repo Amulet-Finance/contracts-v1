@@ -45,7 +45,6 @@ mod key {
     pub const LAST_RECONCILE_HEIGHT: &str                 = key!("last_reconcile_height");
     pub const LAST_UNBOND_TIMESTAMP: &str                 = key!("last_unbond_timestamp");
     pub const LAST_MAIN_ICA_BALANCE_ICQ_UPDATE: &str      = key!("last_main_ica_balance_icq_update");
-    pub const LAST_USED_MAIN_ICA_BALANCE_ICQ_UPDATE: &str = key!("last_used_main_ica_balance_icq_update");
     pub const MAIN_ICA_ADDRESS: &str                      = key!("main_ica_address");
     pub const MAIN_ICA_BALANCE_ICQ: &str                  = key!("main_ica_balance_icq");
     pub const MAX_FEE_BPS: &str                           = key!("max_fee_bps");
@@ -289,14 +288,6 @@ pub trait StorageExt: Storage {
 
     fn set_last_main_ica_balance_icq_update(&mut self, timestamp: u64) {
         self.set_u64(key::LAST_MAIN_ICA_BALANCE_ICQ_UPDATE, timestamp);
-    }
-
-    fn last_used_main_ica_balance_icq_update(&self) -> Option<u64> {
-        self.u64_at(key::LAST_USED_MAIN_ICA_BALANCE_ICQ_UPDATE)
-    }
-
-    fn set_last_used_main_ica_balance_icq_update(&mut self, timestamp: u64) {
-        self.set_u64(key::LAST_USED_MAIN_ICA_BALANCE_ICQ_UPDATE, timestamp);
     }
 
     fn last_reconcile_height(&self) -> Option<LastReconcileHeight> {

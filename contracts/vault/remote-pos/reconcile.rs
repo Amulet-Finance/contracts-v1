@@ -452,7 +452,13 @@ fn transfer_in_undelegated(storage: &dyn Storage, env: &CwEnv, amount: u128) -> 
 
     let remote_denom = storage.remote_denom();
 
-    let callback = StrategyExecuteMsg::ReceiveUndelegated {};
+    let balance_icq_timestamp = storage
+        .last_main_ica_balance_icq_update()
+        .expect("always: timestamp set on every update");
+
+    let callback = StrategyExecuteMsg::ReceiveUndelegated {
+        balance_icq_timestamp,
+    };
 
     let ibc_hook = IbcHookMemo {
         wasm: IbcHookWasm {
@@ -806,14 +812,6 @@ fn handle_reconcile_event(storage: &mut dyn Storage, env: &CwEnv, event: Event) 
     match event {
         Event::SlashDetected(slashed_ratio) => {
             strategy::acknowledge_slashing(storage, slashed_ratio)
-        }
-
-        Event::UndelegatedAssetsTransferred => {
-            let icq_update_timestamp = storage
-                .last_main_ica_balance_icq_update()
-                .expect("always: timestamp set on every update");
-
-            storage.set_last_used_main_ica_balance_icq_update(icq_update_timestamp);
         }
 
         Event::UnbondStarted(amount) => {

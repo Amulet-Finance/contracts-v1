@@ -47,7 +47,6 @@ pub struct Metadata {
     pub last_reconcile_height: Option<u64>,
     pub last_unbond_timestamp: Option<u64>,
     pub last_main_ica_balance_icq_update: Option<u64>,
-    pub last_used_main_ica_balance_icq_update: Option<u64>,
     pub main_ica_address: Option<String>,
     pub main_ica_balance_icq: Option<u64>,
     pub max_ibc_msg_count: usize,
@@ -90,7 +89,10 @@ pub enum StrategyExecuteMsg {
     Reconcile {
         fee_recipient: Option<String>,
     },
-    ReceiveUndelegated {},
+    /// IBC hook callback for transferral of assets back to the contract
+    ReceiveUndelegated {
+        balance_icq_timestamp: u64,
+    },
     /// Admin role required
     RedelegateSlot {
         slot: usize,

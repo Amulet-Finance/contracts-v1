@@ -289,12 +289,11 @@ pub fn acknowledge_slashing(storage: &mut dyn Storage, slashed_ratio: FixedU256)
     slash_last_committed_batch(storage, slashed_ratio);
 }
 
-pub fn acknowledge_expected_unbondings(storage: &mut dyn Storage) -> u128 {
+pub fn acknowledge_expected_unbondings(
+    storage: &mut dyn Storage,
+    balance_icq_timestamp: u64,
+) -> u128 {
     let issued_count = storage.unbonding_issued_count().unwrap_or_default();
-
-    let last_used_icq_timestamp = storage
-        .last_used_main_ica_balance_icq_update()
-        .expect("always: must have been set to receive undelegated assets");
 
     let mut ack_count = storage.unbonding_ack_count().unwrap_or_default();
 
@@ -305,7 +304,7 @@ pub fn acknowledge_expected_unbondings(storage: &mut dyn Storage) -> u128 {
             .unbonding_local_expiry(ack_count)
             .expect("always: unbonding record exists");
 
-        if local_expiry >= last_used_icq_timestamp {
+        if local_expiry >= balance_icq_timestamp {
             break;
         }
 
@@ -328,6 +327,7 @@ pub fn acknowledge_expected_unbondings(storage: &mut dyn Storage) -> u128 {
 pub fn handle_receive_unbonded(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
+    balance_icq_timestamp: u64,
 ) -> Result<Response<NeutronMsg>> {
     let transfer_out_channel = deps.storage.transfer_out_channel();
 
@@ -349,7 +349,7 @@ pub fn handle_receive_unbonded(
 
     let unbondings_received = cw_utils::must_pay(&info, ibc_denom.as_str())?;
 
-    let unbondings_expected = acknowledge_expected_unbondings(deps.storage);
+    let unbondings_expected = acknowledge_expected_unbondings(deps.storage, balance_icq_timestamp);
 
     let TotalActualUnbonded(total_actual_unbonded) = deps.storage.total_actual_unbonded();
 
