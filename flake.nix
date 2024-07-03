@@ -34,6 +34,7 @@
         pkgs.docker-compose
         pkgs.go
         # nice to have
+        pkgs.cargo-audit
         pkgs.nodePackages_latest.typescript-language-server
         pkgs.nodePackages_latest.prettier
         pkgs.rust-analyzer-unwrapped
