@@ -84,7 +84,7 @@
           "additionalProperties": false
         },
         {
-          "description": "Returns all the unbondings for the given address if present, otherwise the whole contract",
+          "description": "Returns all the unbondings for the given address if present, otherwise the whole contract. The unbondings are in descending order according to the epoch start and will only contain up to `limit` entries, if provided",
           "type": "object",
           "required": [
             "active_unbondings"
@@ -98,6 +98,14 @@
                     "string",
                     "null"
                   ]
+                },
+                "limit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0.0
                 }
               },
               "additionalProperties": false

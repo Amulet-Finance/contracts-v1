@@ -45,6 +45,7 @@
     "QueryMsg2": {
       "oneOf": [
         {
+          "description": "Query whether the `minter` address is whitelisted to mint assets",
           "type": "object",
           "required": [
             "whitelisted"
@@ -66,6 +67,7 @@
           "additionalProperties": false
         },
         {
+          "description": "Query the metadata for the synthetic with the given `denom`",
           "type": "object",
           "required": [
             "synthetic"
@@ -87,6 +89,7 @@
           "additionalProperties": false
         },
         {
+          "description": "All the synthetic assets issued by the mint with optional pagination. If a `page` is provided but no `limit`, `amulet_cw::query::DEFAULT_PAGE_LIMIT` will be used. If neither `page` or `limit` is provided, all the assets are returned.",
           "type": "object",
           "required": [
             "all_assets"
@@ -94,6 +97,24 @@
           "properties": {
             "all_assets": {
               "type": "object",
+              "properties": {
+                "limit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0.0
+                },
+                "page": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0.0
+                }
+              },
               "additionalProperties": false
             }
           },

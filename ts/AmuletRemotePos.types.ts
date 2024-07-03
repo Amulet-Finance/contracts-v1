@@ -53,7 +53,9 @@ export type StrategyExecuteMsg = {
     fee_recipient?: string | null;
   };
 } | {
-  receive_undelegated: {};
+  receive_undelegated: {
+    balance_icq_timestamp: number;
+  };
 } | {
   redelegate_slot: {
     slot: number;
@@ -96,6 +98,7 @@ export type QueryMsg2 = {
 } | {
   active_unbondings: {
     address?: string | null;
+    limit?: number | null;
   };
 } | {
   unbonding_log_metadata: {
@@ -169,7 +172,6 @@ export interface Metadata {
   last_main_ica_balance_icq_update?: number | null;
   last_reconcile_height?: number | null;
   last_unbond_timestamp?: number | null;
-  last_used_main_ica_balance_icq_update?: number | null;
   main_ica_address?: string | null;
   main_ica_balance_icq?: number | null;
   max_ibc_msg_count: number;

@@ -77,14 +77,6 @@
       "format": "uint64",
       "minimum": 0.0
     },
-    "last_used_main_ica_balance_icq_update": {
-      "type": [
-        "integer",
-        "null"
-      ],
-      "format": "uint64",
-      "minimum": 0.0
-    },
     "main_ica_address": {
       "type": [
         "string",

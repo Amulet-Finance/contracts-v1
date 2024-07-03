@@ -50,10 +50,14 @@ export type QueryMsg2 = {
     denom: string;
   };
 } | {
-  all_assets: {};
+  all_assets: {
+    limit?: number | null;
+    page?: number | null;
+  };
 };
 export interface AllAssetsResponse {
   assets: Metadata[];
+  total_count: number;
 }
 export interface Metadata {
   decimals: number;

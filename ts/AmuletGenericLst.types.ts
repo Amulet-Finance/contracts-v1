@@ -53,6 +53,7 @@ export type QueryMsg2 = {
 } | {
   active_unbondings: {
     address?: string | null;
+    limit?: number | null;
   };
 } | {
   unbonding_log_metadata: {

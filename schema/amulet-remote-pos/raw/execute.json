@@ -187,6 +187,7 @@
           "additionalProperties": false
         },
         {
+          "description": "IBC hook callback for transferral of assets back to the contract",
           "type": "object",
           "required": [
             "receive_undelegated"
@@ -194,6 +195,16 @@
           "properties": {
             "receive_undelegated": {
               "type": "object",
+              "required": [
+                "balance_icq_timestamp"
+              ],
+              "properties": {
+                "balance_icq_timestamp": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                }
+              },
               "additionalProperties": false
             }
           },

@@ -299,6 +299,7 @@
             "additionalProperties": false
           },
           {
+            "description": "IBC hook callback for transferral of assets back to the contract",
             "type": "object",
             "required": [
               "receive_undelegated"
@@ -306,6 +307,16 @@
             "properties": {
               "receive_undelegated": {
                 "type": "object",
+                "required": [
+                  "balance_icq_timestamp"
+                ],
+                "properties": {
+                  "balance_icq_timestamp": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0.0
+                  }
+                },
                 "additionalProperties": false
               }
             },
@@ -567,7 +578,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Returns all the unbondings for the given address if present, otherwise the whole contract",
+            "description": "Returns all the unbondings for the given address if present, otherwise the whole contract. The unbondings are in descending order according to the epoch start and will only contain up to `limit` entries, if provided",
             "type": "object",
             "required": [
               "active_unbondings"
@@ -581,6 +592,14 @@
                       "string",
                       "null"
                     ]
+                  },
+                  "limit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint32",
+                    "minimum": 0.0
                   }
                 },
                 "additionalProperties": false
@@ -1003,14 +1022,6 @@
           "minimum": 0.0
         },
         "last_unbond_timestamp": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "last_used_main_ica_balance_icq_update": {
           "type": [
             "integer",
             "null"
