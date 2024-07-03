@@ -17,6 +17,7 @@ import { Tendermint37Client } from "@cosmjs/tendermint-rpc";
 import { Validator } from "cosmjs-types/cosmos/staking/v1beta1/staking";
 import { Coin, DirectSecp256k1HdWallet, coin } from "@cosmjs/proto-signing";
 import {
+  ActiveUnbondingsResponse,
   Config,
   DepositAssetResponse,
   ExecuteMsg,
@@ -28,6 +29,7 @@ import {
   ValidatorSet,
 } from "../ts/AmuletRemotePos.types";
 import { GENESIS_ALLOCATION } from "./suite/constants";
+import { ClaimableResponse } from "../ts/AmuletGenericLst.types";
 
 type Wallet = DirectSecp256k1HdWallet;
 type QueryClient = StakingExtension & BankExtension;
@@ -35,7 +37,7 @@ type HostClient = SigningCosmWasmClient;
 type RemoteClient = SigningStargateClient;
 
 const TOTAL_VALIDATOR_COUNT = 10;
-const UNBONDING_PERIOD_SECS = 600;
+const UNBONDING_PERIOD_SECS = 70;
 const IBC_TRANSFER_AMOUNT = Math.floor(GENESIS_ALLOCATION * 0.9); // 90% of genesis allocation
 const VALIDATOR_LIQUID_STAKE_CAP = 0.5;
 const VALIDATOR_BALANCE = GENESIS_ALLOCATION / 10;
@@ -185,7 +187,7 @@ async function reconcileVault(
     coin(initialState.cost, "untrn"),
   ]);
 
-  const expiry = Date.now() + 30_000;
+  const expiry = Date.now() + 60_000;
 
   while (Date.now() < expiry) {
     const state = await queryVaultReconcileState(client, vault);
@@ -199,11 +201,15 @@ async function reconcileVault(
       await client.execute(reconciler, vault, msg, gasFee, "", [
         coin(state.cost, "untrn"),
       ]);
+
+      continue;
     }
 
     // when it gets back to the start, return the reconcile state
     if (state.phase == "start_reconcile" && state.state == "idle")
       return [state.phase, state.state];
+
+    await Bun.sleep(1_000);
   }
 
   throw new Error("timeout waiting for reconciliation");
@@ -256,8 +262,8 @@ async function instantiateVault(
     connection_id: "connection-0",
     estimated_block_interval_seconds: 1,
     fee_bps_block_increment: 1,
-    fee_payment_cooldown_blocks: 100,
-    icq_update_interval: 5,
+    fee_payment_cooldown_blocks: 50,
+    icq_update_interval: 2,
     initial_validator_set,
     initial_validator_weights,
     interchain_tx_timeout_seconds: 60 * 60 * 60,
@@ -335,6 +341,7 @@ describe("Remote Proof-of-Stake Vault tests", () => {
           genesis_opts: {
             "app_state.staking.params.unbonding_time": `${UNBONDING_PERIOD_SECS}s`,
             "app_state.staking.params.validator_liquid_staking_cap": `${VALIDATOR_LIQUID_STAKE_CAP}`,
+            "app_state.slashing.params.slash_fraction_downtime": "0.5", // 50% slash for downtime (make it hard to miss)
           },
         },
         neutron: {
@@ -605,7 +612,7 @@ describe("Remote Proof-of-Stake Vault tests", () => {
     );
 
     // https://github.com/cosmos/cosmos-sdk/blob/feature/v0.47.x-ics-lsm/x/staking/keeper/liquid_stake.go#L107
-    // To get the the liquid staking limit: I = (L - CT)/(C - 1), where:
+    // To get to the liquid staking limit: I = (L - CT)/(C - 1), where:
     //   I is the liquid stake increase
     //   L is the current liquid staked amount
     //   T is the current total staked amount
@@ -806,5 +813,408 @@ describe("Remote Proof-of-Stake Vault tests", () => {
     );
 
     expect(+feeRecipientBalance.amount).toBeGreaterThan(0);
+  });
+
+  it("the first shares redemption results in an immediately ready unbonding batch & pending unbond increase", async () => {
+    const aliceSharesBalance = await operatorClient.getBalance(
+      aliceAddress,
+      `factory/${vaultOneAddress}/share`,
+    );
+
+    const preRedeemMetadata = await queryVaultMetadata(
+      operatorClient,
+      vaultOneAddress,
+    );
+
+    await aliceClient.execute(
+      aliceAddress,
+      vaultOneAddress,
+      { redeem: { recipient: aliceAddress } },
+      gasFee,
+      "",
+      [
+        coin(
+          String(BigInt(aliceSharesBalance.amount) / 10n),
+          `factory/${vaultOneAddress}/share`,
+        ),
+      ],
+    );
+
+    const postRedeemMetadata = await queryVaultMetadata(
+      operatorClient,
+      vaultOneAddress,
+    );
+
+    expect(+preRedeemMetadata.pending_unbond).toBe(0);
+    expect(+postRedeemMetadata.pending_unbond).toBeGreaterThan(0);
+
+    const activeUnbondings: ActiveUnbondingsResponse =
+      await operatorClient.queryContractSmart(vaultOneAddress, {
+        active_unbondings: { address: aliceAddress },
+      });
+
+    expect(activeUnbondings.unbondings.length).toBe(1);
+  });
+
+  it("reconciliation clears the pending unbond and starts undelegation on the remote chain across all validators", async () => {
+    const preReconcileMetadata = await queryVaultMetadata(
+      operatorClient,
+      vaultOneAddress,
+    );
+
+    await reconcileVault(operatorClient, vaultOneAddress, operatorAddress);
+
+    const postReconcileMetadata = await queryVaultMetadata(
+      operatorClient,
+      vaultOneAddress,
+    );
+
+    expect(+preReconcileMetadata.pending_unbond).toBeGreaterThan(0);
+    expect(+postReconcileMetadata.pending_unbond).toBe(0);
+    expect(postReconcileMetadata.unbonding_issued_count).toBe(1);
+    expect(postReconcileMetadata.unbonding_ack_count).toBe(null);
+
+    const actualUndelegations =
+      await remoteQueryClient.staking.delegatorUnbondingDelegations(
+        postReconcileMetadata.main_ica_address || "",
+      );
+
+    expect(actualUndelegations.unbondingResponses.length).toBe(
+      TOTAL_VALIDATOR_COUNT - 1,
+    );
+
+    const totalUnbonding = actualUndelegations.unbondingResponses.reduce(
+      (acc, u) => acc + +u.entries[0].balance,
+      0,
+    );
+
+    // allow for rounding error of 1 per slot
+    expect(totalUnbonding).toBeLessThanOrEqual(
+      +preReconcileMetadata.pending_unbond,
+    );
+    expect(totalUnbonding).toBeGreaterThanOrEqual(
+      +preReconcileMetadata.pending_unbond - (TOTAL_VALIDATOR_COUNT - 1),
+    );
+  });
+
+  it("reconciliation after the unbonding epoch ends retrieves unbonded assets which are then claimable", async () => {
+    const activeUnbondings: ActiveUnbondingsResponse =
+      await operatorClient.queryContractSmart(vaultOneAddress, {
+        active_unbondings: { address: aliceAddress },
+      });
+
+    const unbonding = activeUnbondings.unbondings[0];
+
+    // wait for unbonding epoch to expire
+    const expiry = unbonding.end * 1_000;
+
+    while (true) {
+      if (Date.now() > expiry) break;
+      await Bun.sleep(1_000);
+    }
+
+    const preReconcileMetadata = await queryVaultMetadata(
+      operatorClient,
+      vaultOneAddress,
+    );
+
+    const actualMainIcaBalance = await remoteQueryClient.bank.balance(
+      preReconcileMetadata.main_ica_address || "",
+      "stake",
+    );
+
+    expect(+actualMainIcaBalance.amount).toBeGreaterThan(0);
+
+    // wait for 10 blocks to allow for main ica balance icq to update
+    const targetHeight = (await operatorClient.getBlock()).header.height + 20;
+
+    while (true) {
+      const block = await operatorClient.getBlock();
+
+      if (block.header.height > targetHeight) break;
+
+      Bun.sleep(1_000);
+    }
+
+    await reconcileVault(operatorClient, vaultOneAddress, operatorAddress);
+
+    // wait for undelegated asset transfer to land
+    let postReconcileMetadata: Metadata;
+    {
+      const expiry = Date.now() + 10_000;
+
+      while (true) {
+        const metadata = await queryVaultMetadata(
+          operatorClient,
+          vaultOneAddress,
+        );
+
+        if (metadata.unbonding_ack_count && metadata.unbonding_ack_count == 1) {
+          postReconcileMetadata = metadata;
+          break;
+        }
+
+        if (Date.now() > expiry)
+          throw new Error("timed out waiting for unbonding acknowledgement");
+
+        Bun.sleep(1_000);
+      }
+    }
+
+    const claimable: ClaimableResponse =
+      await operatorClient.queryContractSmart(vaultOneAddress, {
+        claimable: { address: aliceAddress },
+      });
+
+    expect(claimable.amount).toBe(unbonding.amount);
+
+    const preClaimBalance = await operatorClient.getBalance(
+      aliceAddress,
+      depositAssetDenom,
+    );
+
+    await aliceClient.execute(
+      aliceAddress,
+      vaultOneAddress,
+      { claim: {} },
+      gasFee,
+    );
+
+    const postClaimBalance = await operatorClient.getBalance(
+      aliceAddress,
+      depositAssetDenom,
+    );
+
+    const changeInBalance = +postClaimBalance.amount - +preClaimBalance.amount;
+
+    expect(changeInBalance).toBeLessThanOrEqual(
+      +postReconcileMetadata.available_to_claim,
+    );
+    expect(changeInBalance).toBeGreaterThanOrEqual(
+      +postReconcileMetadata.available_to_claim - 1,
+    );
+  });
+
+  it("slashings are detected allowing a full undelegation even if the undelegation is started before detection", async () => {
+    // we can only slash the last validator once so create another vault to be the one where
+    // slashing is detected *before* undelegation is started use the same validator set as vault 1
+    const vaultOneValSet: ValidatorSet =
+      await operatorClient.queryContractSmart(vaultOneAddress, {
+        validator_set: {},
+      });
+
+    let initial_validator_weights = new Array(TOTAL_VALIDATOR_COUNT - 1).fill(
+      Math.floor(10_000 / TOTAL_VALIDATOR_COUNT - 1),
+    );
+
+    initial_validator_weights[0] +=
+      10_000 - initial_validator_weights.reduce((acc, val) => acc + val, 0);
+
+    const vaultTwoAddress = await instantiateVault(
+      operatorClient,
+      codeId,
+      operatorAddress,
+      vaultOneValSet.validators,
+      initial_validator_weights,
+    );
+
+    await bobClient.execute(
+      bobAddress,
+      vaultTwoAddress,
+      { deposit: {} },
+      gasFee,
+      "",
+      [coin(GENESIS_ALLOCATION / 10, depositAssetDenom)],
+    );
+
+    await reconcileVault(operatorClient, vaultTwoAddress, operatorAddress);
+
+    // 1. Redeem all of alice's and bob's shares from their respective vaults
+    const aliceSharesBalance = await operatorClient.getBalance(
+      aliceAddress,
+      `factory/${vaultOneAddress}/share`,
+    );
+
+    const bobSharesBalance = await operatorClient.getBalance(
+      bobAddress,
+      `factory/${vaultTwoAddress}/share`,
+    );
+
+    await aliceClient.execute(
+      aliceAddress,
+      vaultOneAddress,
+      {
+        redeem: { recipient: aliceAddress },
+      },
+      gasFee,
+      "",
+      [aliceSharesBalance],
+    );
+
+    await bobClient.execute(
+      bobAddress,
+      vaultTwoAddress,
+      {
+        redeem: { recipient: bobAddress },
+      },
+      gasFee,
+      "",
+      [bobSharesBalance],
+    );
+
+    const postRedeemMetaV1 = await queryVaultMetadata(
+      operatorClient,
+      vaultOneAddress,
+    );
+
+    const postRedeemMetaV2 = await queryVaultMetadata(
+      operatorClient,
+      vaultTwoAddress,
+    );
+
+    expect(+postRedeemMetaV1.pending_unbond).toBeGreaterThan(0);
+    expect(+postRedeemMetaV2.pending_unbond).toBeGreaterThan(0);
+
+    // 2. pause ICQ updates
+    await suite.pauseIcqRelaying();
+
+    // 3. slash the last validator
+    await suite.slashValidator();
+
+    // 4. reconcile vault one, it should fail at the undelegation phase and require a force-next to get unstuck
+    await reconcileVault(
+      operatorClient,
+      vaultOneAddress,
+      operatorAddress,
+      undefined,
+      "undelegate",
+    );
+
+    await forceNextVault(operatorClient, vaultOneAddress, operatorAddress);
+
+    // 5. resume ICQ updates
+    await suite.resumeIcqRelaying();
+
+    // 6. wait for 10 blocks for ICQs to update
+    {
+      const targetHeight = (await operatorClient.getBlock()).header.height + 10;
+
+      while (true) {
+        const block = await operatorClient.getBlock();
+
+        if (block.header.height > targetHeight) break;
+      }
+    }
+
+    // 7. Now both vaults should reconcile successfully
+    await reconcileVault(operatorClient, vaultOneAddress, operatorAddress);
+    await reconcileVault(operatorClient, vaultTwoAddress, operatorAddress);
+
+    // 8. Wait for unbonding epochs to end
+    const aliceActiveUnbondings: ActiveUnbondingsResponse =
+      await operatorClient.queryContractSmart(vaultOneAddress, {
+        active_unbondings: { address: aliceAddress },
+      });
+
+    const bobActiveUnbondings: ActiveUnbondingsResponse =
+      await operatorClient.queryContractSmart(vaultTwoAddress, {
+        active_unbondings: { address: bobAddress },
+      });
+
+    expect(aliceActiveUnbondings.unbondings.length).toBe(1);
+    expect(bobActiveUnbondings.unbondings.length).toBe(1);
+
+    const latestEpochEnd = Math.max(
+      aliceActiveUnbondings.unbondings[0].end,
+      bobActiveUnbondings.unbondings[0].end,
+    );
+
+    const expiry = latestEpochEnd * 1_000;
+
+    while (true) {
+      if (Date.now() > expiry) break;
+      await Bun.sleep(1_000);
+    }
+
+    // 9. wait for 10 blocks for ICQs to update
+    {
+      const targetHeight = (await operatorClient.getBlock()).header.height + 10;
+
+      while (true) {
+        const block = await operatorClient.getBlock();
+
+        if (block.header.height > targetHeight) break;
+      }
+    }
+
+    // 9. reconciliation should transfer back undelegated assets
+    const preReconcileMetaV1 = await queryVaultMetadata(
+      operatorClient,
+      vaultOneAddress,
+    );
+
+    const preReconcileMetaV2 = await queryVaultMetadata(
+      operatorClient,
+      vaultTwoAddress,
+    );
+
+    await reconcileVault(operatorClient, vaultOneAddress, operatorAddress);
+    await reconcileVault(operatorClient, vaultTwoAddress, operatorAddress);
+
+    let postReconcileMetaV1: Metadata;
+    let postReconcileMetaV2: Metadata;
+
+    {
+      const expiry = Date.now() + 10_000;
+
+      const vaultOneExpectedAckCount =
+        (preReconcileMetaV1.unbonding_ack_count || 0) + 1;
+
+      while (true) {
+        const metadataV1 = await queryVaultMetadata(
+          operatorClient,
+          vaultOneAddress,
+        );
+
+        const metadataV2 = await queryVaultMetadata(
+          operatorClient,
+          vaultTwoAddress,
+        );
+
+        if (
+          metadataV1.unbonding_ack_count &&
+          metadataV2.unbonding_ack_count &&
+          metadataV1.unbonding_ack_count == vaultOneExpectedAckCount &&
+          metadataV2.unbonding_ack_count == 1
+        ) {
+          postReconcileMetaV1 = metadataV1;
+          postReconcileMetaV2 = metadataV2;
+          break;
+        }
+
+        if (Date.now() > expiry)
+          throw new Error("timed out waiting for unbonding acknowledgement");
+
+        Bun.sleep(1_000);
+      }
+    }
+
+    expect(+postReconcileMetaV1.available_to_claim).toBeGreaterThan(
+      +preReconcileMetaV1.available_to_claim,
+    );
+
+    expect(+postReconcileMetaV2.available_to_claim).toBeGreaterThan(
+      +preReconcileMetaV2.available_to_claim,
+    );
+
+    // 11. alice and bob can claim successfully
+    await aliceClient.execute(
+      aliceAddress,
+      vaultOneAddress,
+      { claim: {} },
+      gasFee,
+    );
+
+    await bobClient.execute(bobAddress, vaultTwoAddress, { claim: {} }, gasFee);
   });
 });
