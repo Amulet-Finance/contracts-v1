@@ -230,7 +230,24 @@ fn deposit() {
                   reply_on: success,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "deposit",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "account",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "1000",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -255,7 +272,7 @@ fn deposit() {
         ]"#]],
     );
 
-    reply(
+    let response = reply(
         deps.as_mut(),
         mock_env(),
         vault_deposit_reply(
@@ -267,6 +284,54 @@ fn deposit() {
         ),
     )
     .unwrap();
+
+    check(
+        response,
+        expect![[r#"
+            (
+              messages: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "vault_deposit_callback",
+                ),
+                (
+                  key: "reason",
+                  value: "deposit",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "recipient",
+                  value: "bob",
+                ),
+                (
+                  key: "minted_shares",
+                  value: "1000000000000000000000",
+                ),
+                (
+                  key: "deposit_value",
+                  value: "1000",
+                ),
+                (
+                  key: "collateral_shares",
+                  value: "1000000000000000000000",
+                ),
+                (
+                  key: "collateral_balance",
+                  value: "1000",
+                ),
+                (
+                  key: "account_collateral",
+                  value: "1000",
+                ),
+              ],
+              events: [],
+              data: None,
+            )"#]],
+    );
 
     check(
         query(
@@ -385,7 +450,24 @@ fn deposit_on_behalf() {
                   reply_on: success,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "deposit",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "account",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "1000",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -410,7 +492,7 @@ fn deposit_on_behalf() {
         ]"#]],
     );
 
-    reply(
+    let response = reply(
         deps.as_mut(),
         mock_env(),
         vault_deposit_reply(
@@ -422,6 +504,54 @@ fn deposit_on_behalf() {
         ),
     )
     .unwrap();
+
+    check(
+        response,
+        expect![[r#"
+            (
+              messages: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "vault_deposit_callback",
+                ),
+                (
+                  key: "reason",
+                  value: "deposit",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "recipient",
+                  value: "bob",
+                ),
+                (
+                  key: "minted_shares",
+                  value: "1000000000000000000000",
+                ),
+                (
+                  key: "deposit_value",
+                  value: "1000",
+                ),
+                (
+                  key: "collateral_shares",
+                  value: "1000000000000000000000",
+                ),
+                (
+                  key: "collateral_balance",
+                  value: "1000",
+                ),
+                (
+                  key: "account_collateral",
+                  value: "1000",
+                ),
+              ],
+              events: [],
+              data: None,
+            )"#]],
+    );
 
     check(
         query(
@@ -529,7 +659,24 @@ fn repay_underlying() {
                   reply_on: success,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "repay_underlying",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "account",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "400",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -554,7 +701,7 @@ fn repay_underlying() {
         ]"#]],
     );
 
-    reply(
+    let response = reply(
         deps.as_mut(),
         mock_env(),
         vault_deposit_reply(
@@ -566,6 +713,54 @@ fn repay_underlying() {
         ),
     )
     .unwrap();
+
+    check(
+        response,
+        expect![[r#"
+            (
+              messages: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "vault_deposit_callback",
+                ),
+                (
+                  key: "reason",
+                  value: "repay_underlying",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "recipient",
+                  value: "bob",
+                ),
+                (
+                  key: "minted_shares",
+                  value: "400000000000000000000",
+                ),
+                (
+                  key: "deposit_value",
+                  value: "400",
+                ),
+                (
+                  key: "reserve_shares",
+                  value: "400000000000000000000",
+                ),
+                (
+                  key: "reserve_balance",
+                  value: "400",
+                ),
+                (
+                  key: "account_debt",
+                  value: "100",
+                ),
+              ],
+              events: [],
+              data: None,
+            )"#]],
+    );
 
     check(
         query(
@@ -712,9 +907,30 @@ fn repay_synthetic() {
                   reply_on: never,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "repay_synthetic",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "account",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "400",
+                ),
+                (
+                  key: "account_debt",
+                  value: "100",
+                ),
+              ],
               events: [],
-              data: Some("eyJjb2xsYXRlcmFsIjoiMTAwMCIsImRlYnQiOiIxMDAiLCJjcmVkaXQiOiIwIiwic3VtX3BheW1lbnRfcmF0aW8iOiIwIiwidmF1bHRfbG9zc19kZXRlY3RlZCI6ZmFsc2V9"),
+              data: None,
             )"#]],
     );
 
@@ -830,7 +1046,28 @@ fn advance() {
                   reply_on: never,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "advance",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "account",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "500",
+                ),
+                (
+                  key: "account_debt",
+                  value: "500",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -963,7 +1200,28 @@ fn advance_on_behalf() {
                   reply_on: never,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "advance",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "account",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "500",
+                ),
+                (
+                  key: "account_debt",
+                  value: "500",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -1085,25 +1343,42 @@ fn withdraw() {
                   reply_on: never,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "withdraw",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "account",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "500",
+                ),
+                (
+                  key: "collateral_shares",
+                  value: "500000000000000000000",
+                ),
+                (
+                  key: "collateral_balance",
+                  value: "500",
+                ),
+                (
+                  key: "account_collateral",
+                  value: "500",
+                ),
+                (
+                  key: "redeem_shares",
+                  value: "500000000000000000000",
+                ),
+              ],
               events: [],
-              data: Some("eyJjb2xsYXRlcmFsIjoiNTAwIiwiZGVidCI6IjAiLCJjcmVkaXQiOiIwIiwic3VtX3BheW1lbnRfcmF0aW8iOiIwIiwidmF1bHRfbG9zc19kZXRlY3RlZCI6ZmFsc2V9"),
-            )"#]],
-    );
-
-    check(
-        response
-            .data
-            .map(from_json::<PositionResponse>)
-            .unwrap()
-            .unwrap(),
-        expect![[r#"
-            (
-              collateral: "500",
-              debt: "0",
-              credit: "0",
-              sum_payment_ratio: "0",
-              vault_loss_detected: false,
+              data: None,
             )"#]],
     );
 
@@ -1291,7 +1566,40 @@ fn self_liquidate() {
                   reply_on: never,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "self_liquidate",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "account",
+                  value: "bob",
+                ),
+                (
+                  key: "collateral_shares",
+                  value: "0",
+                ),
+                (
+                  key: "collateral_balance",
+                  value: "0",
+                ),
+                (
+                  key: "account_collateral",
+                  value: "0",
+                ),
+                (
+                  key: "account_credit",
+                  value: "0",
+                ),
+                (
+                  key: "redeem_shares",
+                  value: "1000000000000000000000",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -1453,29 +1761,58 @@ fn convert_credit() {
     );
 
     check(
-        &response,
+        response,
         expect![[r#"
             (
               messages: [],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "convert_credit",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "account",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "89",
+                ),
+                (
+                  key: "collateral_shares",
+                  value: "990000000000000000000",
+                ),
+                (
+                  key: "collateral_balance",
+                  value: "1088",
+                ),
+                (
+                  key: "reserve_shares",
+                  value: "909090909090909092",
+                ),
+                (
+                  key: "reserve_balance",
+                  value: "1",
+                ),
+                (
+                  key: "treasury_shares",
+                  value: "9090909090909090908",
+                ),
+                (
+                  key: "spr",
+                  value: "0.08999999999999999999999999999999",
+                ),
+                (
+                  key: "account_collateral",
+                  value: "1088",
+                ),
+              ],
               events: [],
-              data: Some("eyJjb2xsYXRlcmFsIjoiMTA4OCIsImRlYnQiOiIwIiwiY3JlZGl0IjoiMCIsInN1bV9wYXltZW50X3JhdGlvIjoiMzA2MjU0MTMwMjI4ODQ0NjE3MTE3MDM3MTQ2Njg4NTkxMzkwMzEiLCJ2YXVsdF9sb3NzX2RldGVjdGVkIjpmYWxzZX0="),
-            )"#]],
-    );
-
-    check(
-        response
-            .data
-            .map(from_json::<PositionResponse>)
-            .unwrap()
-            .unwrap(),
-        expect![[r#"
-            (
-              collateral: "1088",
-              debt: "0",
-              credit: "0",
-              sum_payment_ratio: "30625413022884461711703714668859139031",
-              vault_loss_detected: false,
+              data: None,
             )"#]],
     );
 
@@ -1644,7 +1981,36 @@ fn redeem() {
                   reply_on: never,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "redeem",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "recipient",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "90",
+                ),
+                (
+                  key: "reserve_shares",
+                  value: "1",
+                ),
+                (
+                  key: "reserve_balance",
+                  value: "0",
+                ),
+                (
+                  key: "redeem_shares",
+                  value: "81818181818181818181",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -1844,7 +2210,36 @@ fn redeem_on_behalf() {
                   reply_on: never,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "redeem",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "recipient",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "90",
+                ),
+                (
+                  key: "reserve_shares",
+                  value: "1",
+                ),
+                (
+                  key: "reserve_balance",
+                  value: "0",
+                ),
+                (
+                  key: "redeem_shares",
+                  value: "81818181818181818181",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -1977,7 +2372,24 @@ fn mint() {
                   reply_on: success,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "mint",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "recipient",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "1000",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -2014,6 +2426,61 @@ fn mint() {
         ),
     )
     .unwrap();
+
+    check(
+        &response,
+        expect![[r#"
+        (
+          messages: [
+            (
+              id: 0,
+              msg: wasm(execute(
+                contract_addr: "synthetic_mint",
+                msg: "eyJtaW50Ijp7InN5bnRoZXRpYyI6InN5bnRoZXRpY19hc3NldCIsImFtb3VudCI6IjEwMDAiLCJyZWNpcGllbnQiOiJib2IifX0=",
+                funds: [],
+              )),
+              gas_limit: None,
+              reply_on: never,
+            ),
+          ],
+          attributes: [
+            (
+              key: "kind",
+              value: "vault_deposit_callback",
+            ),
+            (
+              key: "reason",
+              value: "mint",
+            ),
+            (
+              key: "vault",
+              value: "vault",
+            ),
+            (
+              key: "recipient",
+              value: "bob",
+            ),
+            (
+              key: "minted_shares",
+              value: "1000000000000000000000",
+            ),
+            (
+              key: "deposit_value",
+              value: "1000",
+            ),
+            (
+              key: "reserve_shares",
+              value: "1000000000000000000000",
+            ),
+            (
+              key: "reserve_balance",
+              value: "1000",
+            ),
+          ],
+          events: [],
+          data: None,
+        )"#]],
+    );
 
     let mint_msg: Vec<_> = response
         .messages
@@ -2133,7 +2600,24 @@ fn mint_on_behalf() {
                   reply_on: success,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "mint",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "recipient",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "1000",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -2170,6 +2654,61 @@ fn mint_on_behalf() {
         ),
     )
     .unwrap();
+
+    check(
+        &response,
+        expect![[r#"
+        (
+          messages: [
+            (
+              id: 0,
+              msg: wasm(execute(
+                contract_addr: "synthetic_mint",
+                msg: "eyJtaW50Ijp7InN5bnRoZXRpYyI6InN5bnRoZXRpY19hc3NldCIsImFtb3VudCI6IjEwMDAiLCJyZWNpcGllbnQiOiJib2IifX0=",
+                funds: [],
+              )),
+              gas_limit: None,
+              reply_on: never,
+            ),
+          ],
+          attributes: [
+            (
+              key: "kind",
+              value: "vault_deposit_callback",
+            ),
+            (
+              key: "reason",
+              value: "mint",
+            ),
+            (
+              key: "vault",
+              value: "vault",
+            ),
+            (
+              key: "recipient",
+              value: "bob",
+            ),
+            (
+              key: "minted_shares",
+              value: "1000000000000000000000",
+            ),
+            (
+              key: "deposit_value",
+              value: "1000",
+            ),
+            (
+              key: "reserve_shares",
+              value: "1000000000000000000000",
+            ),
+            (
+              key: "reserve_balance",
+              value: "1000",
+            ),
+          ],
+          events: [],
+          data: None,
+        )"#]],
+    );
 
     let mint_msg: Vec<_> = response
         .messages
@@ -2287,12 +2826,20 @@ fn claim_treasury() {
 
     let response = execute_msgs(
         &mut deps,
-        &[(
-            info!("treasury"),
-            HubExecuteMsg::from(HubUserMsg::ClaimTreasury {
-                vault: VAULT.into(),
-            }),
-        )],
+        &[
+            (
+                info!("anyone"),
+                HubExecuteMsg::from(HubUserMsg::Evaluate {
+                    vault: VAULT.into(),
+                }),
+            ),
+            (
+                info!("treasury"),
+                HubExecuteMsg::from(HubUserMsg::ClaimTreasury {
+                    vault: VAULT.into(),
+                }),
+            ),
+        ],
     );
 
     check(
@@ -2315,7 +2862,20 @@ fn claim_treasury() {
                   reply_on: never,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "claim_treasury",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "treasury_shares",
+                  value: "0",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -2425,12 +2985,20 @@ fn claim_amo() {
 
     let response = execute_msgs(
         &mut deps,
-        &[(
-            info!("amo"),
-            HubExecuteMsg::from(HubUserMsg::ClaimAmo {
-                vault: VAULT.into(),
-            }),
-        )],
+        &[
+            (
+                info!("anyone"),
+                HubExecuteMsg::from(HubUserMsg::Evaluate {
+                    vault: VAULT.into(),
+                }),
+            ),
+            (
+                info!("amo"),
+                HubExecuteMsg::from(HubUserMsg::ClaimAmo {
+                    vault: VAULT.into(),
+                }),
+            ),
+        ],
     );
 
     check(
@@ -2453,7 +3021,20 @@ fn claim_amo() {
                   reply_on: never,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "claim_amo",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "amo_shares",
+                  value: "0",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -2572,29 +3153,50 @@ fn evaluate() {
     );
 
     check(
-        &response,
+        response,
         expect![[r#"
             (
               messages: [],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "evaluate",
+                ),
+                (
+                  key: "vault",
+                  value: "vault",
+                ),
+                (
+                  key: "account",
+                  value: "anyone",
+                ),
+                (
+                  key: "collateral_shares",
+                  value: "909090909090909090910",
+                ),
+                (
+                  key: "reserve_shares",
+                  value: "73636363636363636364",
+                ),
+                (
+                  key: "reserve_balance",
+                  value: "81",
+                ),
+                (
+                  key: "treasury_shares",
+                  value: "9090909090909090908",
+                ),
+                (
+                  key: "amo_shares",
+                  value: "8181818181818181818",
+                ),
+                (
+                  key: "spr",
+                  value: "0.08899999999999999999999999999999",
+                ),
+              ],
               events: [],
-              data: Some("eyJjb2xsYXRlcmFsIjoiMCIsImRlYnQiOiIwIiwiY3JlZGl0IjoiMCIsInN1bV9wYXltZW50X3JhdGlvIjoiMzAyODUxMzA2NTU5NjM1MjMyNDgyNDAzNDAwNjE0MjczNzA4MTkiLCJ2YXVsdF9sb3NzX2RldGVjdGVkIjpmYWxzZX0="),
-            )"#]],
-    );
-
-    check(
-        response
-            .data
-            .map(from_json::<PositionResponse>)
-            .unwrap()
-            .unwrap(),
-        expect![[r#"
-            (
-              collateral: "0",
-              debt: "0",
-              credit: "0",
-              sum_payment_ratio: "30285130655963523248240340061427370819",
-              vault_loss_detected: false,
+              data: None,
             )"#]],
     );
 

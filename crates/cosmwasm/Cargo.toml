@@ -8,10 +8,11 @@ path    = "lib.rs"
 doctest = false
 
 [dependencies]
-thiserror.workspace       = true
-cosmwasm-std              = { workspace = true, features = [ "cosmwasm_1_1" ] }
 cosmwasm-schema.workspace = true
+cosmwasm-std              = { workspace = true, features = [ "cosmwasm_1_1" ] }
 cw-utils.workspace        = true
+strum.workspace           = true
+thiserror.workspace       = true
 
-num.workspace             = true
 amulet-core.workspace     = true
+num.workspace             = true

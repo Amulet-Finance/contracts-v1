@@ -29,6 +29,7 @@ prost             = "0.12.4"
 prost-types       = "0.12.4"
 serde             = "1.0.197"
 static_assertions = "1.1.0"
+strum             = { version = "0.26.3", features = ["derive"] }
 thiserror         = "1.0.58"
 uint              = { version = "0.9.5", default-features = false }
 

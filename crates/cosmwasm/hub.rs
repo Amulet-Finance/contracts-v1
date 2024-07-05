@@ -8,19 +8,20 @@ use cosmwasm_std::{
     from_json, to_json_binary, Addr, Api, Binary, Env, MessageInfo, Reply, Response, StdError,
     Storage, Uint128, Uint256,
 };
+use cw_utils::{one_coin, parse_reply_execute_data, ParseReplyError, PaymentError};
+use strum::IntoStaticStr;
 
 use amulet_core::{
     admin::Repository as AdminRepository,
     hub::{
         configure, hub, positions::update_cdp, Account, AdvanceFeeOracle as CoreAdvanceFeeOracle,
-        BalanceSheet as CoreBalanceSheet, Cdp, Cmd, ConfigureHub, Error as CoreHubError, Hub,
-        ProxyConfig, SyntheticMint as CoreSyntheticMint, VaultDepositReason, VaultId,
-        VaultRegistry as CoreVaultRegistry,
+        BalanceSheet as CoreBalanceSheet, BalanceSheetCmd, Cdp, Cmd, ConfigureHub,
+        Error as CoreHubError, Hub, ProxyConfig, SyntheticMint as CoreSyntheticMint, VaultCmd,
+        VaultDepositReason, VaultId, VaultRegistry as CoreVaultRegistry,
     },
     vault::{DepositAmount, DepositValue, SharesAmount},
     Identifier,
 };
-use cw_utils::{one_coin, parse_reply_execute_data, ParseReplyError, PaymentError};
 
 use crate::{
     admin::{get_admin_role, Error as AdminError},
@@ -100,6 +101,8 @@ pub enum AdminMsg {
 }
 
 #[cw_serde]
+#[derive(IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
 pub enum UserMsg {
     // Messages for Account Positions
     /// Evaluate a vault, progressing any payments
@@ -110,6 +113,7 @@ pub enum UserMsg {
     Deposit { vault: String },
     /// Deposit native token into a vault on behalf of another (proxied deposit)
     /// Responds with [PositionResponse]
+    #[strum(to_string = "deposit")]
     DepositOnBehalf { vault: String, behalf_of: String },
     /// Repay debt against a vault using the underlying token
     /// Responds with [PositionResponse]
@@ -122,6 +126,7 @@ pub enum UserMsg {
     Advance { vault: String, amount: Uint128 },
     /// Request an advance on behalf of another against their vault deposit (proxied advance)
     /// Responds with [PositionResponse]
+    #[strum(to_string = "advance")]
     AdvanceOnBehalf {
         vault: String,
         amount: Uint128,
@@ -137,15 +142,25 @@ pub enum UserMsg {
     /// Redeem synthetics for reserve holdings
     Redeem { vault: String },
     /// Redeem synthetics for reserve holdings on behalf of another (proxied mint)
+    #[strum(to_string = "redeem")]
     RedeemOnBehalf { vault: String, behalf_of: String },
     /// Mint synthetics for depositing native token into a vault
     Mint { vault: String },
     /// Mint synthetics for depositing native token into a vault on behalf of another (proxied mint)
+    #[strum(to_string = "mint")]
     MintOnBehalf { vault: String, behalf_of: String },
     /// Request to claim the treasury's accumulated `vault` shares
     ClaimTreasury { vault: String },
     /// Request to claim the AMO's accumulated `vault` shares
     ClaimAmo { vault: String },
+}
+
+impl UserMsg {
+    /// A string representing the message 'kind'
+    pub fn kind(&self) -> &'static str {
+        // relies on deriving strum::IntoStaticStr
+        self.into()
+    }
 }
 
 #[cw_serde]
@@ -263,24 +278,12 @@ impl From<Cdp> for PositionResponse {
     }
 }
 
-trait ResponseExt: Sized {
-    fn from_cdp(cdp: Cdp) -> Self;
-}
-
-impl<Msg> ResponseExt for Response<Msg> {
-    fn from_cdp(cdp: Cdp) -> Self {
-        let data = to_json_binary(&PositionResponse::from(cdp)).expect("infallible serialization");
-
-        Self::default().set_data(data)
-    }
-}
-
-fn handle_deposit<Msg>(
+fn handle_deposit(
     hub: &dyn Hub,
     info: MessageInfo,
     vault: String,
     recipient: String,
-) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
+) -> Result<Vec<Cmd>, Error> {
     let coin = one_coin(&info)?;
 
     let cmds = hub.deposit(
@@ -291,16 +294,16 @@ fn handle_deposit<Msg>(
         recipient.into(),
     )?;
 
-    Ok((cmds, Response::default()))
+    Ok(cmds)
 }
 
-fn handle_advance<Msg>(
+fn handle_advance(
     hub: &dyn Hub,
     info: MessageInfo,
     vault: String,
     recipient: String,
     amount: Uint128,
-) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
+) -> Result<Vec<Cmd>, Error> {
     let cmds = hub.advance(
         vault.into(),
         info.sender.into_string().into(),
@@ -308,15 +311,15 @@ fn handle_advance<Msg>(
         recipient.into(),
     )?;
 
-    Ok((cmds, Response::default()))
+    Ok(cmds)
 }
 
-fn handle_redeem<Msg>(
+fn handle_redeem(
     hub: &dyn Hub,
     info: MessageInfo,
     vault: String,
     recipient: String,
-) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
+) -> Result<Vec<Cmd>, Error> {
     let coin = one_coin(&info)?;
 
     let cmds = hub.redeem_synthetic(
@@ -327,15 +330,15 @@ fn handle_redeem<Msg>(
         recipient.into(),
     )?;
 
-    Ok((cmds, Response::default()))
+    Ok(cmds)
 }
 
-fn handle_mint<Msg>(
+fn handle_mint(
     hub: &dyn Hub,
     info: MessageInfo,
     vault: String,
     recipient: String,
-) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
+) -> Result<Vec<Cmd>, Error> {
     let coin = one_coin(&info)?;
 
     let cmds = hub.mint_synthetic(
@@ -346,7 +349,7 @@ fn handle_mint<Msg>(
         recipient.into(),
     )?;
 
-    Ok((cmds, Response::default()))
+    Ok(cmds)
 }
 
 pub fn handle_admin_msg<Msg>(
@@ -451,6 +454,92 @@ pub fn handle_admin_msg<Msg>(
     Ok((cmds, Response::default()))
 }
 
+struct AttrsBuilder<'a, Msg>(&'a mut Response<Msg>);
+
+impl<'a, Msg> AttrsBuilder<'a, Msg> {
+    fn add_attr(&mut self, k: &str, v: impl ToString) -> &mut Self {
+        self.0.attributes.push((k, v.to_string()).into());
+        self
+    }
+
+    fn add_kind(&mut self, kind: &str) -> &mut Self {
+        self.add_attr("kind", kind)
+    }
+
+    fn add_vault(&mut self, vault: impl Into<String>) -> &mut Self {
+        self.add_attr("vault", vault.into())
+    }
+
+    fn add_account(&mut self, account: impl Into<String>) -> &mut Self {
+        self.add_attr("account", account.into())
+    }
+
+    fn add_recipient(&mut self, recipient: impl Into<String>) -> &mut Self {
+        self.add_attr("recipient", recipient.into())
+    }
+
+    fn add_amount(&mut self, amount: impl ToString) -> &mut Self {
+        self.add_attr("amount", amount)
+    }
+}
+
+fn add_user_msg_attrs<Msg>(msg: &UserMsg, info: &MessageInfo, response: &mut Response<Msg>) {
+    let mut attrs = AttrsBuilder(response);
+
+    attrs.add_kind(msg.kind());
+
+    match msg {
+        UserMsg::Evaluate { vault }
+        | UserMsg::Deposit { vault }
+        | UserMsg::RepayUnderlying { vault }
+        | UserMsg::RepaySynthetic { vault }
+        | UserMsg::SelfLiquidate { vault }
+        | UserMsg::Advance { vault, .. }
+        | UserMsg::Withdraw { vault, .. }
+        | UserMsg::ConvertCredit { vault, .. } => attrs.add_vault(vault).add_account(&info.sender),
+
+        UserMsg::DepositOnBehalf { vault, behalf_of }
+        | UserMsg::AdvanceOnBehalf {
+            vault, behalf_of, ..
+        } => attrs.add_vault(vault).add_account(behalf_of),
+
+        UserMsg::Redeem { vault } | UserMsg::Mint { vault } => {
+            attrs.add_vault(vault).add_recipient(&info.sender)
+        }
+
+        UserMsg::RedeemOnBehalf { vault, behalf_of }
+        | UserMsg::MintOnBehalf { vault, behalf_of } => {
+            attrs.add_vault(vault).add_recipient(behalf_of)
+        }
+
+        UserMsg::ClaimTreasury { vault } | UserMsg::ClaimAmo { vault } => attrs.add_vault(vault),
+    };
+
+    match msg {
+        UserMsg::Advance { amount, .. }
+        | UserMsg::AdvanceOnBehalf { amount, .. }
+        | UserMsg::Withdraw { amount, .. }
+        | UserMsg::ConvertCredit { amount, .. } => {
+            attrs.add_amount(*amount);
+        }
+
+        UserMsg::Deposit { .. }
+        | UserMsg::DepositOnBehalf { .. }
+        | UserMsg::RepayUnderlying { .. }
+        | UserMsg::RepaySynthetic { .. }
+        | UserMsg::Redeem { .. }
+        | UserMsg::RedeemOnBehalf { .. }
+        | UserMsg::Mint { .. }
+        | UserMsg::MintOnBehalf { .. } => {
+            if let Some(coin) = info.funds.first() {
+                attrs.add_amount(coin.amount);
+            }
+        }
+
+        _ => {}
+    }
+}
+
 pub fn handle_user_msg<Msg>(
     api: &dyn Api,
     vaults: &dyn CoreVaultRegistry,
@@ -461,36 +550,37 @@ pub fn handle_user_msg<Msg>(
 ) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
     let hub = hub(vaults, balance_sheet, advance_fee_oracle);
 
-    match msg {
+    let mut response = Response::default();
+
+    add_user_msg_attrs(&msg, &info, &mut response);
+
+    let cmds = match msg {
         UserMsg::Evaluate { vault } => {
             let response = hub.evaluate(vault.into(), info.sender.into_string().into())?;
-
-            Ok((response.cmds, Response::from_cdp(response.cdp)))
+            response.cmds
         }
 
         UserMsg::Deposit { vault } => {
             let recipient = info.sender.clone().into_string();
 
-            handle_deposit(&hub, info, vault, recipient)
+            handle_deposit(&hub, info, vault, recipient)?
         }
 
         UserMsg::DepositOnBehalf { vault, behalf_of } => {
             api.addr_validate(&behalf_of)?;
 
-            handle_deposit(&hub, info, vault, behalf_of)
+            handle_deposit(&hub, info, vault, behalf_of)?
         }
 
         UserMsg::RepayUnderlying { vault } => {
             let coin = one_coin(&info)?;
 
-            let cmds = hub.repay_underlying(
+            hub.repay_underlying(
                 vault.into(),
                 info.sender.into_string().into(),
                 coin.denom.into(),
                 DepositAmount(coin.amount.u128()),
-            )?;
-
-            Ok((cmds, Response::default()))
+            )?
         }
 
         UserMsg::RepaySynthetic { vault } => {
@@ -503,13 +593,13 @@ pub fn handle_user_msg<Msg>(
                 coin.amount.u128(),
             )?;
 
-            Ok((response.cmds, Response::from_cdp(response.cdp)))
+            response.cmds
         }
 
         UserMsg::Advance { vault, amount } => {
             let recipient = info.sender.clone().into_string();
 
-            handle_advance(&hub, info, vault, recipient, amount)
+            handle_advance(&hub, info, vault, recipient, amount)?
         }
 
         UserMsg::AdvanceOnBehalf {
@@ -519,7 +609,7 @@ pub fn handle_user_msg<Msg>(
         } => {
             api.addr_validate(&behalf_of)?;
 
-            handle_advance(&hub, info, vault, behalf_of, amount)
+            handle_advance(&hub, info, vault, behalf_of, amount)?
         }
 
         UserMsg::Withdraw { vault, amount } => {
@@ -529,14 +619,11 @@ pub fn handle_user_msg<Msg>(
                 amount.u128(),
             )?;
 
-            Ok((response.cmds, Response::from_cdp(response.cdp)))
+            response.cmds
         }
 
         UserMsg::SelfLiquidate { vault } => {
-            let cmds =
-                hub.self_liquidate_position(vault.into(), info.sender.into_string().into())?;
-
-            Ok((cmds, Response::default()))
+            hub.self_liquidate_position(vault.into(), info.sender.into_string().into())?
         }
 
         UserMsg::ConvertCredit { vault, amount } => {
@@ -546,45 +633,43 @@ pub fn handle_user_msg<Msg>(
                 amount.u128(),
             )?;
 
-            Ok((response.cmds, Response::from_cdp(response.cdp)))
+            response.cmds
         }
 
         UserMsg::Redeem { vault } => {
             let recipient = info.sender.clone().into_string();
 
-            handle_redeem(&hub, info, vault, recipient)
+            handle_redeem(&hub, info, vault, recipient)?
         }
 
         UserMsg::RedeemOnBehalf { vault, behalf_of } => {
             api.addr_validate(&behalf_of)?;
 
-            handle_redeem(&hub, info, vault, behalf_of)
+            handle_redeem(&hub, info, vault, behalf_of)?
         }
 
         UserMsg::Mint { vault } => {
             let recipient = info.sender.clone().into_string();
 
-            handle_mint(&hub, info, vault, recipient)
+            handle_mint(&hub, info, vault, recipient)?
         }
 
         UserMsg::MintOnBehalf { vault, behalf_of } => {
             api.addr_validate(&behalf_of)?;
 
-            handle_mint(&hub, info, vault, behalf_of)
+            handle_mint(&hub, info, vault, behalf_of)?
         }
 
         UserMsg::ClaimTreasury { vault } => {
-            let cmds = hub.claim_treasury_shares(vault.into(), info.sender.into_string().into())?;
-
-            Ok((cmds, Response::default()))
+            hub.claim_treasury_shares(vault.into(), info.sender.into_string().into())?
         }
 
         UserMsg::ClaimAmo { vault } => {
-            let cmds = hub.claim_amo_shares(vault.into(), info.sender.into_string().into())?;
-
-            Ok((cmds, Response::default()))
+            hub.claim_amo_shares(vault.into(), info.sender.into_string().into())?
         }
-    }
+    };
+
+    Ok((cmds, response))
 }
 
 pub struct Ctx<'a> {
@@ -644,17 +729,36 @@ pub fn handle_reply<Msg>(
         .data
         .expect("always: a deposit response from the vault");
 
-    let response: VaultDepositResponse = from_json(reply_data)?;
+    let vault_response: VaultDepositResponse = from_json(reply_data)?;
+
+    let mut response = Response::default();
+
+    let mut attrs = AttrsBuilder(&mut response);
+
+    attrs
+        .add_kind("vault_deposit_callback")
+        .add_attr(
+            "reason",
+            match reason {
+                VaultDepositReason::Deposit => "deposit",
+                VaultDepositReason::RepayUnderlying => "repay_underlying",
+                VaultDepositReason::Mint => "mint",
+            },
+        )
+        .add_vault(&vault)
+        .add_recipient(&recipient)
+        .add_attr("minted_shares", vault_response.minted_shares.u128())
+        .add_attr("deposit_value", vault_response.deposit_value.u128());
 
     let cmds = hub(vaults, balance_sheet, advance_fee_oracle).vault_deposit_callback(
         vault.into(),
         recipient.into(),
         reason,
-        SharesAmount(response.minted_shares.u128()),
-        DepositValue(response.deposit_value.u128()),
+        SharesAmount(vault_response.minted_shares.u128()),
+        DepositValue(vault_response.deposit_value.u128()),
     )?;
 
-    Ok((cmds, Response::default()))
+    Ok((cmds, response))
 }
 
 fn vault_metadata(
@@ -852,12 +956,61 @@ pub fn handle_query_msg(
     Ok(binary)
 }
 
+fn add_cmd_attrs<Msg>(cmd: &Cmd, response: &mut Response<Msg>) {
+    let mut attrs = AttrsBuilder(response);
+
+    match cmd {
+        Cmd::Vault(VaultCmd::Redeem {
+            amount: SharesAmount(amount),
+            ..
+        }) => attrs.add_attr("redeem_shares", amount),
+        Cmd::BalanceSheet(cmd) => match cmd {
+            BalanceSheetCmd::SetCollateralShares {
+                shares: SharesAmount(amount),
+                ..
+            } => attrs.add_attr("collateral_shares", amount),
+            BalanceSheetCmd::SetCollateralBalance { balance, .. } => {
+                attrs.add_attr("collateral_balance", balance)
+            }
+            BalanceSheetCmd::SetReserveShares {
+                shares: SharesAmount(amount),
+                ..
+            } => attrs.add_attr("reserve_shares", amount),
+            BalanceSheetCmd::SetReserveBalance { balance, .. } => {
+                attrs.add_attr("reserve_balance", balance)
+            }
+            BalanceSheetCmd::SetTreasuryShares {
+                shares: SharesAmount(amount),
+                ..
+            } => attrs.add_attr("treasury_shares", amount),
+            BalanceSheetCmd::SetAmoShares {
+                shares: SharesAmount(amount),
+                ..
+            } => attrs.add_attr("amo_shares", amount),
+            BalanceSheetCmd::SetOverallSumPaymentRatio { spr, .. } => {
+                attrs.add_attr("spr", spr.fixed_u256())
+            }
+            BalanceSheetCmd::SetAccountCollateral { collateral, .. } => {
+                attrs.add_attr("account_collateral", collateral)
+            }
+            BalanceSheetCmd::SetAccountDebt { debt, .. } => attrs.add_attr("account_debt", debt),
+            BalanceSheetCmd::SetAccountCredit { credit, .. } => {
+                attrs.add_attr("account_credit", credit)
+            }
+            _ => &mut attrs,
+        },
+        _ => &mut attrs,
+    };
+}
+
 pub fn handle_hub_cmd<Msg>(
     storage: &mut dyn Storage,
     env: &Env,
     response: &mut Response<Msg>,
     cmd: Cmd,
 ) -> Result<(), Error> {
+    add_cmd_attrs(&cmd, response);
+
     match cmd {
         Cmd::Mint(mint_cmd) => {
             let sub_msg = synthetic_mint::handle_cmd(storage, mint_cmd);
