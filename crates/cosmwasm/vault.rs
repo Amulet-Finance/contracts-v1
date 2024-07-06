@@ -5,8 +5,9 @@ use amulet_core::{
     vault::{
         offset_total_deposits_value, pending_batch_id, vault, BatchId, ClaimAmount,
         ClaimableBatchIter, Cmd, DepositAmount, DepositResponse as CoreDepositResponse,
-        Error as CoreVaultError, SharesAmount, SharesMint as CoreSharesMint, Strategy, UnbondEpoch,
-        UnbondingLog as CoreUnbondingLog, Vault,
+        DepositValue, Error as CoreVaultError, MintCmd, SharesAmount, SharesMint as CoreSharesMint,
+        Strategy, StrategyCmd, UnbondEpoch, UnbondingLog as CoreUnbondingLog, UnbondingLogSet,
+        Vault,
     },
     Decimals,
 };
@@ -15,6 +16,7 @@ use cosmwasm_std::{
     to_json_binary, Binary, Env, MessageInfo, Response, StdError, Storage, Uint128,
 };
 use cw_utils::{nonpayable, one_coin, PaymentError};
+use strum::IntoStaticStr;
 
 use self::unbonding_log::StorageExt as _;
 
@@ -46,6 +48,8 @@ pub struct DepositResponse {
 }
 
 #[cw_serde]
+#[derive(IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
 pub enum ExecuteMsg {
     /// Deposit native tokens into the vault, the sender receives the issued shares
     /// Responds with [DepositResponse]
@@ -62,6 +66,14 @@ pub enum ExecuteMsg {
 
     /// Claim any unclaimed unbonded underlying tokens belonging to the sender
     Claim {},
+}
+
+impl ExecuteMsg {
+    /// A string representing the message 'kind'
+    pub fn kind(&self) -> &'static str {
+        // relies on deriving strum::IntoStaticStr
+        self.into()
+    }
 }
 
 #[cw_serde]
@@ -164,7 +176,8 @@ pub enum QueryMsg {
 fn handle_vault_deposit<Msg>(
     info: MessageInfo,
     vault: &dyn Vault,
-) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
+    response: &mut Response<Msg>,
+) -> Result<Vec<Cmd>, Error> {
     let deposit_asset_coin = one_coin(&info)?;
 
     let CoreDepositResponse {
@@ -186,13 +199,12 @@ fn handle_vault_deposit<Msg>(
         deposit_value: deposit_value.0.into(),
     })?;
 
-    Ok((cmds, Response::default().set_data(data)))
+    response.data = Some(data);
+
+    Ok(cmds)
 }
 
-fn handle_vault_donation<Msg>(
-    info: MessageInfo,
-    vault: &dyn Vault,
-) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
+fn handle_vault_donation(info: MessageInfo, vault: &dyn Vault) -> Result<Vec<Cmd>, Error> {
     let deposit_asset_coin = one_coin(&info)?;
 
     let cmd = vault.donate(
@@ -200,14 +212,14 @@ fn handle_vault_donation<Msg>(
         DepositAmount(deposit_asset_coin.amount.u128()),
     )?;
 
-    Ok((vec![cmd.into()], Response::default()))
+    Ok(vec![cmd.into()])
 }
 
-fn handle_vault_redemption<Msg>(
+fn handle_vault_redemption(
     info: MessageInfo,
     vault: &dyn Vault,
     recipient: String,
-) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
+) -> Result<Vec<Cmd>, Error> {
     let redemption_asset_coin = one_coin(&info)?;
 
     let cmds = vault.redeem(
@@ -216,29 +228,123 @@ fn handle_vault_redemption<Msg>(
         recipient.into(),
     )?;
 
-    Ok((cmds, Response::default()))
+    Ok(cmds)
 }
 
-fn handle_vault_start_unbond<Msg>(
-    info: MessageInfo,
-    vault: &dyn Vault,
-) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
+fn handle_vault_start_unbond(info: MessageInfo, vault: &dyn Vault) -> Result<Vec<Cmd>, Error> {
     nonpayable(&info)?;
 
     let cmds = vault.start_unbond()?;
 
-    Ok((cmds, Response::default()))
+    Ok(cmds)
 }
 
-fn handle_vault_claim<Msg>(
-    info: MessageInfo,
-    vault: &dyn Vault,
-) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
+fn handle_vault_claim(info: MessageInfo, vault: &dyn Vault) -> Result<Vec<Cmd>, Error> {
     nonpayable(&info)?;
 
     let cmds = vault.claim(info.sender.into_string().into())?;
 
-    Ok((cmds, Response::default()))
+    Ok(cmds)
+}
+
+struct AttrsBuilder<'a, Msg>(&'a mut Response<Msg>);
+
+impl<'a, Msg> AttrsBuilder<'a, Msg> {
+    fn add_attr(&mut self, k: &str, v: impl ToString) -> &mut Self {
+        self.0.attributes.push((k, v.to_string()).into());
+        self
+    }
+
+    fn add_kind(&mut self, kind: &str) -> &mut Self {
+        self.add_attr("kind", kind)
+    }
+
+    fn add_recipient(&mut self, recipient: &str) -> &mut Self {
+        self.add_attr("recipient", recipient)
+    }
+
+    fn add_amount(&mut self, amount: impl ToString) -> &mut Self {
+        self.add_attr("amount", amount)
+    }
+}
+
+fn add_msg_attrs<Msg>(msg: &ExecuteMsg, info: &MessageInfo, response: &mut Response<Msg>) {
+    let mut attrs = AttrsBuilder(response);
+
+    attrs.add_kind(msg.kind());
+
+    match msg {
+        ExecuteMsg::Deposit {} | ExecuteMsg::Claim {} => attrs.add_recipient(info.sender.as_str()),
+        ExecuteMsg::Donate {} => attrs.add_attr("donor", &info.sender),
+        ExecuteMsg::Redeem { recipient } => attrs.add_recipient(recipient),
+        _ => &mut attrs,
+    };
+}
+
+fn add_cmd_attrs<Msg>(cmds: &[Cmd], response: &mut Response<Msg>) {
+    let mut attrs = AttrsBuilder(response);
+
+    for cmd in cmds {
+        match cmd {
+            Cmd::Mint(cmd) => match cmd {
+                MintCmd::Mint {
+                    amount: SharesAmount(amount),
+                    ..
+                } => attrs.add_attr("mint_shares", amount),
+                MintCmd::Burn {
+                    amount: SharesAmount(amount),
+                } => attrs.add_attr("burn_shares", amount),
+            },
+            Cmd::Strategy(cmd) => match cmd {
+                StrategyCmd::Deposit {
+                    amount: DepositAmount(amount),
+                }
+                | StrategyCmd::SendClaimed {
+                    amount: ClaimAmount(amount),
+                    ..
+                } => attrs.add_amount(amount),
+                StrategyCmd::Unbond {
+                    value: DepositValue(value),
+                } => attrs.add_attr("unbond_value", value),
+            },
+            Cmd::UnbondingLog(cmd) => match cmd {
+                UnbondingLogSet::LastCommittedBatchId(batch) => {
+                    attrs.add_attr("batch_committed", batch)
+                }
+                UnbondingLogSet::BatchTotalUnbondValue {
+                    value: DepositValue(value),
+                    ..
+                } => attrs.add_attr("batch_total_value", value),
+                UnbondingLogSet::BatchClaimableAmount {
+                    amount: ClaimAmount(amount),
+                    ..
+                } => attrs.add_attr("batch_total_claim", amount),
+                UnbondingLogSet::BatchHint { hint, .. } => attrs.add_attr("batch_start_hint", hint),
+                UnbondingLogSet::BatchEpoch { epoch, .. } => attrs
+                    .add_attr("batch_start", epoch.start)
+                    .add_attr("batch_end", epoch.end),
+                UnbondingLogSet::UnbondedValueInBatch {
+                    value: DepositValue(value),
+                    ..
+                } => attrs.add_attr("batch_recipient_value", value),
+                _ => &mut attrs,
+            },
+        };
+    }
+
+    // add batch attribute only once
+    if let Some(batch) = cmds.iter().find_map(|cmd| match cmd {
+        Cmd::UnbondingLog(
+            UnbondingLogSet::BatchTotalUnbondValue { batch, .. }
+            | UnbondingLogSet::BatchClaimableAmount { batch, .. }
+            | UnbondingLogSet::UnbondedValueInBatch { batch, .. }
+            | UnbondingLogSet::BatchHint { batch, .. }
+            | UnbondingLogSet::BatchEpoch { batch, .. },
+        ) => Some(batch),
+        _ => None,
+    }) {
+        attrs.add_attr("batch", batch);
+    }
 }
 
 pub fn handle_execute_msg<Msg>(
@@ -250,13 +356,21 @@ pub fn handle_execute_msg<Msg>(
 ) -> Result<(Vec<Cmd>, Response<Msg>), Error> {
     let vault = vault(strategy, unbonding_log, mint);
 
-    match msg {
-        ExecuteMsg::Deposit {} => handle_vault_deposit(info, &vault),
-        ExecuteMsg::Donate {} => handle_vault_donation(info, &vault),
-        ExecuteMsg::Redeem { recipient } => handle_vault_redemption(info, &vault, recipient),
-        ExecuteMsg::StartUnbond {} => handle_vault_start_unbond(info, &vault),
-        ExecuteMsg::Claim {} => handle_vault_claim(info, &vault),
-    }
+    let mut response = Response::default();
+
+    add_msg_attrs(&msg, &info, &mut response);
+
+    let cmds = match msg {
+        ExecuteMsg::Deposit {} => handle_vault_deposit(info, &vault, &mut response)?,
+        ExecuteMsg::Donate {} => handle_vault_donation(info, &vault)?,
+        ExecuteMsg::Redeem { recipient } => handle_vault_redemption(info, &vault, recipient)?,
+        ExecuteMsg::StartUnbond {} => handle_vault_start_unbond(info, &vault)?,
+        ExecuteMsg::Claim {} => handle_vault_claim(info, &vault)?,
+    };
+
+    add_cmd_attrs(&cmds, &mut response);
+
+    Ok((cmds, response))
 }
 
 pub fn pending_unbonding(

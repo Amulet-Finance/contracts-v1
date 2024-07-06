@@ -111,23 +111,40 @@ fn deposit() {
     check(
         &response,
         expect![[r#"
-        (
-          messages: [
             (
-              id: 0,
-              msg: custom(mint_tokens(
-                denom: "factory/cosmos2contract/share",
-                amount: "1100000000000000",
-                mint_to_address: "bob",
-              )),
-              gas_limit: None,
-              reply_on: never,
-            ),
-          ],
-          attributes: [],
-          events: [],
-          data: Some("eyJ0b3RhbF9zaGFyZXNfaXNzdWVkIjoiMTEwMDAwMDAwMDAwMDAwMCIsInRvdGFsX2RlcG9zaXRzX3ZhbHVlIjoiMTEwMCIsIm1pbnRlZF9zaGFyZXMiOiIxMTAwMDAwMDAwMDAwMDAwIiwiZGVwb3NpdF92YWx1ZSI6IjExMDAifQ=="),
-        )"#]],
+              messages: [
+                (
+                  id: 0,
+                  msg: custom(mint_tokens(
+                    denom: "factory/cosmos2contract/share",
+                    amount: "1100000000000000",
+                    mint_to_address: "bob",
+                  )),
+                  gas_limit: None,
+                  reply_on: never,
+                ),
+              ],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "deposit",
+                ),
+                (
+                  key: "recipient",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "1000",
+                ),
+                (
+                  key: "mint_shares",
+                  value: "1100000000000000",
+                ),
+              ],
+              events: [],
+              data: Some("eyJ0b3RhbF9zaGFyZXNfaXNzdWVkIjoiMTEwMDAwMDAwMDAwMDAwMCIsInRvdGFsX2RlcG9zaXRzX3ZhbHVlIjoiMTEwMCIsIm1pbnRlZF9zaGFyZXMiOiIxMTAwMDAwMDAwMDAwMDAwIiwiZGVwb3NpdF92YWx1ZSI6IjExMDAifQ=="),
+            )"#]],
     );
 
     check(
@@ -197,7 +214,20 @@ fn donate() {
         expect![[r#"
             (
               messages: [],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "donate",
+                ),
+                (
+                  key: "donor",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "1000",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -277,7 +307,52 @@ fn redeem() {
                   reply_on: never,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "redeem",
+                ),
+                (
+                  key: "recipient",
+                  value: "bob",
+                ),
+                (
+                  key: "batch_total_value",
+                  value: "550",
+                ),
+                (
+                  key: "batch_recipient_value",
+                  value: "550",
+                ),
+                (
+                  key: "burn_shares",
+                  value: "550000000000000",
+                ),
+                (
+                  key: "batch_committed",
+                  value: "0",
+                ),
+                (
+                  key: "batch_total_claim",
+                  value: "499",
+                ),
+                (
+                  key: "batch_start",
+                  value: "1571797419",
+                ),
+                (
+                  key: "batch_end",
+                  value: "1571797419",
+                ),
+                (
+                  key: "unbond_value",
+                  value: "550",
+                ),
+                (
+                  key: "batch",
+                  value: "0",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
@@ -487,7 +562,20 @@ fn claim() {
                   reply_on: never,
                 ),
               ],
-              attributes: [],
+              attributes: [
+                (
+                  key: "kind",
+                  value: "claim",
+                ),
+                (
+                  key: "recipient",
+                  value: "bob",
+                ),
+                (
+                  key: "amount",
+                  value: "499",
+                ),
+              ],
               events: [],
               data: None,
             )"#]],
