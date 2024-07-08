@@ -180,7 +180,7 @@ pub struct PositionResponse {
     /// Amount of credit owed to the account
     pub credit: Uint128,
     /// The Sum Payment Ratio at the time of position evaluation
-    pub sum_payment_ratio: Uint256,
+    pub sum_payment_ratio: String,
     /// Whether or not there was a vault loss detected.
     /// If `true` the other fields will be based on the last stored overall SPR for the vault.
     pub vault_loss_detected: bool,
@@ -272,7 +272,7 @@ impl From<Cdp> for PositionResponse {
             collateral: cdp.collateral.into(),
             debt: cdp.debt.into(),
             credit: cdp.credit.into(),
-            sum_payment_ratio: Uint256::from_be_bytes(cdp.spr.into_raw().to_be_bytes()),
+            sum_payment_ratio: cdp.spr.fixed_u256().to_string(),
             vault_loss_detected: false,
         }
     }

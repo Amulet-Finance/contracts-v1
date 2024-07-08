@@ -389,7 +389,7 @@ fn deposit() {
               collateral: "1000",
               debt: "0",
               credit: "0",
-              sum_payment_ratio: "0",
+              sum_payment_ratio: "0.0",
               vault_loss_detected: false,
             )"#]],
     );
@@ -570,7 +570,7 @@ fn deposit_on_behalf() {
               collateral: "1000",
               debt: "0",
               credit: "0",
-              sum_payment_ratio: "0",
+              sum_payment_ratio: "0.0",
               vault_loss_detected: false,
             )"#]],
     );
@@ -818,7 +818,7 @@ fn repay_underlying() {
               collateral: "1000",
               debt: "100",
               credit: "0",
-              sum_payment_ratio: "0",
+              sum_payment_ratio: "0.0",
               vault_loss_detected: false,
             )"#]],
     );
@@ -970,7 +970,7 @@ fn repay_synthetic() {
               collateral: "1000",
               debt: "100",
               credit: "0",
-              sum_payment_ratio: "0",
+              sum_payment_ratio: "0.0",
               vault_loss_detected: false,
             )"#]],
     );
@@ -1113,7 +1113,7 @@ fn advance() {
               collateral: "1000",
               debt: "500",
               credit: "0",
-              sum_payment_ratio: "0",
+              sum_payment_ratio: "0.0",
               vault_loss_detected: false,
             )"#]],
     );
@@ -1267,7 +1267,7 @@ fn advance_on_behalf() {
               collateral: "1000",
               debt: "500",
               credit: "0",
-              sum_payment_ratio: "0",
+              sum_payment_ratio: "0.0",
               vault_loss_detected: false,
             )"#]],
     );
@@ -1459,7 +1459,7 @@ fn withdraw() {
               collateral: "500",
               debt: "0",
               credit: "0",
-              sum_payment_ratio: "0",
+              sum_payment_ratio: "0.0",
               vault_loss_detected: false,
             )"#]],
     );
@@ -1705,7 +1705,7 @@ fn self_liquidate() {
               collateral: "0",
               debt: "0",
               credit: "0",
-              sum_payment_ratio: "0",
+              sum_payment_ratio: "0.0",
               vault_loss_detected: false,
             )"#]],
     );
@@ -1875,7 +1875,7 @@ fn convert_credit() {
               collateral: "1088",
               debt: "0",
               credit: "0",
-              sum_payment_ratio: "30625413022884461711703714668859139031",
+              sum_payment_ratio: "0.08999999999999999999999999999999",
               vault_loss_detected: false,
             )"#]],
     );
@@ -3336,7 +3336,7 @@ fn position_query_vault_loss_detected() {
               collateral: "1000",
               debt: "0",
               credit: "89",
-              sum_payment_ratio: "30625413022884461711703714668859139031",
+              sum_payment_ratio: "0.08999999999999999999999999999999",
               vault_loss_detected: true,
             )"#]],
     );
