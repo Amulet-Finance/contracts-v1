@@ -120,6 +120,7 @@ dependencies = [
  "pos-reconcile-fsm",
  "prost",
  "prost-types",
+ "test-utils",
 ]
 
 [[package]]

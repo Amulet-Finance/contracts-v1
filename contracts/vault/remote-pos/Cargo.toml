@@ -13,7 +13,6 @@ test       = false
 path       = "contract.rs"
 crate-type = ["cdylib", "rlib"]
 doctest    = false
-test       = false
 
 [dependencies]
 anyhow.workspace            = true
@@ -33,3 +32,6 @@ amulet-cw.workspace         = true
 amulet-ntrn.workspace       = true
 num.workspace               = true
 pos-reconcile-fsm.workspace = true
+
+[dev-dependencies]
+test-utils = { workspace = true }

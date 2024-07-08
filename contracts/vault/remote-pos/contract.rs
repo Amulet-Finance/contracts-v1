@@ -7,6 +7,8 @@ pub mod strategy;
 pub mod sudo;
 pub mod types;
 
+use std::collections::HashSet;
+
 use anyhow::{anyhow, bail, ensure, Result};
 use cosmwasm_std::{
     entry_point, to_json_binary, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Reply, Response,
@@ -97,6 +99,14 @@ pub fn instantiate(
         msg.initial_validator_set.len() == msg.initial_validator_weights.len(),
         "initial validator set length matches validator set weights length"
     );
+
+    let mut validator_hash_set = HashSet::with_capacity(msg.initial_validator_set.len());
+
+    for val in &msg.initial_validator_set {
+        if !validator_hash_set.insert(val) {
+            bail!("validator {val} occurs more than once in the validator set");
+        }
+    }
 
     let ica_register_fee = deps.querier.interchain_account_register_fee()?;
 
@@ -503,3 +513,6 @@ pub fn sudo(deps: DepsMut<NeutronQuery>, env: Env, msg: SudoMsg) -> Result<Respo
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response> {
     Ok(Response::default())
 }
+
+#[cfg(test)]
+mod test;

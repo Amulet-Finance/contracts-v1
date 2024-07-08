@@ -407,6 +407,14 @@ pub fn handle_redelegate_slot(
         bail!("another redelegation is pending");
     }
 
+    let existing_validator_set = deps.storage.validators();
+
+    for existing_validator in existing_validator_set {
+        if validator == existing_validator {
+            bail!("{validator} already exists in the set");
+        }
+    }
+
     must_pay_icq_deposit(deps.as_ref(), &info)?;
 
     let mut validators = deps.storage.validators();

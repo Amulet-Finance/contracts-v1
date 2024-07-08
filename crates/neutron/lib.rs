@@ -7,18 +7,34 @@ pub mod query {
     use cosmwasm_std::{Binary, Coin, CustomQuery, QuerierWrapper, QueryRequest, StdError, Uint64};
 
     #[cw_serde]
-    struct InterchainTxsParams {
-        msg_submit_tx_max_messages: Uint64,
-        register_fee: Vec<Coin>,
+    pub struct InterchainTxsParams {
+        pub msg_submit_tx_max_messages: Uint64,
+        pub register_fee: Vec<Coin>,
     }
 
     impl InterchainTxsParams {
-        const TYPE_URL: &'static str = "/neutron.interchaintxs.v1.Query/Params";
+        pub const QUERY_PATH: &'static str = "/neutron.interchaintxs.v1.Query/Params";
     }
 
     #[cw_serde]
-    struct QueryInterchainTxParamsResponse {
-        params: InterchainTxsParams,
+    pub struct QueryInterchainTxParamsResponse {
+        pub params: InterchainTxsParams,
+    }
+
+    #[cw_serde]
+    pub struct IcqParams {
+        pub query_submit_timeout: String,
+        pub query_deposit: Vec<Coin>,
+        pub tx_query_removal_limit: String,
+    }
+
+    impl IcqParams {
+        pub const QUERY_PATH: &'static str = "/neutron.interchainqueries.Query/Params";
+    }
+
+    #[cw_serde]
+    pub struct QueryIcqParamsResponse {
+        pub params: IcqParams,
     }
 
     pub trait QuerierExt {
@@ -32,7 +48,7 @@ pub mod query {
     impl<'a, C: CustomQuery> QuerierExt for QuerierWrapper<'a, C> {
         fn interchain_tx_max_msg_count(&self) -> Result<usize, StdError> {
             let res: QueryInterchainTxParamsResponse = self.query(&QueryRequest::Stargate {
-                path: InterchainTxsParams::TYPE_URL.to_owned(),
+                path: InterchainTxsParams::QUERY_PATH.to_owned(),
                 data: Binary(vec![]),
             })?;
 
@@ -48,7 +64,7 @@ pub mod query {
 
         fn interchain_account_register_fee(&self) -> Result<Coin, StdError> {
             let res: QueryInterchainTxParamsResponse = self.query(&QueryRequest::Stargate {
-                path: InterchainTxsParams::TYPE_URL.to_owned(),
+                path: InterchainTxsParams::QUERY_PATH.to_owned(),
                 data: Binary(vec![]),
             })?;
 
@@ -58,20 +74,8 @@ pub mod query {
         }
 
         fn interchain_query_deposit(&self) -> Result<Coin, StdError> {
-            #[cw_serde]
-            struct Params {
-                query_submit_timeout: String,
-                query_deposit: Vec<Coin>,
-                tx_query_removal_limit: String,
-            }
-
-            #[cw_serde]
-            struct QueryParamsResponse {
-                params: Params,
-            }
-
-            let res: QueryParamsResponse = self.query(&QueryRequest::Stargate {
-                path: "/neutron.interchainqueries.Query/Params".to_owned(),
+            let res: QueryIcqParamsResponse = self.query(&QueryRequest::Stargate {
+                path: IcqParams::QUERY_PATH.to_owned(),
                 data: Binary(vec![]),
             })?;
 
