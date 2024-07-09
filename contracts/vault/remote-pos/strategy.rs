@@ -324,7 +324,7 @@ pub fn acknowledge_expected_unbondings(
     ack_amount
 }
 
-pub fn handle_receive_unbonded(
+pub fn handle_receive_undelegated(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     balance_icq_timestamp: u64,
@@ -378,7 +378,13 @@ pub fn handle_receive_unbonded(
     deps.storage
         .set_available_to_claim(AvailableToClaim(available_to_claim));
 
-    Ok(Response::default())
+    Ok(Response::default()
+        .add_attribute("kind", "receive_undelegated")
+        .add_attribute("received_amount", unbondings_expected.to_string())
+        .add_attribute("expected_amount", unbondings_expected.to_string())
+        .add_attribute("available_to_claim", available_to_claim.to_string())
+        .add_attribute("total_received", total_actual_unbonded.to_string())
+        .add_attribute("total_expected", total_expected_unbonded.to_string()))
 }
 
 fn must_pay_icq_deposit(deps: Deps<NeutronQuery>, info: &MessageInfo) -> Result<()> {

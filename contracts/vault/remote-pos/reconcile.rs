@@ -265,13 +265,13 @@ impl<'a> FsmEnv for Env<'a> {
 }
 
 #[derive(Default)]
-struct ResponseBuilder {
+struct SubMsgSequence {
     main_ica_msgs: Vec<ProtobufAny>,
     rewards_ica_msgs: Vec<ProtobufAny>,
     local_msgs: Vec<SubMsg<NeutronMsg>>,
 }
 
-impl ResponseBuilder {
+impl SubMsgSequence {
     fn push_main_ica_msg(&mut self, msg: ProtobufAny) -> &mut Self {
         self.main_ica_msgs.push(msg);
         self
@@ -287,15 +287,11 @@ impl ResponseBuilder {
         self
     }
 
-    fn build(self, storage: &dyn Storage, fee: IbcFee) -> Response<NeutronMsg> {
-        let mut response = Response::default();
-
-        if !self.local_msgs.is_empty() {
-            response = response.add_submessages(self.local_msgs);
-        }
+    fn build(self, storage: &dyn Storage, fee: IbcFee) -> Vec<SubMsg<NeutronMsg>> {
+        let mut sequence = self.local_msgs;
 
         if self.main_ica_msgs.is_empty() && self.rewards_ica_msgs.is_empty() {
-            return response;
+            return sequence;
         }
 
         let connection_id = storage.connection_id();
@@ -314,7 +310,7 @@ impl ResponseBuilder {
                 fee: fee.clone(),
             };
 
-            response = response.add_message(interchain_tx);
+            sequence.push(SubMsg::new(interchain_tx));
         }
 
         if !self.rewards_ica_msgs.is_empty() {
@@ -329,10 +325,10 @@ impl ResponseBuilder {
                 fee,
             };
 
-            response = response.add_message(interchain_tx);
+            sequence.push(SubMsg::new(interchain_tx));
         }
 
-        response
+        sequence
     }
 }
 
@@ -729,7 +725,7 @@ fn authz(storage: &dyn Storage, msgs: Vec<AuthzMsg>) -> ProtobufAny {
 fn handle_reconcile_tx_msg(
     storage: &mut dyn Storage,
     env: &CwEnv,
-    response: &mut ResponseBuilder,
+    response: &mut SubMsgSequence,
     fee: &IbcFee,
     tx_msg: TxMsg,
 ) {
@@ -844,44 +840,144 @@ fn handle_reconcile_event(storage: &mut dyn Storage, env: &CwEnv, event: Event) 
     }
 }
 
+struct AttrsBuilder<'a>(&'a mut Response<NeutronMsg>);
+
+impl<'a> AttrsBuilder<'a> {
+    fn add_attr(&mut self, k: impl Into<String>, v: impl ToString) -> &mut Self {
+        self.0.attributes.push((k, v.to_string()).into());
+        self
+    }
+
+    fn add_kind(&mut self, kind: &str) -> &mut Self {
+        self.add_attr("kind", kind)
+    }
+}
+
+macro_rules! attr {
+    ($attrs:ident, $attr:ident) => {
+        $attrs.add_attr(stringify!($attr), $attr)
+    };
+}
+
+fn add_cmd_attrs(cmd: &ReconcileCmd, response: &mut Response<NeutronMsg>) {
+    let mut res = AttrsBuilder(response);
+
+    match cmd {
+        ReconcileCmd::Delegated(delegated) => attr!(res, delegated),
+        ReconcileCmd::InflightDelegation(inflight_delegation) => {
+            attr!(res, inflight_delegation)
+        }
+        ReconcileCmd::InflightDeposit(inflight_deposit) => attr!(res, inflight_deposit),
+        ReconcileCmd::InflightFeePayable(inflight_fee_payable) => attr!(res, inflight_fee_payable),
+        ReconcileCmd::InflightRewardsReceivable(inflight_rewards_receivable) => {
+            attr!(res, inflight_rewards_receivable)
+        }
+        ReconcileCmd::InflightUnbond(inflight_unbond) => attr!(res, inflight_unbond),
+        ReconcileCmd::LastReconcileHeight(last_reconcile_height) => {
+            attr!(res, last_reconcile_height)
+        }
+        ReconcileCmd::MsgIssuedCount(msg_issued_count) => attr!(res, msg_issued_count),
+        ReconcileCmd::MsgSuccessCount(msg_success_count) => attr!(res, msg_success_count),
+        ReconcileCmd::PendingDeposit(pending_deposit) => attr!(res, pending_deposit),
+        ReconcileCmd::PendingUnbond(pending_unbond) => attr!(res, pending_unbond),
+        ReconcileCmd::Phase(phase) => attr!(res, phase),
+        ReconcileCmd::State(state) => attr!(res, state),
+        _ => &mut res,
+    };
+}
+
+fn add_event_attrs(event: &Event, response: &mut Response<NeutronMsg>) {
+    let mut res = AttrsBuilder(response);
+
+    match event {
+        Event::SlashDetected(slash_detected) => attr!(res, slash_detected),
+        Event::DepositsTransferred(deposits_transferred) => attr!(res, deposits_transferred),
+        Event::UnbondStarted(unbond_started) => attr!(res, unbond_started),
+        Event::DelegationsIncreased(delegation_increase) => attr!(res, delegation_increase),
+        Event::RedelegationSuccessful { slot, validator } => res
+            .add_attr("redelegated_slot", slot)
+            .add_attr("redelegated_to", validator),
+        _ => &mut res,
+    };
+}
+
+fn add_tx_msg_attrs(msg: &TxMsg, response: &mut Response<NeutronMsg>) {
+    let mut res = AttrsBuilder(response);
+
+    match msg {
+        TxMsg::TransferInUndelegated(transfer_undelegated) => attr!(res, transfer_undelegated),
+        TxMsg::TransferOutPendingDeposit(transfer_deposits) => attr!(res, transfer_deposits),
+        TxMsg::Redelegate { slot, to, amount } => res
+            .add_attr("redelegate_slot", slot)
+            .add_attr("redelegate_to", to)
+            .add_attr("redelegate_amount", amount),
+        TxMsg::Undelegate(slot, amount) => res.add_attr(format!("undelegate_{slot}"), amount),
+        TxMsg::Delegate(slot, amount) => res.add_attr(format!("delegate_{slot}"), amount),
+        TxMsg::Authz(msgs) => {
+            for msg in msgs {
+                match msg {
+                    AuthzMsg::SendRewardsReceivable(rewards) => attr!(res, rewards),
+                    AuthzMsg::SendFee(recipient, fee) => res
+                        .add_attr("fee_recipient", recipient)
+                        .add_attr("fee_amount", fee),
+                };
+            }
+
+            &mut res
+        }
+        _ => &mut res,
+    };
+}
+
 fn handle_reconcile_response(
     deps: DepsMut<NeutronQuery>,
     env: CwEnv,
-    response: FsmResponse,
+    fsm: FsmResponse,
 ) -> Result<Response<NeutronMsg>> {
-    for cmd in response.cmds {
+    let mut response = Response::default();
+
+    AttrsBuilder(&mut response)
+        .add_kind("reconcile")
+        .add_attr("tx_skip_count", fsm.tx_skip_count);
+
+    for cmd in fsm.cmds {
+        add_cmd_attrs(&cmd, &mut response);
         handle_reconcile_cmd(deps.storage, cmd);
     }
 
-    for event in response.events {
+    for event in fsm.events {
+        add_event_attrs(&event, &mut response);
         handle_reconcile_event(deps.storage, &env, event)
     }
 
-    let Some(tx_msgs) = response.tx_msgs else {
-        if response.tx_skip_count == 0 {
-            return Ok(Response::default());
+    let Some(tx_msgs) = fsm.tx_msgs else {
+        if fsm.tx_skip_count == 0 {
+            return Ok(response);
         }
 
-        let refund_msg = refund_msg(deps.as_ref(), response.tx_skip_count)?;
+        let refund_msg = refund_msg(deps.as_ref(), fsm.tx_skip_count)?;
 
-        return Ok(Response::default().add_submessage(refund_msg));
+        return Ok(response.add_submessage(refund_msg));
     };
 
     let fee = query_min_ibc_fee(deps.as_ref()).map(|res| res.min_fee)?;
 
-    let mut builder = ResponseBuilder::default();
+    let mut sequence = SubMsgSequence::default();
 
-    for tx_msg in tx_msgs.msgs {
-        handle_reconcile_tx_msg(deps.storage, &env, &mut builder, &fee, tx_msg);
+    for msg in tx_msgs.msgs {
+        add_tx_msg_attrs(&msg, &mut response);
+        handle_reconcile_tx_msg(deps.storage, &env, &mut sequence, &fee, msg);
     }
 
-    if response.tx_skip_count != 0 {
-        let refund_msg = refund_msg(deps.as_ref(), response.tx_skip_count)?;
+    if fsm.tx_skip_count != 0 {
+        let refund_msg = refund_msg(deps.as_ref(), fsm.tx_skip_count)?;
 
-        builder.push_local_msg(refund_msg);
+        sequence.push_local_msg(refund_msg);
     }
 
-    Ok(builder.build(deps.storage, fee))
+    response.messages = sequence.build(deps.storage, fee);
+
+    Ok(response)
 }
 
 pub fn reconcile_cost(deps: Deps<NeutronQuery>, phase: Phase, state: State) -> Result<Coin> {

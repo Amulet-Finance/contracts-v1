@@ -262,7 +262,7 @@ pub fn execute_strategy_msg(
 
         StrategyExecuteMsg::ReceiveUndelegated {
             balance_icq_timestamp,
-        } => strategy::handle_receive_unbonded(deps, info, balance_icq_timestamp),
+        } => strategy::handle_receive_undelegated(deps, info, balance_icq_timestamp),
 
         StrategyExecuteMsg::RedelegateSlot { slot, validator } => {
             let repository = AdminRepository::new(deps.storage);
