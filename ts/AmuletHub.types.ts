@@ -183,7 +183,6 @@ export type QueryMsg2 = {
 export interface CurrentAdminResponse {
   current_admin?: string | null;
 }
-export type Uint256 = string;
 export interface ListVaultsResponse {
   vaults: VaultMetadata[];
 }
@@ -213,7 +212,7 @@ export interface VaultMetadata {
   vault: string;
 }
 export interface SumPaymentRatio {
-  ratio: Uint256;
+  ratio: string;
   timestamp: number;
 }
 export interface PendingAdminResponse {
