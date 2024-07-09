@@ -6,7 +6,7 @@ pub mod vault_registry;
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{
     from_json, to_json_binary, Addr, Api, Binary, Env, MessageInfo, Reply, Response, StdError,
-    Storage, Uint128, Uint256,
+    Storage, Uint128,
 };
 use cw_utils::{one_coin, parse_reply_execute_data, ParseReplyError, PaymentError};
 use strum::IntoStaticStr;
@@ -188,7 +188,7 @@ pub struct PositionResponse {
 
 #[cw_serde]
 pub struct SumPaymentRatio {
-    pub ratio: Uint256,
+    pub ratio: String,
     pub timestamp: u64,
 }
 
@@ -835,9 +835,7 @@ fn vault_metadata(
             .overall_spr_timestamp(&vault)
             .expect("always: present when overall spr is present");
 
-        let raw_spr = spr.into_raw();
-
-        let ratio = Uint256::from_be_bytes(raw_spr.to_be_bytes());
+        let ratio = spr.fixed_u256().to_string();
 
         SumPaymentRatio { ratio, timestamp }
     });
