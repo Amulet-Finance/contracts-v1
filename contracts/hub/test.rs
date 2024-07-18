@@ -1848,7 +1848,7 @@ fn convert_credit() {
               amo_allocation: 0,
               amo_shares: "0",
               sum_payment_ratio: Some((
-                ratio: "30625413022884461711703714668859139031",
+                ratio: "0.08999999999999999999999999999999",
                 timestamp: 1571797419,
               )),
               deposit_proxy: None,
@@ -2088,7 +2088,7 @@ fn redeem() {
               amo_allocation: 0,
               amo_shares: "0",
               sum_payment_ratio: Some((
-                ratio: "30625413022884461711703714668859139031",
+                ratio: "0.08999999999999999999999999999999",
                 timestamp: 1571797419,
               )),
               deposit_proxy: None,
@@ -2317,7 +2317,7 @@ fn redeem_on_behalf() {
               amo_allocation: 0,
               amo_shares: "0",
               sum_payment_ratio: Some((
-                ratio: "30625413022884461711703714668859139031",
+                ratio: "0.08999999999999999999999999999999",
                 timestamp: 1571797419,
               )),
               deposit_proxy: None,
@@ -2913,7 +2913,7 @@ fn claim_treasury() {
               amo_allocation: 0,
               amo_shares: "0",
               sum_payment_ratio: Some((
-                ratio: "30625413022884461711703714668859139031",
+                ratio: "0.08999999999999999999999999999999",
                 timestamp: 1571797419,
               )),
               deposit_proxy: None,
@@ -3072,7 +3072,7 @@ fn claim_amo() {
               amo_allocation: 1000,
               amo_shares: "0",
               sum_payment_ratio: Some((
-                ratio: "30285130655963523248240340061427370819",
+                ratio: "0.08899999999999999999999999999999",
                 timestamp: 1571797419,
               )),
               deposit_proxy: None,
@@ -3232,7 +3232,7 @@ fn evaluate() {
               amo_allocation: 1000,
               amo_shares: "8181818181818181818",
               sum_payment_ratio: Some((
-                ratio: "30285130655963523248240340061427370819",
+                ratio: "0.08899999999999999999999999999999",
                 timestamp: 1571797419,
               )),
               deposit_proxy: None,
