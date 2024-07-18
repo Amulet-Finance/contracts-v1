@@ -121,7 +121,7 @@ fn deposit_not_from_configured_proxy_errs() {
                 },
                 VaultCmd::SetDepositProxy {
                     vault: VAULT.into(),
-                    proxy: "deposit_proxy".into()
+                    proxy: Some("deposit_proxy".into())
                 }
             ])
             .hub()
@@ -493,7 +493,7 @@ fn advance_not_from_configured_proxy_errs() {
                 },
                 VaultCmd::SetAdvanceProxy {
                     vault: VAULT.into(),
-                    proxy: "advance_proxy".into()
+                    proxy: Some("advance_proxy".into())
                 }
             ])
             .hub()
@@ -2323,7 +2323,7 @@ fn redeem_not_from_configured_proxy_errs() {
                 },
                 VaultCmd::SetRedeemProxy {
                     vault: VAULT.into(),
-                    proxy: "redeem_proxy".into()
+                    proxy: Some("redeem_proxy".into())
                 }
             ])
             .hub()
@@ -2537,7 +2537,7 @@ fn mint_not_from_configured_proxy_errs() {
                 },
                 VaultCmd::SetMintProxy {
                     vault: VAULT.into(),
-                    proxy: "mint_proxy".into()
+                    proxy: Some("mint_proxy".into())
                 }
             ])
             .hub()
@@ -4160,19 +4160,19 @@ fn set_proxy_config() {
             [
               Vault(SetDepositProxy(
                 vault: "vault",
-                proxy: "deposit_proxy",
+                proxy: Some("deposit_proxy"),
               )),
               Vault(SetAdvanceProxy(
                 vault: "vault",
-                proxy: "advance_proxy",
+                proxy: Some("advance_proxy"),
               )),
               Vault(SetRedeemProxy(
                 vault: "vault",
-                proxy: "redeem_proxy",
+                proxy: Some("redeem_proxy"),
               )),
               Vault(SetMintProxy(
                 vault: "vault",
-                proxy: "mint_proxy",
+                proxy: Some("mint_proxy"),
               )),
             ]"#]],
     );
@@ -4183,6 +4183,162 @@ fn set_proxy_config() {
             .set_proxy_config(AdminRole::mock(), VAULT.into(), proxy_config.clone())
             .unwrap_err(),
         expect!["vault not registered"],
+    );
+}
+
+#[test]
+fn remove_deposit_proxy() {
+    check(
+        World::default()
+            .handle_cmds(cmds![
+                VaultCmd::Register {
+                    vault: VAULT.into(),
+                    synthetic: SYNTHETIC.into()
+                },
+                VaultCmd::SetDepositProxy {
+                    vault: VAULT.into(),
+                    proxy: Some("deposit_proxy".into())
+                }
+            ])
+            .configure()
+            .remove_deposit_proxy(AdminRole::mock(), VAULT.into())
+            .unwrap(),
+        expect![[r#"
+            [
+              Vault(SetDepositProxy(
+                vault: "vault",
+                proxy: None,
+              )),
+            ]"#]],
+    );
+
+    check_err(
+        World::default()
+            .handle_cmds(cmds![VaultCmd::Register {
+                vault: VAULT.into(),
+                synthetic: SYNTHETIC.into()
+            }])
+            .configure()
+            .remove_deposit_proxy(AdminRole::mock(), VAULT.into())
+            .unwrap_err(),
+        expect!["no proxy set"],
+    );
+}
+
+#[test]
+fn remove_advance_proxy() {
+    check(
+        World::default()
+            .handle_cmds(cmds![
+                VaultCmd::Register {
+                    vault: VAULT.into(),
+                    synthetic: SYNTHETIC.into()
+                },
+                VaultCmd::SetAdvanceProxy {
+                    vault: VAULT.into(),
+                    proxy: Some("advance_proxy".into())
+                }
+            ])
+            .configure()
+            .remove_advance_proxy(AdminRole::mock(), VAULT.into())
+            .unwrap(),
+        expect![[r#"
+            [
+              Vault(SetAdvanceProxy(
+                vault: "vault",
+                proxy: None,
+              )),
+            ]"#]],
+    );
+
+    check_err(
+        World::default()
+            .handle_cmds(cmds![VaultCmd::Register {
+                vault: VAULT.into(),
+                synthetic: SYNTHETIC.into()
+            }])
+            .configure()
+            .remove_advance_proxy(AdminRole::mock(), VAULT.into())
+            .unwrap_err(),
+        expect!["no proxy set"],
+    );
+}
+
+#[test]
+fn remove_redeem_proxy() {
+    check(
+        World::default()
+            .handle_cmds(cmds![
+                VaultCmd::Register {
+                    vault: VAULT.into(),
+                    synthetic: SYNTHETIC.into()
+                },
+                VaultCmd::SetRedeemProxy {
+                    vault: VAULT.into(),
+                    proxy: Some("redeem_proxy".into())
+                }
+            ])
+            .configure()
+            .remove_redeem_proxy(AdminRole::mock(), VAULT.into())
+            .unwrap(),
+        expect![[r#"
+            [
+              Vault(SetRedeemProxy(
+                vault: "vault",
+                proxy: None,
+              )),
+            ]"#]],
+    );
+
+    check_err(
+        World::default()
+            .handle_cmds(cmds![VaultCmd::Register {
+                vault: VAULT.into(),
+                synthetic: SYNTHETIC.into()
+            }])
+            .configure()
+            .remove_redeem_proxy(AdminRole::mock(), VAULT.into())
+            .unwrap_err(),
+        expect!["no proxy set"],
+    );
+}
+
+#[test]
+fn remove_mint_proxy() {
+    check(
+        World::default()
+            .handle_cmds(cmds![
+                VaultCmd::Register {
+                    vault: VAULT.into(),
+                    synthetic: SYNTHETIC.into()
+                },
+                VaultCmd::SetMintProxy {
+                    vault: VAULT.into(),
+                    proxy: Some("mint_proxy".into())
+                }
+            ])
+            .configure()
+            .remove_mint_proxy(AdminRole::mock(), VAULT.into())
+            .unwrap(),
+        expect![[r#"
+            [
+              Vault(SetMintProxy(
+                vault: "vault",
+                proxy: None,
+              )),
+            ]"#]],
+    );
+
+    check_err(
+        World::default()
+            .handle_cmds(cmds![VaultCmd::Register {
+                vault: VAULT.into(),
+                synthetic: SYNTHETIC.into()
+            }])
+            .configure()
+            .remove_mint_proxy(AdminRole::mock(), VAULT.into())
+            .unwrap_err(),
+        expect!["no proxy set"],
     );
 }
 
@@ -4244,16 +4400,16 @@ impl World {
                     self.vault_meta_mut(vault).amo = Some(amo);
                 }
                 VaultCmd::SetDepositProxy { vault, proxy } => {
-                    self.vault_meta_mut(vault).deposit_proxy = Some(proxy)
+                    self.vault_meta_mut(vault).deposit_proxy = proxy
                 }
                 VaultCmd::SetAdvanceProxy { vault, proxy } => {
-                    self.vault_meta_mut(vault).advance_proxy = Some(proxy)
+                    self.vault_meta_mut(vault).advance_proxy = proxy
                 }
                 VaultCmd::SetRedeemProxy { vault, proxy } => {
-                    self.vault_meta_mut(vault).redeem_proxy = Some(proxy)
+                    self.vault_meta_mut(vault).redeem_proxy = proxy
                 }
                 VaultCmd::SetMintProxy { vault, proxy } => {
-                    self.vault_meta_mut(vault).mint_proxy = Some(proxy)
+                    self.vault_meta_mut(vault).mint_proxy = proxy
                 }
                 VaultCmd::SetAdvanceFeeRecipient { vault, recipient } => {
                     self.vault_meta_mut(vault).advance_fee_recipient = Some(recipient)

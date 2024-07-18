@@ -98,6 +98,14 @@ pub enum AdminMsg {
         /// The mint proxy address to set, if any
         mint: Option<String>,
     },
+    /// Remove the deposit proxy for the vault
+    RemoveDepositProxy { vault: String },
+    /// Remove the advance proxy for the vault
+    RemoveAdvanceProxy { vault: String },
+    /// Remove the redeem proxy for the vault
+    RemoveRedeemProxy { vault: String },
+    /// Remove the mint proxy for the vault
+    RemoveMintProxy { vault: String },
 }
 
 #[cw_serde]
@@ -440,6 +448,22 @@ pub fn handle_admin_msg<Msg>(
                     mint: validate_proxy_addr!(api, mint),
                 },
             )?
+        }
+
+        AdminMsg::RemoveDepositProxy { vault } => {
+            config.remove_deposit_proxy(admin_role, vault.into())?
+        }
+
+        AdminMsg::RemoveAdvanceProxy { vault } => {
+            config.remove_deposit_proxy(admin_role, vault.into())?
+        }
+
+        AdminMsg::RemoveRedeemProxy { vault } => {
+            config.remove_deposit_proxy(admin_role, vault.into())?
+        }
+
+        AdminMsg::RemoveMintProxy { vault } => {
+            config.remove_deposit_proxy(admin_role, vault.into())?
         }
     };
 

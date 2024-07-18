@@ -319,19 +319,35 @@ pub fn handle_cmd<Msg>(storage: &mut dyn Storage, cmd: VaultCmd) -> Option<SubMs
         }
 
         VaultCmd::SetDepositProxy { vault, proxy } => {
-            storage.set_string(key::DEPOSIT_PROXY.with(vault), &proxy);
+            if let Some(proxy) = proxy {
+                storage.set_string(key::DEPOSIT_PROXY.with(vault), &proxy);
+            } else {
+                storage.remove(key::DEPOSIT_PROXY.with(vault).as_bytes())
+            }
         }
 
         VaultCmd::SetAdvanceProxy { vault, proxy } => {
-            storage.set_string(key::ADVANCE_PROXY.with(vault), &proxy);
+            if let Some(proxy) = proxy {
+                storage.set_string(key::ADVANCE_PROXY.with(vault), &proxy);
+            } else {
+                storage.remove(key::ADVANCE_PROXY.with(vault).as_bytes())
+            }
         }
 
         VaultCmd::SetRedeemProxy { vault, proxy } => {
-            storage.set_string(key::REDEEM_PROXY.with(vault), &proxy);
+            if let Some(proxy) = proxy {
+                storage.set_string(key::REDEEM_PROXY.with(vault), &proxy);
+            } else {
+                storage.remove(key::REDEEM_PROXY.with(vault).as_bytes())
+            }
         }
 
         VaultCmd::SetMintProxy { vault, proxy } => {
-            storage.set_string(key::MINT_PROXY.with(vault), &proxy);
+            if let Some(proxy) = proxy {
+                storage.set_string(key::MINT_PROXY.with(vault), &proxy);
+            } else {
+                storage.remove(key::MINT_PROXY.with(vault).as_bytes())
+            }
         }
 
         VaultCmd::Deposit {

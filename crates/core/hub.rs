@@ -121,13 +121,16 @@ pub enum Error {
 
     #[error("advance disabled")]
     AdvanceDisabled,
+
+    #[error("no proxy set")]
+    NoProxySet,
 }
 
 pub trait SyntheticMint {
     fn syntethic_decimals(&self, synthetic: &Synthetic) -> Option<Decimals>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct ProxyConfig {
     /// The deposit proxy address to set, if any
     pub deposit: Option<Proxy>,
@@ -199,22 +202,22 @@ pub enum VaultCmd {
 
     SetDepositProxy {
         vault: VaultId,
-        proxy: Proxy,
+        proxy: Option<Proxy>,
     },
 
     SetAdvanceProxy {
         vault: VaultId,
-        proxy: Proxy,
+        proxy: Option<Proxy>,
     },
 
     SetRedeemProxy {
         vault: VaultId,
-        proxy: Proxy,
+        proxy: Option<Proxy>,
     },
 
     SetMintProxy {
         vault: VaultId,
-        proxy: Proxy,
+        proxy: Option<Proxy>,
     },
 
     /// Deposit an `amount` of deposit `asset`s into the vault
@@ -541,6 +544,14 @@ pub trait ConfigureHub {
         vault: VaultId,
         config: ProxyConfig,
     ) -> Result<Vec<Cmd>, Error>;
+
+    fn remove_deposit_proxy(&self, role: AdminRole, vault: VaultId) -> Result<Vec<Cmd>, Error>;
+
+    fn remove_advance_proxy(&self, role: AdminRole, vault: VaultId) -> Result<Vec<Cmd>, Error>;
+
+    fn remove_redeem_proxy(&self, role: AdminRole, vault: VaultId) -> Result<Vec<Cmd>, Error>;
+
+    fn remove_mint_proxy(&self, role: AdminRole, vault: VaultId) -> Result<Vec<Cmd>, Error>;
 }
 
 pub trait Hub {
@@ -826,24 +837,84 @@ impl<'a> ConfigureHub for ConfigureHubImpl<'a> {
 
         if let Some(proxy) = config.deposit {
             let vault = vault.clone();
-            cmds.push_cmd(VaultCmd::SetDepositProxy { vault, proxy });
+            cmds.push_cmd(VaultCmd::SetDepositProxy {
+                vault,
+                proxy: Some(proxy),
+            });
         }
 
         if let Some(proxy) = config.advance {
             let vault = vault.clone();
-            cmds.push_cmd(VaultCmd::SetAdvanceProxy { vault, proxy });
+            cmds.push_cmd(VaultCmd::SetAdvanceProxy {
+                vault,
+                proxy: Some(proxy),
+            });
         }
 
         if let Some(proxy) = config.redeem {
             let vault = vault.clone();
-            cmds.push_cmd(VaultCmd::SetRedeemProxy { vault, proxy });
+            cmds.push_cmd(VaultCmd::SetRedeemProxy {
+                vault,
+                proxy: Some(proxy),
+            });
         }
 
         if let Some(proxy) = config.mint {
-            cmds.push_cmd(VaultCmd::SetMintProxy { vault, proxy });
+            cmds.push_cmd(VaultCmd::SetMintProxy {
+                vault,
+                proxy: Some(proxy),
+            });
         }
 
         Ok(cmds)
+    }
+
+    fn remove_deposit_proxy(&self, _: AdminRole, vault: VaultId) -> Result<Vec<Cmd>, Error> {
+        if !self.vaults.is_registered(&vault) {
+            return Err(Error::VaultNotRegistered);
+        }
+
+        if self.vaults.deposit_proxy(&vault).is_none() {
+            return Err(Error::NoProxySet);
+        }
+
+        Ok(cmds![VaultCmd::SetDepositProxy { vault, proxy: None }])
+    }
+
+    fn remove_advance_proxy(&self, _: AdminRole, vault: VaultId) -> Result<Vec<Cmd>, Error> {
+        if !self.vaults.is_registered(&vault) {
+            return Err(Error::VaultNotRegistered);
+        }
+
+        if self.vaults.advance_proxy(&vault).is_none() {
+            return Err(Error::NoProxySet);
+        }
+
+        Ok(cmds![VaultCmd::SetAdvanceProxy { vault, proxy: None }])
+    }
+
+    fn remove_redeem_proxy(&self, _: AdminRole, vault: VaultId) -> Result<Vec<Cmd>, Error> {
+        if !self.vaults.is_registered(&vault) {
+            return Err(Error::VaultNotRegistered);
+        }
+
+        if self.vaults.redeem_proxy(&vault).is_none() {
+            return Err(Error::NoProxySet);
+        }
+
+        Ok(cmds![VaultCmd::SetRedeemProxy { vault, proxy: None }])
+    }
+
+    fn remove_mint_proxy(&self, _: AdminRole, vault: VaultId) -> Result<Vec<Cmd>, Error> {
+        if !self.vaults.is_registered(&vault) {
+            return Err(Error::VaultNotRegistered);
+        }
+
+        if self.vaults.mint_proxy(&vault).is_none() {
+            return Err(Error::NoProxySet);
+        }
+
+        Ok(cmds![VaultCmd::SetMintProxy { vault, proxy: None }])
     }
 }
 
