@@ -106,26 +106,19 @@ pub enum AdminMsg {
 pub enum UserMsg {
     // Messages for Account Positions
     /// Evaluate a vault, progressing any payments
-    /// Responds with [PositionResponse]
     Evaluate { vault: String },
     /// Deposit native token into a vault
-    /// Responds with [PositionResponse]
     Deposit { vault: String },
     /// Deposit native token into a vault on behalf of another (proxied deposit)
-    /// Responds with [PositionResponse]
     #[strum(to_string = "deposit")]
     DepositOnBehalf { vault: String, behalf_of: String },
     /// Repay debt against a vault using the underlying token
-    /// Responds with [PositionResponse]
     RepayUnderlying { vault: String },
     /// Repay debt against a vault using the synthetic token
-    /// Responds with [PositionResponse]
     RepaySynthetic { vault: String },
     /// Request an advance against a vault deposit
-    /// Responds with [PositionResponse]
     Advance { vault: String, amount: Uint128 },
     /// Request an advance on behalf of another against their vault deposit (proxied advance)
-    /// Responds with [PositionResponse]
     #[strum(to_string = "advance")]
     AdvanceOnBehalf {
         vault: String,
@@ -133,7 +126,6 @@ pub enum UserMsg {
         behalf_of: String,
     },
     /// Request to withdraw funds from a vault
-    /// Responds with [PositionResponse]
     Withdraw { vault: String, amount: Uint128 },
     /// Request to self-liquidate a vault position
     SelfLiquidate { vault: String },
