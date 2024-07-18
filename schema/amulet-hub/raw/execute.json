@@ -382,6 +382,94 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "description": "Remove the deposit proxy for the vault",
+          "type": "object",
+          "required": [
+            "remove_deposit_proxy"
+          ],
+          "properties": {
+            "remove_deposit_proxy": {
+              "type": "object",
+              "required": [
+                "vault"
+              ],
+              "properties": {
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Remove the advance proxy for the vault",
+          "type": "object",
+          "required": [
+            "remove_advance_proxy"
+          ],
+          "properties": {
+            "remove_advance_proxy": {
+              "type": "object",
+              "required": [
+                "vault"
+              ],
+              "properties": {
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Remove the redeem proxy for the vault",
+          "type": "object",
+          "required": [
+            "remove_redeem_proxy"
+          ],
+          "properties": {
+            "remove_redeem_proxy": {
+              "type": "object",
+              "required": [
+                "vault"
+              ],
+              "properties": {
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Remove the mint proxy for the vault",
+          "type": "object",
+          "required": [
+            "remove_mint_proxy"
+          ],
+          "properties": {
+            "remove_mint_proxy": {
+              "type": "object",
+              "required": [
+                "vault"
+              ],
+              "properties": {
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
         }
       ]
     },
@@ -456,7 +544,7 @@
     "UserMsg": {
       "oneOf": [
         {
-          "description": "Evaluate a vault, progressing any payments Responds with [PositionResponse]",
+          "description": "Evaluate a vault, progressing any payments",
           "type": "object",
           "required": [
             "evaluate"
@@ -478,7 +566,7 @@
           "additionalProperties": false
         },
         {
-          "description": "Deposit native token into a vault Responds with [PositionResponse]",
+          "description": "Deposit native token into a vault",
           "type": "object",
           "required": [
             "deposit"
@@ -500,7 +588,7 @@
           "additionalProperties": false
         },
         {
-          "description": "Deposit native token into a vault on behalf of another (proxied deposit) Responds with [PositionResponse]",
+          "description": "Deposit native token into a vault on behalf of another (proxied deposit)",
           "type": "object",
           "required": [
             "deposit_on_behalf"
@@ -526,7 +614,7 @@
           "additionalProperties": false
         },
         {
-          "description": "Repay debt against a vault using the underlying token Responds with [PositionResponse]",
+          "description": "Repay debt against a vault using the underlying token",
           "type": "object",
           "required": [
             "repay_underlying"
@@ -548,7 +636,7 @@
           "additionalProperties": false
         },
         {
-          "description": "Repay debt against a vault using the synthetic token Responds with [PositionResponse]",
+          "description": "Repay debt against a vault using the synthetic token",
           "type": "object",
           "required": [
             "repay_synthetic"
@@ -570,7 +658,7 @@
           "additionalProperties": false
         },
         {
-          "description": "Request an advance against a vault deposit Responds with [PositionResponse]",
+          "description": "Request an advance against a vault deposit",
           "type": "object",
           "required": [
             "advance"
@@ -596,7 +684,7 @@
           "additionalProperties": false
         },
         {
-          "description": "Request an advance on behalf of another against their vault deposit (proxied advance) Responds with [PositionResponse]",
+          "description": "Request an advance on behalf of another against their vault deposit (proxied advance)",
           "type": "object",
           "required": [
             "advance_on_behalf"
@@ -626,7 +714,7 @@
           "additionalProperties": false
         },
         {
-          "description": "Request to withdraw funds from a vault Responds with [PositionResponse]",
+          "description": "Request to withdraw funds from a vault",
           "type": "object",
           "required": [
             "withdraw"

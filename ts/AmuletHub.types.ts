@@ -85,6 +85,22 @@ export type AdminMsg = {
     redeem?: string | null;
     vault: string;
   };
+} | {
+  remove_deposit_proxy: {
+    vault: string;
+  };
+} | {
+  remove_advance_proxy: {
+    vault: string;
+  };
+} | {
+  remove_redeem_proxy: {
+    vault: string;
+  };
+} | {
+  remove_mint_proxy: {
+    vault: string;
+  };
 };
 export type UserMsg = {
   evaluate: {

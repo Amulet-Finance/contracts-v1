@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QueryMsg",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "config"
+      ],
+      "properties": {
+        "config": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "vault_metadata"
+      ],
+      "properties": {
+        "vault_metadata": {
+          "type": "object",
+          "required": [
+            "vault"
+          ],
+          "properties": {
+            "vault": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "deposit_amount"
+      ],
+      "properties": {
+        "deposit_amount": {
+          "type": "object",
+          "required": [
+            "account",
+            "vault"
+          ],
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "vault": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
