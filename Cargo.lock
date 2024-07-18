@@ -403,6 +403,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "deposit-cap-proxy"
+version = "0.1.0"
+dependencies = [
+ "amulet-cw",
+ "anyhow",
+ "cosmwasm-schema",
+ "cosmwasm-std",
+ "cw-utils",
+]
+
+[[package]]
 name = "der"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

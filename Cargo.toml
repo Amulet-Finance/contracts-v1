@@ -2,6 +2,7 @@
 members = [
   "contracts/hub",
   "contracts/mint",
+  "contracts/proxy/*",
   "contracts/testing/*",
   "contracts/vault/*",
   "crates/core",

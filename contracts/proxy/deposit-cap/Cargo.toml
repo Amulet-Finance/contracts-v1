@@ -1,0 +1,24 @@
+[package]
+name       = "deposit-cap-proxy"
+version    = "0.1.0"
+edition    = "2021"
+
+[[bin]]
+name       = "schema"
+path       = "schema.rs"
+doctest    = false
+test       = false
+
+[lib]
+path       = "contract.rs"
+crate-type = ["cdylib", "rlib"]
+doctest    = false
+test       = false
+
+[dependencies]
+anyhow.workspace          = true
+cosmwasm-std.workspace    = true
+cosmwasm-schema.workspace = true
+cw-utils.workspace        = true
+
+amulet-cw.workspace       = true
