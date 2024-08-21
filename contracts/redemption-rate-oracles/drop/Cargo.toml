@@ -1,0 +1,20 @@
+[package]
+name       = "drop-redemption-rate-oracle"
+version    = "0.1.0"
+edition    = "2021"
+
+[lib]
+path       = "contract.rs"
+crate-type = ["cdylib", "rlib"]
+doctest    = false
+test       = true
+
+[dependencies]
+cw-storage-plus = "1.2.0"
+serde_json = "1.0"
+thiserror = "1.0.63"
+anyhow.workspace          = true
+cosmwasm-std.workspace    = true
+cosmwasm-schema.workspace = true
+
+amulet-cw.workspace       = true
