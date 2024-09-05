@@ -1,5 +1,16 @@
 # Amulet Finance Contracts
 
+## Deployments
+
+### Mainnet
+
+#### Neutron
+
+| Contract      | Address                                                              |
+| ------------- | -------------                                                        |
+| `amulet-mint` | `neutron1shwxlkpdjd8h5wdtrykypwd2v62z5glr95yp0etdcspkkjwm5meq82ndxs` |
+| `amulet-hub`  | `neutron16d4a7q3wfkkawj4jwyzz6g97xtmj0crkyn06ev74fu4xsgkwnreswzfpcy` |
+
 ## Building
 
 ### Prerequisites
