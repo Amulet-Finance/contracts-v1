@@ -30,6 +30,7 @@ use crate::{
 
 use self::{
     balance_sheet::StorageExt as _,
+    synthetic_mint::StorageExt as _,
     vault_registry::{StorageExt as _, DEPOSIT_REPLY_ID, MINT_REPLY_ID, REPAY_UNDERLYING_REPLY_ID},
 };
 
@@ -254,6 +255,12 @@ pub struct TreasuryResponse {
 }
 
 #[cw_serde]
+pub struct MintResponse {
+    /// The fixed address of the mint
+    pub mint: String,
+}
+
+#[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
     #[returns(ListVaultsResponse)]
@@ -264,6 +271,8 @@ pub enum QueryMsg {
     Position { account: String, vault: String },
     #[returns(TreasuryResponse)]
     Treasury {},
+    #[returns(MintResponse)]
+    Mint {},
 }
 
 impl From<Cdp> for PositionResponse {
@@ -964,6 +973,10 @@ pub fn handle_query_msg(
 
         QueryMsg::Treasury {} => to_json_binary(&TreasuryResponse {
             treasury: balance_sheet.treasury().map(Into::into),
+        })?,
+
+        QueryMsg::Mint {} => to_json_binary(&MintResponse {
+            mint: storage.mint_address(),
         })?,
     };
 
