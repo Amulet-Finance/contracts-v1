@@ -30,7 +30,7 @@ build-contracts:
 		| lines 
 		| par-each { 
 			open 
-			| get package.name 
+			| get package.name
 			| do {
 				# compile wasm artifact
 				RUSTFLAGS="-C link-arg=-s" cargo build --package $in --lib --release --target wasm32-unknown-unknown;
@@ -55,10 +55,10 @@ generate-schemas:
 		let schema_dir = $"(pwd)/schema";
 		# find contract packages
 		rg --files contracts --glob Cargo.toml
-		| lines 
+		| lines | each { open }
+		| filter { $in.bin? | any { $in.name == "schema" } }
 		| par-each { 
-			open 
-			| get package.name 
+			get package.name
 			| do {
 				let tempdir = $"target/contracts/($in)";
 				let outdir = $"($schema_dir)/($in)";
@@ -79,10 +79,10 @@ generate-ts:
 	do {
 		# find contract packages
 		rg --files contracts --glob Cargo.toml
-		| lines 
+		| lines | each { open }
+		| filter { $in.bin? | any { $in.name == "schema" } }
 		| par-each { 
-			open 
-			| get package.name 
+			get package.name
 			| do {
 				let contract = ($in | split words | each { str capitalize } | str join);
 				let schema_dir = $"./schema/($in)";
