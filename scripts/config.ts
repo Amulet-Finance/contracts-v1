@@ -44,18 +44,24 @@ const getRawE2ETestConfig = (): DUAL_CHAIN_ENV => {
   };
 };
 
-const getRawDeployConfig = (): SINGLE_CHAIN_ENV => {
+const getRawDeployConfig = (mainnet: boolean): SINGLE_CHAIN_ENV => {
   return {
-    WALLET_MNEMONIC: process.env.DEPLOY_WALLET_MNEMONIC,
-    HOST_CHAIN_RPC: process.env.DEPLOY_HOST_CHAIN_RPC,
-    HOST_CHAIN_GAS_PRICE: process.env.DEPLOY_HOST_CHAIN_GAS_PRICE,
-    HOST_CHAIN_PREFIX: process.env.DEPLOY_HOST_CHAIN_PREFIX,
+    WALLET_MNEMONIC: mainnet
+      ? process.env.MAINNET_DEPLOY_WALLET_MNEMONIC
+      : process.env.TESTNET_DEPLOY_WALLET_MNEMONIC,
+    HOST_CHAIN_RPC: mainnet
+      ? process.env.MAINNET_DEPLOY_HOST_CHAIN_RPC
+      : process.env.TESTNET_DEPLOY_HOST_CHAIN_RPC,
+    HOST_CHAIN_GAS_PRICE: mainnet
+      ? process.env.MAINNET_DEPLOY_HOST_CHAIN_GAS_PRICE
+      : process.env.TESTNET_DEPLOY_HOST_CHAIN_GAS_PRICE,
+    HOST_CHAIN_PREFIX: mainnet
+      ? process.env.MAINNET_DEPLOY_HOST_CHAIN_PREFIX
+      : process.env.TESTNET_DEPLOY_HOST_CHAIN_PREFIX,
   };
 };
 
-const getSingleChainConfig = (
-  config: SINGLE_CHAIN_ENV,
-): singleChainConfig => {
+const getSingleChainConfig = (config: SINGLE_CHAIN_ENV): singleChainConfig => {
   for (const [key, value] of Object.entries(config)) {
     if (value === undefined) {
       throw new Error(`Missing expected environment variable ${key}`);
@@ -64,9 +70,7 @@ const getSingleChainConfig = (
   return config as singleChainConfig;
 };
 
-const getDualChainConfig = (
-  config: DUAL_CHAIN_ENV,
-): dualChainConfig => {
+const getDualChainConfig = (config: DUAL_CHAIN_ENV): dualChainConfig => {
   for (const [key, value] of Object.entries(config)) {
     if (value === undefined) {
       throw new Error(`Missing expected environment variable ${key}`);
@@ -75,9 +79,7 @@ const getDualChainConfig = (
   return config as dualChainConfig;
 };
 
-export const e2eTestConfig = () =>
-  getDualChainConfig(getRawE2ETestConfig());
+export const e2eTestConfig = () => getDualChainConfig(getRawE2ETestConfig());
 
-export const deployConfig = () =>
-  getSingleChainConfig(getRawDeployConfig());
-
+export const deployConfig = (mainnet: boolean) =>
+  getSingleChainConfig(getRawDeployConfig(mainnet));

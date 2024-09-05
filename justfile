@@ -8,8 +8,9 @@ dist-clean:
 on-chain-test test:
 	bun test scripts/{{test}}.test.ts --timeout 1600000
 
-deploy-contract contract init_msg *FLAGS:
-	bun run scripts/deploy.ts --contract {{contract}} --msg '{{init_msg}}' {{FLAGS}}
+deploy-contract contract *FLAGS:
+	#!/usr/bin/env nu
+	bun run scripts/deploy.ts --contract {{contract}} {{FLAGS}}
 
 update-expect package:
 	UPDATE_EXPECT=1 cargo test --package {{package}}

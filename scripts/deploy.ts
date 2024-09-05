@@ -4,29 +4,34 @@ import { HostChain } from "./client";
 import { deployConfig } from "./config";
 import { readContractFileBytes } from "./utils";
 
-function artifact(name: string): string {
-  return `${__dirname}/../artifacts/${name}.wasm`
-}
-
-const config = deployConfig();
-
 const { values } = parseArgs({
   args: Bun.argv,
   options: {
     contract: {
-      type: 'string',
+      type: "string",
     },
     msg: {
-      type: 'string',
+      type: "string",
     },
     code: {
-      type: 'string',
+      type: "string",
     },
     funds: {
-      type: 'string',
+      type: "string",
+    },
+    label: {
+      type: "string",
     },
     store_only: {
-      type: 'boolean',
+      type: "boolean",
+      default: false,
+    },
+    full_path: {
+      type: "boolean",
+      default: false,
+    },
+    mainnet: {
+      type: "boolean",
       default: false,
     },
   },
@@ -34,11 +39,7 @@ const { values } = parseArgs({
   allowPositionals: true,
 });
 
-if (!values.contract || !values.msg) {
-  throw Error("Usage: bun run deploy.ts --contract <contract-package> --msg <init-msg-json>");
-}
-
-const wasmBytes: Uint8Array = await readContractFileBytes(artifact(values.contract));
+const config = deployConfig(values.mainnet || false);
 
 const disconnectedHostChain = await HostChain.create(
   config.HOST_CHAIN_PREFIX,
@@ -48,36 +49,66 @@ const disconnectedHostChain = await HostChain.create(
 
 const hostChain = await disconnectedHostChain.connect(config.HOST_CHAIN_RPC);
 
-let admin = await hostChain.accountAddress();
+const admin = await hostChain.accountAddress();
 
-let codeId = 0;
+const funds = values.funds ? +values.funds : null;
 
-if (values.code) 
-{
-  codeId = +values.code;
-  console.log(`using provided code id: ${codeId}`);
-} 
-else 
-{
-  console.log(`uploading contract byte-code`);
-  const [storedCode] = await hostChain.uploadWasm(wasmBytes);
-
-  codeId = storedCode;
-  console.log(`contract code id: ${codeId}`);
-
-  if (values.store_only) {
-    process.exit(0);
+async function deploy(codeId: number, label: string) {
+  if (!values.msg) {
+    throw Error("--msg <contract init msg json> flag required");
   }
+
+  console.log(values.msg);
+
+  const [contract] = await hostChain.initContract(
+    codeId,
+    JSON.parse(values.msg),
+    label,
+    funds,
+    admin,
+  );
+
+  console.log(`contract deployed: ${contract.address}`);
 }
 
-const funds = values.funds ? +values.funds : undefined;
+if (values.code) {
+  if (!values.contract) {
+    console.log("ignoring --contract flag because --code is specified");
+  }
 
-const [contract] = await hostChain.initContract(
-  codeId, 
-  JSON.parse(values.msg), 
-  values.contract,
-  funds,
-  admin
-);
+  if (!values.label) {
+    throw Error("--label <label> flag required because --code is specified");
+  }
 
-console.log(`contract deployed: ${contract.address}`);
+  await deploy(+values.code, values.label);
+
+  process.exit(0);
+}
+
+if (!values.contract) {
+  throw Error("--contract <contract package or path> flag required");
+}
+
+const wasmPath = values.full_path
+  ? values.contract
+  : `${__dirname}/../artifacts/${values.contract}.wasm`;
+
+const wasmBytes: Uint8Array = await readContractFileBytes(wasmPath);
+
+console.log(`uploading contract byte-code`);
+
+const [storedCode] = await hostChain.uploadWasm(wasmBytes);
+
+console.log(`contract code id: ${storedCode}`);
+
+if (values.store_only) {
+  process.exit(0);
+}
+
+if (values.full_path && !values.label) {
+  throw Error("--label <label> flag required because --full_path is specified");
+}
+
+const label = values.label || values.contract;
+
+await deploy(storedCode, label);
