@@ -1,5 +1,5 @@
 [package]
-name       = "drop-redemption-rate-oracle"
+name       = "drop-redemption-rate-oracle-proxy"
 version    = "0.1.0"
 edition    = "2021"
 
@@ -10,9 +10,6 @@ doctest    = false
 test       = true
 
 [dependencies]
-cw-storage-plus = "1.2.0"
-serde_json = "1.0"
-thiserror = "1.0.63"
 anyhow.workspace          = true
 cosmwasm-std.workspace    = true
 cosmwasm-schema.workspace = true

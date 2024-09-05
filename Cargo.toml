@@ -5,7 +5,6 @@ members = [
   "contracts/proxy/*",
   "contracts/testing/*",
   "contracts/vault/*",
-  "contracts/redemption-rate-oracles/*",
   "crates/core",
   "crates/cosmwasm",
   "crates/neutron",
@@ -21,7 +20,7 @@ anyhow            = "1.0.81"
 bech32            = "0.11.0"
 cosmos-sdk-proto  = { version = "0.20.0", default-features = false }
 cosmwasm-schema   = "1.5.0"
-cosmwasm-std      = "1.5.4"
+cosmwasm-std      = "1.5.0"
 cw-utils          = "1.0.3"
 derive_more       = "0.99.17"
 hex               = "0.4.3"
