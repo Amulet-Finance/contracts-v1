@@ -195,6 +195,8 @@ export type QueryMsg2 = {
   };
 } | {
   treasury: {};
+} | {
+  mint: {};
 };
 export interface CurrentAdminResponse {
   current_admin?: string | null;
@@ -230,6 +232,9 @@ export interface VaultMetadata {
 export interface SumPaymentRatio {
   ratio: string;
   timestamp: number;
+}
+export interface MintResponse {
+  mint: string;
 }
 export interface PendingAdminResponse {
   pending_admin?: string | null;
