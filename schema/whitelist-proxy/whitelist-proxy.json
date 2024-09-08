@@ -1,11 +1,19 @@
 {
-  "contract_name": "amulet-mint",
+  "contract_name": "whitelist-proxy",
   "contract_version": "1.0.0",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "InstantiateMsg",
     "type": "object",
+    "required": [
+      "hub_address"
+    ],
+    "properties": {
+      "hub_address": {
+        "type": "string"
+      }
+    },
     "additionalProperties": false
   },
   "execute": {
@@ -16,7 +24,7 @@
         "$ref": "#/definitions/ExecuteMsg"
       },
       {
-        "$ref": "#/definitions/ExecuteMsg2"
+        "$ref": "#/definitions/ProxyExecuteMsg"
       }
     ],
     "definitions": {
@@ -74,40 +82,9 @@
           }
         ]
       },
-      "ExecuteMsg2": {
+      "ProxyExecuteMsg": {
         "oneOf": [
           {
-            "description": "Create a synthetic so that it can be minted",
-            "type": "object",
-            "required": [
-              "create_synthetic"
-            ],
-            "properties": {
-              "create_synthetic": {
-                "type": "object",
-                "required": [
-                  "decimals",
-                  "ticker"
-                ],
-                "properties": {
-                  "decimals": {
-                    "description": "The number of decimals the synthetic uses",
-                    "type": "integer",
-                    "format": "uint32",
-                    "minimum": 0.0
-                  },
-                  "ticker": {
-                    "description": "The ticker of the synthetic, e.g. amuatom",
-                    "type": "string"
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "additionalProperties": false
-          },
-          {
-            "description": "Set minter's whitelist status",
             "type": "object",
             "required": [
               "set_whitelisted"
@@ -116,11 +93,11 @@
               "set_whitelisted": {
                 "type": "object",
                 "required": [
-                  "minter",
+                  "address",
                   "whitelisted"
                 ],
                 "properties": {
-                  "minter": {
+                  "address": {
                     "type": "string"
                   },
                   "whitelisted": {
@@ -133,27 +110,18 @@
             "additionalProperties": false
           },
           {
-            "description": "Mint an amount of synthetics to a recipient's address",
             "type": "object",
             "required": [
-              "mint"
+              "deposit"
             ],
             "properties": {
-              "mint": {
+              "deposit": {
                 "type": "object",
                 "required": [
-                  "amount",
-                  "recipient",
-                  "synthetic"
+                  "vault"
                 ],
                 "properties": {
-                  "amount": {
-                    "$ref": "#/definitions/Uint128"
-                  },
-                  "recipient": {
-                    "type": "string"
-                  },
-                  "synthetic": {
+                  "vault": {
                     "type": "string"
                   }
                 },
@@ -163,14 +131,67 @@
             "additionalProperties": false
           },
           {
-            "description": "Burn the synthetics sent with this message",
             "type": "object",
             "required": [
-              "burn"
+              "mint"
             ],
             "properties": {
-              "burn": {
+              "mint": {
                 "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "advance"
+            ],
+            "properties": {
+              "advance": {
+                "type": "object",
+                "required": [
+                  "amount",
+                  "vault"
+                ],
+                "properties": {
+                  "amount": {
+                    "$ref": "#/definitions/Uint128"
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "redeem"
+            ],
+            "properties": {
+              "redeem": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
                 "additionalProperties": false
               }
             },
@@ -192,10 +213,48 @@
         "$ref": "#/definitions/QueryMsg"
       },
       {
-        "$ref": "#/definitions/QueryMsg2"
+        "$ref": "#/definitions/ProxyQueryMsg"
       }
     ],
     "definitions": {
+      "ProxyQueryMsg": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "whitelisted"
+            ],
+            "properties": {
+              "whitelisted": {
+                "type": "object",
+                "required": [
+                  "address"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
       "QueryMsg": {
         "oneOf": [
           {
@@ -227,138 +286,25 @@
             "additionalProperties": false
           }
         ]
-      },
-      "QueryMsg2": {
-        "oneOf": [
-          {
-            "description": "Query whether the `minter` address is whitelisted to mint assets",
-            "type": "object",
-            "required": [
-              "whitelisted"
-            ],
-            "properties": {
-              "whitelisted": {
-                "type": "object",
-                "required": [
-                  "minter"
-                ],
-                "properties": {
-                  "minter": {
-                    "type": "string"
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "additionalProperties": false
-          },
-          {
-            "description": "Query the metadata for the synthetic with the given `denom`",
-            "type": "object",
-            "required": [
-              "synthetic"
-            ],
-            "properties": {
-              "synthetic": {
-                "type": "object",
-                "required": [
-                  "denom"
-                ],
-                "properties": {
-                  "denom": {
-                    "type": "string"
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "additionalProperties": false
-          },
-          {
-            "description": "All the synthetic assets issued by the mint with optional pagination. If a `page` is provided but no `limit`, `amulet_cw::query::DEFAULT_PAGE_LIMIT` will be used. If neither `page` or `limit` is provided, all the assets are returned.",
-            "type": "object",
-            "required": [
-              "all_assets"
-            ],
-            "properties": {
-              "all_assets": {
-                "type": "object",
-                "properties": {
-                  "limit": {
-                    "type": [
-                      "integer",
-                      "null"
-                    ],
-                    "format": "uint32",
-                    "minimum": 0.0
-                  },
-                  "page": {
-                    "type": [
-                      "integer",
-                      "null"
-                    ],
-                    "format": "uint32",
-                    "minimum": 0.0
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "additionalProperties": false
-          }
-        ]
       }
     }
   },
   "migrate": null,
   "sudo": null,
   "responses": {
-    "all_assets": {
+    "config": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "AllAssetsResponse",
+      "title": "ConfigResponse",
       "type": "object",
       "required": [
-        "assets",
-        "total_count"
+        "hub_address"
       ],
       "properties": {
-        "assets": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/Metadata"
-          }
-        },
-        "total_count": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
+        "hub_address": {
+          "type": "string"
         }
       },
-      "additionalProperties": false,
-      "definitions": {
-        "Metadata": {
-          "type": "object",
-          "required": [
-            "decimals",
-            "denom",
-            "ticker"
-          ],
-          "properties": {
-            "decimals": {
-              "type": "integer",
-              "format": "uint32",
-              "minimum": 0.0
-            },
-            "denom": {
-              "type": "string"
-            },
-            "ticker": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false
-        }
-      }
+      "additionalProperties": false
     },
     "current_admin": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -386,30 +332,6 @@
             "string",
             "null"
           ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "synthetic": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Metadata",
-      "type": "object",
-      "required": [
-        "decimals",
-        "denom",
-        "ticker"
-      ],
-      "properties": {
-        "decimals": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "denom": {
-          "type": "string"
-        },
-        "ticker": {
-          "type": "string"
         }
       },
       "additionalProperties": false
