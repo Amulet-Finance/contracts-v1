@@ -16,22 +16,22 @@ resolver = "2"
 
 [workspace.dependencies]
 # external
-anyhow            = "1.0.81"
+anyhow            = "1.0.87"
 bech32            = "0.11.0"
 cosmos-sdk-proto  = { version = "0.20.0", default-features = false }
-cosmwasm-schema   = "1.5.0"
-cosmwasm-std      = "1.5.0"
+cosmwasm-schema   = "1.5.7"
+cosmwasm-std      = "1.5.7"
 cw-utils          = "1.0.3"
-derive_more       = "0.99.17"
+derive_more       = "0.99.18"
 hex               = "0.4.3"
 hmac-sha256       = "1.1.7"
 neutron-sdk       = "0.9.0"
-prost             = "0.12.4"
-prost-types       = "0.12.4"
-serde             = "1.0.197"
+prost             = "0.12.6"
+prost-types       = "0.12.6"
+serde             = "1.0.210"
 static_assertions = "1.1.0"
 strum             = { version = "0.26.3", features = ["derive"] }
-thiserror         = "1.0.58"
+thiserror         = "1.0.63"
 uint              = { version = "0.9.5", default-features = false }
 
 # internal
@@ -43,7 +43,7 @@ amulet-cw         = { path = "crates/cosmwasm" }
 amulet-ntrn       = { path = "crates/neutron" }
 
 # dev-deps
-expect-test       = "1.4.1"
+expect-test       = "1.5.0"
 ron               = { version = "0.8.1", features = [ "integer128" ] }
 rstest            = { version = "0.18.2", default-features = false }
 test-utils        = { path = "crates/test-utils" }
