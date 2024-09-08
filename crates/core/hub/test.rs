@@ -1630,7 +1630,7 @@ fn withdraw_collateral() {
               cmds: [
                 BalanceSheet(SetCollateralShares(
                   vault: "vault",
-                  shares: (800000000000000000001),
+                  shares: (800000000000000000000),
                 )),
                 BalanceSheet(SetCollateralBalance(
                   vault: "vault",
@@ -1644,7 +1644,7 @@ fn withdraw_collateral() {
                 Vault(Redeem(
                   vault: "vault",
                   shares: "vault_shares_asset",
-                  amount: (199999999999999999999),
+                  amount: (200000000000000000000),
                   recipient: "sender",
                 )),
               ],
@@ -3594,15 +3594,15 @@ fn evaluate_sender_without_position_after_another_shares_value_increase() {
               cmds: [
                 BalanceSheet(SetCollateralShares(
                   vault: "vault",
-                  shares: (834090909090909090911),
+                  shares: (834090909090909090910),
                 )),
                 BalanceSheet(SetReserveShares(
                   vault: "vault",
-                  shares: (142651515151515151516),
+                  shares: (142651515151515151517),
                 )),
                 BalanceSheet(SetReserveBalance(
                   vault: "vault",
-                  balance: 170,
+                  balance: 171,
                 )),
                 BalanceSheet(SetTreasuryShares(
                   vault: "vault",
@@ -3610,19 +3610,19 @@ fn evaluate_sender_without_position_after_another_shares_value_increase() {
                 )),
                 BalanceSheet(SetOverallSumPaymentRatio(
                   vault: "vault",
-                  spr: (("0.16999999999999999999999999999999")),
+                  spr: (("0.17099999999999999999999999999999")),
                 )),
                 BalanceSheet(SetAccountSumPaymentRatio(
                   vault: "vault",
                   account: "someone_else",
-                  spr: (("0.16999999999999999999999999999999")),
+                  spr: (("0.17099999999999999999999999999999")),
                 )),
               ],
               cdp: (
                 collateral: 0,
                 debt: 0,
                 credit: 0,
-                spr: (("0.16999999999999999999999999999999")),
+                spr: (("0.17099999999999999999999999999999")),
               ),
             )"#]],
     );

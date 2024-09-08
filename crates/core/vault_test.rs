@@ -479,12 +479,12 @@ fn redeem_first_time_unbond_ready() {
             [
               UnbondingLog(BatchTotalUnbondValue(
                 batch: 0,
-                value: (99),
+                value: (100),
               )),
               UnbondingLog(UnbondedValueInBatch(
                 recipient: "bob",
                 batch: 0,
-                value: (99),
+                value: (100),
               )),
               Mint(Burn(
                 amount: (100000000000000000000),
@@ -500,7 +500,7 @@ fn redeem_first_time_unbond_ready() {
               UnbondingLog(LastCommittedBatchId(0)),
               UnbondingLog(BatchClaimableAmount(
                 batch: 0,
-                amount: (99),
+                amount: (100),
               )),
               UnbondingLog(BatchEpoch(
                 batch: 0,
@@ -510,7 +510,7 @@ fn redeem_first_time_unbond_ready() {
                 ),
               )),
               Strategy(Unbond(
-                value: (99),
+                value: (100),
               )),
             ]"#]],
     )
@@ -589,12 +589,12 @@ fn redeem_first_time_unbond_later() {
             [
               UnbondingLog(BatchTotalUnbondValue(
                 batch: 0,
-                value: (99),
+                value: (100),
               )),
               UnbondingLog(UnbondedValueInBatch(
                 recipient: "bob",
                 batch: 0,
-                value: (99),
+                value: (100),
               )),
               Mint(Burn(
                 amount: (100000000000000000000),
@@ -636,12 +636,12 @@ fn multiple_redemptions_in_one_batch() {
             [
               UnbondingLog(BatchTotalUnbondValue(
                 batch: 0,
-                value: (99),
+                value: (100),
               )),
               UnbondingLog(UnbondedValueInBatch(
                 recipient: "bob",
                 batch: 0,
-                value: (99),
+                value: (100),
               )),
               Mint(Burn(
                 amount: (100000000000000000000),
@@ -676,7 +676,7 @@ fn multiple_redemptions_in_one_batch() {
             [
               UnbondingLog(BatchTotalUnbondValue(
                 batch: 0,
-                value: (199),
+                value: (200),
               )),
               UnbondingLog(UnbondedValueInBatch(
                 recipient: "alice",
@@ -697,7 +697,7 @@ fn multiple_redemptions_in_one_batch() {
               UnbondingLog(LastCommittedBatchId(0)),
               UnbondingLog(BatchClaimableAmount(
                 batch: 0,
-                amount: (199),
+                amount: (200),
               )),
               UnbondingLog(BatchEpoch(
                 batch: 0,
@@ -823,7 +823,7 @@ fn claim() {
                 batch: 0,
               )),
               Strategy(SendClaimed(
-                amount: (99),
+                amount: (100),
                 recipient: "bob",
               )),
             ]"#]],
@@ -873,7 +873,7 @@ fn claim_multiple() {
                 batch: 1,
               )),
               Strategy(SendClaimed(
-                amount: (299),
+                amount: (300),
                 recipient: "bob",
               )),
             ]"#]],
@@ -941,7 +941,7 @@ fn start_unbond() {
               UnbondingLog(LastCommittedBatchId(0)),
               UnbondingLog(BatchClaimableAmount(
                 batch: 0,
-                amount: (99),
+                amount: (100),
               )),
               UnbondingLog(BatchEpoch(
                 batch: 0,
@@ -951,7 +951,7 @@ fn start_unbond() {
                 ),
               )),
               Strategy(Unbond(
-                value: (99),
+                value: (100),
               )),
             ]"#]],
     )
