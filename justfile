@@ -6,7 +6,7 @@ dist-clean:
 	rm -rf arifacts schema ts
 
 on-chain-test test:
-	bun test scripts/{{test}}.test.ts --timeout 1600000
+	bun test scripts/{{test}}.test.ts --timeout 1600000 --bail 1
 
 deploy-contract contract *FLAGS:
 	#!/usr/bin/env nu
