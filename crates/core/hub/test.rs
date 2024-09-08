@@ -69,6 +69,35 @@ struct World {
 }
 
 #[test]
+fn positions_update_vault_regression_1() {
+    assert_eq!(
+        update_vault(
+            positions::Vault {
+                collateral_pool: SharesPool {
+                    shares: SharesAmount(180_000_000_000_000_000_000_000),
+                    quota: 180_000_000_000,
+                },
+                reserve_pool: SharesPool {
+                    shares: SharesAmount(90_000_000_000_000_000_000_000),
+                    quota: 90_000_000_000,
+                },
+                treasury_shares: SharesAmount(0),
+                amo_shares: SharesAmount(0),
+                spr: SumPaymentRatio::zero(),
+            },
+            RedemptionRate::new(
+                TotalSharesIssued(270_000_000_000_000_000_000_000),
+                TotalDepositsValue(270_000_000_000),
+            ),
+            || AmoAllocation::new(0).unwrap(),
+            || CollateralYieldFee::new(1_000).unwrap(),
+            || ReserveYieldFee::new(10_000).unwrap(),
+        ),
+        Ok(None)
+    );
+}
+
+#[test]
 fn deposit_unregistered_vault_errs() {
     check_err(
         World::default()
