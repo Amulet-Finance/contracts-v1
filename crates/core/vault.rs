@@ -1,3 +1,5 @@
+use num::U256;
+
 use crate::{cmds, Asset, Decimals, Rate, Recipient};
 
 pub type Instant = u64;
@@ -227,8 +229,9 @@ impl RedemptionRate {
         &self,
         SharesAmount(shares_amount): SharesAmount,
     ) -> Option<DepositValue> {
-        Rate::from_ratio(shares_amount, self.total_shares_issued.0)
-            .and_then(|rate| rate.apply_u128(self.total_deposits_value.0))
+        U256::from(shares_amount)
+            .checked_mul_div(self.total_deposits_value.0, self.total_shares_issued.0)
+            .and_then(|deposits_u256| deposits_u256.try_into().ok())
             .map(DepositValue)
     }
 
@@ -236,8 +239,9 @@ impl RedemptionRate {
         &self,
         DepositValue(deposit_amount): DepositValue,
     ) -> Option<SharesAmount> {
-        Rate::from_ratio(deposit_amount, self.total_deposits_value.0)
-            .and_then(|rate| rate.apply_u128(self.total_shares_issued.0))
+        U256::from(deposit_amount)
+            .checked_mul_div(self.total_shares_issued.0, self.total_deposits_value.0)
+            .and_then(|shares_u256| shares_u256.try_into().ok())
             .map(SharesAmount)
     }
 

@@ -25,6 +25,15 @@ impl U256 {
 
         u256_be_bytes
     }
+
+    /// Returns `Some((self * m) / d)` if d > 0, otherwise `None`
+    pub fn checked_mul_div(self, m: u128, d: u128) -> Option<Self> {
+        if d == 0 {
+            return None;
+        }
+
+        Some((self * Self::from(m)) / d)
+    }
 }
 
 impl From<U256> for U512 {
@@ -195,6 +204,17 @@ mod test {
         FixedU256::from_u128(numer)
             .checked_div(FixedU256::from_u128(denom))
             .unwrap()
+    }
+
+    #[test]
+    fn u256_checked_mul_div() {
+        assert_eq!(U256::one().checked_mul_div(10, 0), None);
+
+        assert_eq!(
+            U256::from(180_000_000_000_000_000_000_000u128)
+                .checked_mul_div(270_000_000_000, 270_000_000_000_000_000_000_000),
+            Some(U256::from(180_000_000_000u128))
+        );
     }
 
     #[test]
