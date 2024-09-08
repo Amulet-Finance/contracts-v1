@@ -464,15 +464,15 @@ pub fn handle_admin_msg<Msg>(
         }
 
         AdminMsg::RemoveAdvanceProxy { vault } => {
-            config.remove_deposit_proxy(admin_role, vault.into())?
+            config.remove_advance_proxy(admin_role, vault.into())?
         }
 
         AdminMsg::RemoveRedeemProxy { vault } => {
-            config.remove_deposit_proxy(admin_role, vault.into())?
+            config.remove_redeem_proxy(admin_role, vault.into())?
         }
 
         AdminMsg::RemoveMintProxy { vault } => {
-            config.remove_deposit_proxy(admin_role, vault.into())?
+            config.remove_mint_proxy(admin_role, vault.into())?
         }
     };
 
