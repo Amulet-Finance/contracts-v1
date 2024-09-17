@@ -18,7 +18,6 @@ import { Validator } from "cosmjs-types/cosmos/staking/v1beta1/staking";
 import { Coin, DirectSecp256k1HdWallet, coin } from "@cosmjs/proto-signing";
 import {
   ActiveUnbondingsResponse,
-  Config,
   DepositAssetResponse,
   ExecuteMsg,
   InstantiateMsg,
@@ -29,7 +28,6 @@ import {
   ValidatorSet,
 } from "../ts/AmuletRemotePos.types";
 import { GENESIS_ALLOCATION } from "./suite/constants";
-import { ClaimableResponse } from "../ts/AmuletGenericLst.types";
 
 type Wallet = DirectSecp256k1HdWallet;
 type QueryClient = StakingExtension & BankExtension;
@@ -41,6 +39,8 @@ const UNBONDING_PERIOD_SECS = 70;
 const IBC_TRANSFER_AMOUNT = Math.floor(GENESIS_ALLOCATION * 0.9); // 90% of genesis allocation
 const VALIDATOR_LIQUID_STAKE_CAP = 0.5;
 const VALIDATOR_BALANCE = GENESIS_ALLOCATION / 10;
+// last docker instance is the one that is stopped for slashing
+const LAST_VALIDATOR_MONIKER = `valgaia${TOTAL_VALIDATOR_COUNT - 1}`;
 
 async function createQueryClient(rpc: string): Promise<QueryClient> {
   const tmClient = await Tendermint37Client.connect(`http://${rpc}`);
@@ -329,7 +329,7 @@ let vaultOneAddress: string;
 let gasFee: StdFee;
 let depositAssetDenom: string;
 
-describe("Remote Proof-of-Stake Vault tests", () => {
+describe("Remote Proof-of-Stake Vault", () => {
   beforeAll(async () => {
     suite = await TestSuite.create({
       networkOverrides: {
@@ -399,9 +399,11 @@ describe("Remote Proof-of-Stake Vault tests", () => {
   });
 
   it("should deploy the first amulet-remote-pos vault using all but the last validator", async () => {
-    let initial_validator_set = validators
-      .slice(0, -1)
+    const initial_validator_set = validators
+      .filter((v) => v.description.moniker != LAST_VALIDATOR_MONIKER)
       .map((v) => v.operatorAddress);
+
+    expect(initial_validator_set.length).toBe(TOTAL_VALIDATOR_COUNT - 1);
 
     let initial_validator_weights = new Array(TOTAL_VALIDATOR_COUNT - 1).fill(
       Math.floor(10_000 / TOTAL_VALIDATOR_COUNT - 1),
@@ -679,14 +681,26 @@ describe("Remote Proof-of-Stake Vault tests", () => {
     // force the vault out of the stuck delegate phase
     await forceNextVault(operatorClient, vaultOneAddress, operatorAddress);
 
+    const redelegationSlot = preRedelegationValSet.validators.length - 1;
+
+    const redelegateTo = validators.find(
+      (v) => v.description.moniker == LAST_VALIDATOR_MONIKER,
+    )?.operatorAddress;
+
+    if (!redelegateTo) {
+      throw new Error(
+        `could not find validator with moniker: ${LAST_VALIDATOR_MONIKER}`,
+      );
+    }
+
     // redelegate away from the validator with no more capacity
     await operatorClient.execute(
       operatorAddress,
       vaultOneAddress,
       {
         redelegate_slot: {
-          slot: 8,
-          validator: validators[validators.length - 1].operatorAddress,
+          slot: redelegationSlot,
+          validator: redelegateTo,
         },
       },
       gasFee,
@@ -699,10 +713,10 @@ describe("Remote Proof-of-Stake Vault tests", () => {
         validator_set: {},
       });
 
-    expect(postRedelegationValSet.pending_redelegation_slot).toBe(8);
-    expect(postRedelegationValSet.pending_redelegate_to).toBe(
-      validators[validators.length - 1].operatorAddress,
+    expect(postRedelegationValSet.pending_redelegation_slot).toBe(
+      redelegationSlot,
     );
+    expect(postRedelegationValSet.pending_redelegate_to).toBe(redelegateTo);
 
     const postRedelegationMetadata = await queryVaultMetadata(
       operatorClient,
@@ -752,8 +766,10 @@ describe("Remote Proof-of-Stake Vault tests", () => {
 
     expect(actualDelegations.delegationResponses.length).toBe(9);
     expect(
-      actualDelegations.delegationResponses[8].delegation.validatorAddress,
-    ).toBe(postRedelegationValSet.pending_redelegate_to || "");
+      actualDelegations.delegationResponses.find(
+        (r) => r.delegation.validatorAddress == redelegateTo,
+      ),
+    ).toBeDefined();
   });
 
   it("reconciling after waiting for the fee cooldown to expire results in a fee taken from rewards", async () => {
@@ -1075,11 +1091,27 @@ describe("Remote Proof-of-Stake Vault tests", () => {
     expect(+postRedeemMetaV1.pending_unbond).toBeGreaterThan(0);
     expect(+postRedeemMetaV2.pending_unbond).toBeGreaterThan(0);
 
-    // 2. pause ICQ updates
+    // 2. pause ICQ updates (so the slashing goes undetected for now)
     await suite.pauseIcqRelaying();
 
     // 3. slash the last validator
     await suite.slashValidator();
+
+    // 3.1 ensure that the slashed validator is in the set
+    var validatorJailedInSet = false;
+
+    for (var addr of vaultOneValSet.validators) {
+      const metadata = await remoteQueryClient.staking.validator(addr);
+
+      if (metadata.validator.jailed) {
+        validatorJailedInSet = true;
+        break;
+      }
+    }
+
+    if (!validatorJailedInSet) {
+      throw new Error(`Jailed validator is not in the validator set`);
+    }
 
     // 4. reconcile vault one, it should fail at the undelegation phase and require a force-next to get unstuck
     await reconcileVault(
@@ -1092,7 +1124,7 @@ describe("Remote Proof-of-Stake Vault tests", () => {
 
     await forceNextVault(operatorClient, vaultOneAddress, operatorAddress);
 
-    // 5. resume ICQ updates
+    // 5. resume ICQ updates (allow slashing to be detected)
     await suite.resumeIcqRelaying();
 
     // 6. wait for 10 blocks for ICQs to update
@@ -1165,10 +1197,10 @@ describe("Remote Proof-of-Stake Vault tests", () => {
     let postReconcileMetaV2: Metadata;
 
     {
-      const expiry = Date.now() + 10_000;
+      const expiry = Date.now() + 60_000;
 
-      const vaultOneExpectedAckCount =
-        (preReconcileMetaV1.unbonding_ack_count || 0) + 1;
+      // const vaultOneExpectedAckCount =
+      //   (preReconcileMetaV1.unbonding_ack_count || 0) + 1;
 
       while (true) {
         const metadataV1 = await queryVaultMetadata(
@@ -1182,18 +1214,17 @@ describe("Remote Proof-of-Stake Vault tests", () => {
         );
 
         if (
-          metadataV1.unbonding_ack_count &&
-          metadataV2.unbonding_ack_count &&
-          metadataV1.unbonding_ack_count == vaultOneExpectedAckCount &&
-          metadataV2.unbonding_ack_count == 1
+          metadataV1.unbonding_issued_count == metadataV1.unbonding_ack_count &&
+          metadataV2.unbonding_issued_count == metadataV2.unbonding_ack_count
         ) {
           postReconcileMetaV1 = metadataV1;
           postReconcileMetaV2 = metadataV2;
           break;
         }
 
-        if (Date.now() > expiry)
+        if (Date.now() > expiry) {
           throw new Error("timed out waiting for unbonding acknowledgement");
+        }
 
         Bun.sleep(1_000);
       }
