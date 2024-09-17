@@ -17,10 +17,8 @@
     };
 
     toolchain = pkgs.rust-bin.fromRustupToolchainFile ./toolchain.toml;
-  in {
-    devShells.${system}.default = pkgs.mkShell {
-      packages = [
-        # required
+
+    requiredPkgs = [
         toolchain
         pkgs.just
         pkgs.nushell
@@ -33,18 +31,28 @@
         pkgs.jq
         pkgs.docker-compose
         pkgs.go
-        # nice to have
-        pkgs.cargo-audit
-        pkgs.cargo-edit
-        pkgs.nodePackages_latest.typescript-language-server
-        pkgs.nodePackages_latest.prettier
-        pkgs.rust-analyzer-unwrapped
-        pkgs.gopls
-        pkgs.tokei
-        pkgs.lazydocker
-      ];
+    ];
+  in {
+    devShells.${system} = {
+      default = pkgs.mkShell {
+        packages = requiredPkgs ++ [
+          # nice to have
+          pkgs.cargo-audit
+          pkgs.cargo-edit
+          pkgs.nodePackages_latest.typescript-language-server
+          pkgs.nodePackages_latest.prettier
+          pkgs.rust-analyzer-unwrapped
+          pkgs.gopls
+          pkgs.tokei
+          pkgs.lazydocker
+        ];
 
-      RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";    
+        RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";    
+      };
+
+      ci = pkgs.mkShell {
+        packages = requiredPkgs;
+      };
     };
   };
 
