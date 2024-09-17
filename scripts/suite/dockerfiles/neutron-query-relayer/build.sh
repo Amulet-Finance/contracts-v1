@@ -7,7 +7,7 @@ NEUTRON_RELAYER_TAG="neutron-relayer-$ORG-$VERSION"
 DIR="$(dirname $0)"
 cd $DIR
 
-git clone -b foxpy/low-submission-margin-period https://github.com/neutron-org/neutron-query-relayer
+git clone --depth 1 --branch foxpy/low-submission-margin-period https://github.com/neutron-org/neutron-query-relayer
 
 if [ $? -ne 0 ]; then
     echo "Failed to clone repository."
