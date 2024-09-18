@@ -32,6 +32,10 @@ setup-on-chain-test-suite:
 	chmod +x scripts/suite/dockerfiles/build-all.sh
 	./scripts/suite/dockerfiles/build-all.sh
 
+# fetches the required node modules required by scripts / integration tests
+fetch-node-modules:
+	bun install
+
 # run a specific on-chain test
 on-chain-test test:
 	bun test scripts/{{test}}.test.ts --timeout 1600000 --bail 1
@@ -59,7 +63,7 @@ unit-test-coverage *LLVM_COV_OPTS:
 	cargo llvm-cov {{LLVM_COV_OPTS}}
 
 # ci task pipeline
-ci: check-formatting lint unit-tests dist setup-on-chain-test-suite integration-tests
+ci: check-formatting lint unit-tests dist setup-on-chain-test-suite fetch-node-modules integration-tests
 
 # build all contracts and optimize WASM artifacts
 build-contracts:
@@ -125,7 +129,7 @@ generate-ts:
 			let contract = ($in | split words | each { str capitalize } | str join);
 			let schema_dir = $"./schema/($in)";
 			echo $schema_dir
-			(bun x cosmwasm-ts-codegen generate
+			(bun x @cosmwasm/ts-codegen generate
 				--schema $schema_dir
 				--out ./ts
 				--name $contract
