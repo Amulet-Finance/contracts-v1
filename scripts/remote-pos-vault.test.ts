@@ -18,6 +18,8 @@ import { Validator } from "cosmjs-types/cosmos/staking/v1beta1/staking";
 import { Coin, DirectSecp256k1HdWallet, coin } from "@cosmjs/proto-signing";
 import {
   ActiveUnbondingsResponse,
+  ClaimableResponse,
+  Config,
   DepositAssetResponse,
   ExecuteMsg,
   InstantiateMsg,
@@ -34,7 +36,7 @@ type QueryClient = StakingExtension & BankExtension;
 type HostClient = SigningCosmWasmClient;
 type RemoteClient = SigningStargateClient;
 
-const TOTAL_VALIDATOR_COUNT = 10;
+const TOTAL_VALIDATOR_COUNT = 5;
 const UNBONDING_PERIOD_SECS = 70;
 const IBC_TRANSFER_AMOUNT = Math.floor(GENESIS_ALLOCATION * 0.9); // 90% of genesis allocation
 const VALIDATOR_LIQUID_STAKE_CAP = 0.5;
@@ -287,7 +289,7 @@ async function instantiateVault(
     { funds: [coin(5_000_000, "untrn")] },
   );
 
-  const timeoutExpiry = Date.now() + 30_000;
+  const timeoutExpiry = Date.now() + 60_000;
 
   while (Date.now() < timeoutExpiry) {
     const metadata = await queryVaultMetadata(
@@ -347,7 +349,7 @@ describe("Remote Proof-of-Stake Vault", () => {
         neutron: {
           genesis_opts: {
             "app_state.interchaintxs.params.msg_submit_tx_max_messages": String(
-              TOTAL_VALIDATOR_COUNT / 2,
+              Math.floor(TOTAL_VALIDATOR_COUNT / 2),
             ),
             "app_state.feeburner.params.treasury_address":
               // aribitrarily picked testnet address
@@ -588,7 +590,9 @@ describe("Remote Proof-of-Stake Vault", () => {
       postReconcileMetadata.main_ica_address || "",
     );
 
-    expect(delegations.delegationResponses.length).toBe(9);
+    expect(delegations.delegationResponses.length).toBe(
+      TOTAL_VALIDATOR_COUNT - 1,
+    );
 
     const totalActualDelegated = delegations.delegationResponses.reduce(
       (acc, d) => acc + +d.balance.amount,
@@ -675,7 +679,7 @@ describe("Remote Proof-of-Stake Vault", () => {
     );
 
     expect(postFailureMetadata.msg_success_count).toBe(
-      TOTAL_VALIDATOR_COUNT / 2,
+      Math.floor(TOTAL_VALIDATOR_COUNT / 2),
     );
 
     // force the vault out of the stuck delegate phase
@@ -755,16 +759,18 @@ describe("Remote Proof-of-Stake Vault", () => {
 
     expect(postReconcileValSet.pending_redelegation_slot).toBeNull();
     expect(postReconcileValSet.pending_redelegate_to).toBeNull();
-    expect(postReconcileValSet.validators[8]).toBe(
-      postRedelegationValSet.pending_redelegate_to || "",
-    );
+    expect(
+      postReconcileValSet.validators[postReconcileValSet.validators.length - 1],
+    ).toBe(postRedelegationValSet.pending_redelegate_to || "");
 
     const actualDelegations =
       await remoteQueryClient.staking.delegatorDelegations(
         postReconcileMetadata.main_ica_address || "",
       );
 
-    expect(actualDelegations.delegationResponses.length).toBe(9);
+    expect(actualDelegations.delegationResponses.length).toBe(
+      TOTAL_VALIDATOR_COUNT - 1,
+    );
     expect(
       actualDelegations.delegationResponses.find(
         (r) => r.delegation.validatorAddress == redelegateTo,

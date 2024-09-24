@@ -10,11 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Nix
         uses: cachix/install-nix-action@v27
-        extraPullNames: nix-community
 
       - name: Run CI Recipe
-        run: nix develop .#ci --command just ci
+        run: nix develop .#ci --accept-flake-config --command just ci
