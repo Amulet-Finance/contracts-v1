@@ -46,15 +46,21 @@ use self::{
     types::{Ica, Icq},
 };
 
-fn required_ica_icq_deposit(ica_register_fee: &Coin, icq_deposit_fee: &Coin) -> u128 {
+fn required_ica_icq_deposit(
+    ica_register_fee: &Coin,
+    icq_deposit_fee: &Coin,
+    delegations_icq_count: u8,
+) -> u128 {
     // Main + Rewards Pot
     const ICAS_REQUIRED: u128 = 2;
-    // Main Undelegated Balance + Main Delegations + Rewards Pot Balance
-    const ICQS_REQUIRED: u128 = 3;
+    // Main Undelegated Balance + Rewards Pot Balance
+    const SINGLE_ICQS_REQUIRED: u128 = 2;
+
+    let icqs_required = SINGLE_ICQS_REQUIRED + u128::from(delegations_icq_count);
 
     let total_ica_register_fee = ica_register_fee.amount.u128() * ICAS_REQUIRED;
 
-    let total_icq_deposit_fee = icq_deposit_fee.amount.u128() * ICQS_REQUIRED;
+    let total_icq_deposit_fee = icq_deposit_fee.amount.u128() * icqs_required;
 
     total_ica_register_fee + total_icq_deposit_fee
 }
@@ -117,7 +123,15 @@ pub fn instantiate(
         "ica & icq fee denoms match"
     );
 
-    let required_deposit = required_ica_icq_deposit(&ica_register_fee, &icq_deposit);
+    let delegations_icq_count = msg
+        .initial_validator_set
+        .len()
+        .div_ceil(msg.config.max_validators_per_delegations_icq.into())
+        .try_into()
+        .map_err(|_| anyhow!("delegations icq count exceeds {}", u8::MAX))?;
+
+    let required_deposit =
+        required_ica_icq_deposit(&ica_register_fee, &icq_deposit, delegations_icq_count);
 
     let deposit = must_pay(&info, &ica_register_fee.denom)?;
 
@@ -148,6 +162,7 @@ pub fn instantiate(
     let ibc_deposit_asset = ibc_denom(&config.transfer_out_channel, &config.remote_denom);
 
     store.set_connection_id(&config.connection_id);
+    store.set_delegations_icq_count(delegations_icq_count);
     store.set_estimated_block_interval_seconds(config.estimated_block_interval_seconds);
     store.set_fee_bps_block_increment(config.fee_bps_block_increment);
     store.set_fee_payment_cooldown_blocks(config.fee_payment_cooldown_blocks);
@@ -157,6 +172,7 @@ pub fn instantiate(
     store.set_max_fee_bps(config.max_fee_bps);
     store.set_max_ibc_msg_count(max_msg_count);
     store.set_max_unbonding_entries(config.max_unbonding_entries);
+    store.set_max_validators_per_delegations_icq(config.max_validators_per_delegations_icq);
     store.set_minimum_unbond_interval(config.unbonding_period / config.max_unbonding_entries);
     store.set_remote_denom(&config.remote_denom);
     store.set_remote_denom_decimals(config.remote_denom_decimals);
@@ -376,6 +392,7 @@ pub fn handle_strategy_query(deps: Deps<NeutronQuery>, query: StrategyQueryMsg) 
             interchain_tx_timeout_seconds: deps.storage.interchain_tx_timeout_seconds(),
             max_fee_bps: deps.storage.max_fee_bps(),
             max_unbonding_entries: deps.storage.max_unbonding_entries(),
+            max_validators_per_delegations_icq: deps.storage.max_validators_per_delegations_icq(),
             remote_denom: deps.storage.remote_denom(),
             remote_denom_decimals: deps.storage.remote_denom_decimals(),
             transfer_in_channel: deps.storage.transfer_in_channel(),
@@ -388,7 +405,8 @@ pub fn handle_strategy_query(deps: Deps<NeutronQuery>, query: StrategyQueryMsg) 
         StrategyQueryMsg::Metadata {} => to_json_binary(&Metadata {
             available_to_claim: deps.storage.available_to_claim().0.into(),
             delegated: deps.storage.delegated().0.into(),
-            delegations_icq: deps.storage.delegations_icq(),
+            delegations_icqs: deps.storage.delegations_icqs(),
+            delegations_icq_count: deps.storage.delegations_icq_count(),
             ibc_deposit_asset: deps.storage.ibc_deposit_asset(),
             inflight_delegation: deps.storage.inflight_delegation().0.into(),
             inflight_deposit: deps.storage.inflight_deposit().0.into(),
@@ -404,7 +422,7 @@ pub fn handle_strategy_query(deps: Deps<NeutronQuery>, query: StrategyQueryMsg) 
             minimum_unbond_interval: deps.storage.minimum_unbond_interval(),
             msg_issued_count: deps.storage.msg_issued_count().0,
             msg_success_count: deps.storage.msg_success_count().0,
-            next_delegations_icq: deps.storage.next_delegations_icq(),
+            next_delegations_icqs: deps.storage.next_delegations_icqs(),
             pending_deposit: deps.storage.pending_deposit().0.into(),
             pending_unbond: deps.storage.pending_unbond().0.into(),
             rewards_ica_address: deps.storage.rewards_ica_address(),
@@ -473,15 +491,15 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
 
 #[entry_point]
 pub fn reply(deps: DepsMut, _env: Env, reply: Reply) -> Result<Response<NeutronMsg>> {
-    let ReplyState { kind, ica } = ReplyState::from(reply.id);
+    let ReplyState { kind, ica, index } = ReplyState::from(reply.id);
 
     match kind {
         ReplyKind::RegisterCurrentSetDelegationsIcq => {
-            reply::handle_register_current_set_delegations_icq(deps, reply)
+            reply::handle_register_current_set_delegations_icq(deps, reply, index)
         }
 
         ReplyKind::RegisterNextSetDelegationsIcq => {
-            reply::handle_register_next_set_delegations_icq(deps, reply)
+            reply::handle_register_next_set_delegations_icq(deps, reply, index)
         }
 
         ReplyKind::RegisterBalanceIcq => reply::handle_register_balance_icq(deps, ica, reply),

@@ -86,6 +86,7 @@ fn config() -> Config {
         interchain_tx_timeout_seconds: 60 * 60,
         max_fee_bps: 200,
         max_unbonding_entries: 7,
+        max_validators_per_delegations_icq: 15,
         remote_denom: "stake".to_owned(),
         remote_denom_decimals: 6,
         transfer_in_channel: "channel-0".to_owned(),

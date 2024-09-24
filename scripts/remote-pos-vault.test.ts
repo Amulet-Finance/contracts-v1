@@ -37,6 +37,10 @@ type HostClient = SigningCosmWasmClient;
 type RemoteClient = SigningStargateClient;
 
 const TOTAL_VALIDATOR_COUNT = 5;
+const MAX_VALIDATORS_PER_DELEGATIONS_ICQ = Math.min(
+  TOTAL_VALIDATOR_COUNT / 2,
+  15,
+);
 const UNBONDING_PERIOD_SECS = 70;
 const IBC_TRANSFER_AMOUNT = Math.floor(GENESIS_ALLOCATION * 0.9); // 90% of genesis allocation
 const VALIDATOR_LIQUID_STAKE_CAP = 0.5;
@@ -189,7 +193,7 @@ async function reconcileVault(
     coin(initialState.cost, "untrn"),
   ]);
 
-  const expiry = Date.now() + 60_000;
+  const expiry = Date.now() + 180_000;
 
   while (Date.now() < expiry) {
     const state = await queryVaultReconcileState(client, vault);
@@ -271,6 +275,7 @@ async function instantiateVault(
     interchain_tx_timeout_seconds: 60 * 60 * 60,
     max_fee_bps: 200,
     max_unbonding_entries: 7,
+    max_validators_per_delegations_icq: MAX_VALIDATORS_PER_DELEGATIONS_ICQ,
     remote_denom: "stake",
     remote_denom_decimals: 6,
     transfer_in_channel: "channel-0",
@@ -280,13 +285,21 @@ async function instantiateVault(
     unbonding_period: UNBONDING_PERIOD_SECS,
   };
 
+  const icq_count =
+    2 +
+    Math.ceil(
+      initial_validator_set.length / MAX_VALIDATORS_PER_DELEGATIONS_ICQ,
+    );
+
+  const icq_deposit = icq_count * 1_000_000;
+
   const res = await client.instantiate(
     creator,
     codeId,
     initMsg,
     "amulet-remote-pos",
     gasFee,
-    { funds: [coin(5_000_000, "untrn")] },
+    { funds: [coin(2_000_000 + icq_deposit, "untrn")] },
   );
 
   const timeoutExpiry = Date.now() + 60_000;
@@ -298,7 +311,7 @@ async function instantiateVault(
     );
 
     if (
-      metadata.delegations_icq != null &&
+      metadata.delegations_icqs.length == metadata.delegations_icq_count &&
       metadata.main_ica_balance_icq != null &&
       metadata.rewards_ica_balance_icq != null
     ) {
@@ -360,8 +373,8 @@ describe("Remote Proof-of-Stake Vault", () => {
       relayerOverrides: {
         hermes: {
           config: {
-            "chains.1.trusting_period": `${UNBONDING_PERIOD_SECS / 2}s`,
-            "chains.0.trusting_period": `${UNBONDING_PERIOD_SECS / 2}s`,
+            "chains.1.trusting_period": `${Math.floor(UNBONDING_PERIOD_SECS / 2)}s`,
+            "chains.0.trusting_period": `${Math.floor(UNBONDING_PERIOD_SECS / 2)}s`,
           },
         },
       },
@@ -393,7 +406,11 @@ describe("Remote Proof-of-Stake Vault", () => {
   it("should upload the amulet-remote-pos vault contract byte code", async () => {
     const wasmFilePath = artifact("amulet-remote-pos");
     const wasmBytes = await readContractFileBytes(wasmFilePath);
-    const res = await operatorClient.upload(operatorAddress, wasmBytes, gasFee);
+    const res = await operatorClient.upload(
+      operatorAddress,
+      wasmBytes,
+      createFee(suite, 7_000_000),
+    );
 
     expect(res.codeId).toBe(1);
 
@@ -697,6 +714,13 @@ describe("Remote Proof-of-Stake Vault", () => {
       );
     }
 
+    const icq_count = Math.ceil(
+      preRedelegationValSet.validators.length /
+        MAX_VALIDATORS_PER_DELEGATIONS_ICQ,
+    );
+
+    const icq_deposit = icq_count * 1_000_000;
+
     // redelegate away from the validator with no more capacity
     await operatorClient.execute(
       operatorAddress,
@@ -709,7 +733,7 @@ describe("Remote Proof-of-Stake Vault", () => {
       },
       gasFee,
       "",
-      [coin(1_000_000, "untrn")],
+      [coin(icq_deposit, "untrn")],
     );
 
     const postRedelegationValSet: ValidatorSet =
@@ -727,7 +751,9 @@ describe("Remote Proof-of-Stake Vault", () => {
       vaultOneAddress,
     );
 
-    expect(postRedelegationMetadata.next_delegations_icq).toBeNumber();
+    expect(postRedelegationMetadata.next_delegations_icqs.length).toBe(
+      postRedelegationMetadata.delegations_icq_count,
+    );
 
     // wait for 10 blocks to allow for delegations icq to update
     const targetHeight = (await operatorClient.getBlock()).header.height + 10;

@@ -215,28 +215,44 @@ impl<'a> FsmEnv for Env<'a> {
     }
 
     fn delegations_report(&self) -> Option<DelegationsReport> {
-        let icq_id = self.deps.storage.delegations_icq()?;
+        let icq_ids = self.deps.storage.delegations_icqs();
 
-        let res = match icq::query_delegations(self.deps, self.env.clone(), icq_id) {
-            Ok(res) => res,
-            Err(err) => {
-                panic!("delegations query for icq {icq_id} failed: {err}");
+        if icq_ids.len() != self.deps.storage.delegations_icq_count() as usize {
+            return None;
+        }
+
+        let mut delegations = vec![];
+
+        let mut last_submitted_height: Option<u64> = None;
+
+        for id in icq_ids {
+            let res = match icq::query_delegations(self.deps, self.env.clone(), id) {
+                Ok(res) => res,
+                Err(err) => {
+                    panic!("delegations query for icq {id} failed: {err}");
+                }
+            };
+
+            // use the lowest height of all the results
+            last_submitted_height = Some(
+                last_submitted_height.map_or(res.last_submitted_local_height, |lsh| {
+                    lsh.min(res.last_submitted_local_height)
+                }),
+            );
+
+            for d in res.delegations {
+                delegations.push(Delegation {
+                    validator: d.validator,
+                    amount: d.amount.amount.u128(),
+                })
             }
-        };
-
-        let delegations = res
-            .delegations
-            .into_iter()
-            .map(|d| Delegation {
-                validator: d.validator,
-                amount: d.amount.amount.u128(),
-            })
-            .collect();
+        }
 
         let validators = self.deps.storage.validators();
 
         DelegationsIcqResult {
-            last_submitted_height: res.last_submitted_local_height,
+            last_submitted_height: last_submitted_height
+                .expect("icq_ids length > 0 and result always has a last submitted height"),
             delegations,
         }
         .into_report(&validators)
@@ -822,16 +838,20 @@ fn handle_reconcile_event(storage: &mut dyn Storage, env: &CwEnv, event: Event) 
             storage.set_unbonding_issued_count(idx + 1);
         }
 
-        // swap in delegations icq for the new set
+        // swap in delegations icqs for the new set
         Event::RedelegationSuccessful {
             slot: ValidatorSetSlot(slot),
             validator,
         } => {
-            let next_delegations_icq = storage
-                .next_delegations_icq()
-                .expect("always: set during redelegations");
+            let delegation_icq_count = storage.delegations_icq_count();
 
-            storage.set_delegations_icq(next_delegations_icq);
+            for idx in 0..delegation_icq_count {
+                let next_delegations_icq = storage
+                    .next_delegations_icq(idx)
+                    .expect("always: set during redelegations");
+
+                storage.set_delegations_icq(idx, next_delegations_icq);
+            }
 
             storage.set_validator(slot, &validator);
         }
