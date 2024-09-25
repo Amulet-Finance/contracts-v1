@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./docs/logo.svg" alt="Project Logo" width="200"/>
+  <img src="./docs/logo.png" alt="Project Logo" width="500" />
 </p>
 
 ## Deployments
