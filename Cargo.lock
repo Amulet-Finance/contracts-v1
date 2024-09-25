@@ -413,6 +413,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "deprecated-contract"
+version = "1.0.0"
+dependencies = [
+ "cosmwasm-schema",
+ "cosmwasm-std",
+]
+
+[[package]]
 name = "der"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

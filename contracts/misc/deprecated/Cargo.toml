@@ -1,0 +1,14 @@
+[package]
+name       = "deprecated-contract"
+version    = "1.0.0"
+edition    = "2021"
+
+[lib]
+path       = "contract.rs"
+crate-type = ["cdylib", "rlib"]
+doctest    = false
+test       = true
+
+[dependencies]
+cosmwasm-std.workspace    = true
+cosmwasm-schema.workspace = true
