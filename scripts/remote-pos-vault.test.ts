@@ -1,21 +1,10 @@
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
 import { TestSuite } from "./suite";
 import { artifact, readContractFileBytes } from "./utils";
-import {
-  StakingExtension,
-  QueryClient as StargateQueryClient,
-  setupStakingExtension,
-  BankExtension,
-  setupBankExtension,
-  StdFee,
-  calculateFee,
-  SigningStargateClient,
-  MsgTransferEncodeObject,
-} from "@cosmjs/stargate";
+import { StdFee } from "@cosmjs/stargate";
 import { SigningCosmWasmClient } from "@cosmjs/cosmwasm-stargate";
-import { Tendermint37Client } from "@cosmjs/tendermint-rpc";
 import { Validator } from "cosmjs-types/cosmos/staking/v1beta1/staking";
-import { Coin, DirectSecp256k1HdWallet, coin } from "@cosmjs/proto-signing";
+import { DirectSecp256k1HdWallet, coin } from "@cosmjs/proto-signing";
 import {
   ActiveUnbondingsResponse,
   ClaimableResponse,
@@ -30,15 +19,21 @@ import {
   ValidatorSet,
 } from "../ts/AmuletRemotePos.types";
 import { GENESIS_ALLOCATION } from "./suite/constants";
-
-type Wallet = DirectSecp256k1HdWallet;
-type QueryClient = StakingExtension & BankExtension;
-type HostClient = SigningCosmWasmClient;
-type RemoteClient = SigningStargateClient;
+import {
+  QueryClient,
+  HostClient,
+  createFee,
+  createHostClient,
+  createHostWallet,
+  createQueryClient,
+  createRemoteClient,
+  createRemoteWallet,
+  ibcTransfer,
+} from "./test-helpers";
 
 const TOTAL_VALIDATOR_COUNT = 5;
 const MAX_VALIDATORS_PER_DELEGATIONS_ICQ = Math.min(
-  TOTAL_VALIDATOR_COUNT / 2,
+  Math.ceil(TOTAL_VALIDATOR_COUNT / 2),
   15,
 );
 const UNBONDING_PERIOD_SECS = 70;
@@ -47,16 +42,6 @@ const VALIDATOR_LIQUID_STAKE_CAP = 0.5;
 const VALIDATOR_BALANCE = GENESIS_ALLOCATION / 10;
 // last docker instance is the one that is stopped for slashing
 const LAST_VALIDATOR_MONIKER = `valgaia${TOTAL_VALIDATOR_COUNT - 1}`;
-
-async function createQueryClient(rpc: string): Promise<QueryClient> {
-  const tmClient = await Tendermint37Client.connect(`http://${rpc}`);
-  const qClient = StargateQueryClient.withExtensions(
-    tmClient,
-    setupStakingExtension,
-    setupBankExtension,
-  );
-  return qClient;
-}
 
 async function queryValidators(client: QueryClient): Promise<Validator[]> {
   const bondedValidators =
@@ -73,86 +58,6 @@ async function queryValidators(client: QueryClient): Promise<Validator[]> {
     ...unbondedValidators.validators,
     ...unbondingValidators.validators,
   ];
-}
-
-async function createWallet(mnemonic: string, prefix: string): Promise<Wallet> {
-  const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
-    prefix,
-  });
-  return wallet;
-}
-
-async function createRemoteWallet(
-  suite: ITestSuite,
-  wallet_id: string,
-): Promise<Wallet> {
-  const mnemonic = suite.getWalletMnemonics()[wallet_id];
-  const prefix = suite.getRemotePrefix();
-  return createWallet(mnemonic, prefix);
-}
-
-async function createHostWallet(
-  suite: ITestSuite,
-  wallet_id: string,
-): Promise<Wallet> {
-  const mnemonic = suite.getWalletMnemonics()[wallet_id];
-  const prefix = suite.getHostPrefix();
-  return createWallet(mnemonic, prefix);
-}
-
-async function createRemoteClient(
-  suite: ITestSuite,
-  wallet: Wallet,
-): Promise<RemoteClient> {
-  const rpc = suite.getRemoteRpc();
-  const client = await SigningStargateClient.connectWithSigner(
-    `http://${rpc}`,
-    wallet,
-  );
-  return client;
-}
-
-async function createHostClient(
-  suite: ITestSuite,
-  wallet: Wallet,
-): Promise<HostClient> {
-  const rpc = suite.getHostRpc();
-  const client = await SigningCosmWasmClient.connectWithSigner(
-    `http://${rpc}`,
-    wallet,
-  );
-  return client;
-}
-
-async function ibcTransfer(
-  suite: ITestSuite,
-  client: SigningStargateClient,
-  token: Coin,
-  sender: string,
-  receiver: string,
-): Promise<void> {
-  const timeoutTimestamp: bigint = BigInt(
-    (Date.now() + 5 * 60 * 60 * 1000) * 1e6,
-  );
-
-  const typeUrl = "/ibc.applications.transfer.v1.MsgTransfer";
-
-  const transferMsg: MsgTransferEncodeObject = {
-    typeUrl,
-    value: {
-      sender,
-      receiver,
-      sourcePort: "transfer",
-      sourceChannel: "channel-0",
-      token,
-      timeoutTimestamp,
-    },
-  };
-
-  const price = suite.getRemoteGasPrices();
-  const gas = calculateFee(500_000, price);
-
-  await client.signAndBroadcast(sender, [transferMsg], gas);
 }
 
 async function queryVaultMetadata(
@@ -322,11 +227,6 @@ async function instantiateVault(
   }
 
   throw new Error("timeout waiting for ICA/ICQ setup to complete");
-}
-
-function createFee(suite: ITestSuite, amount: number): StdFee {
-  const price = suite.getHostGasPrices();
-  return calculateFee(amount, price);
 }
 
 let suite: ITestSuite;

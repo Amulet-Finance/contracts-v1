@@ -64,9 +64,7 @@ export interface CosmWasmChain extends Chain {
     admin?: string,
   ) => Promise<[Contract, InstantiateResult]>;
 
-  existingContract: (
-    address: string
-  ) => Contract;
+  existingContract: (address: string) => Contract;
 }
 
 class ConnectedChain implements Chain {
@@ -143,7 +141,7 @@ class ConnectedChain implements Chain {
     const token = coin(amount, denom);
 
     const timeoutTimestamp: bigint = BigInt(
-      (Date.now() + (5 * 60 * 60 * 1000)) * 1e6,
+      (Date.now() + 5 * 60 * 60 * 1000) * 1e6,
     );
 
     const transferMsg: MsgTransferEncodeObject = {
@@ -248,7 +246,7 @@ class ConnectedCosmWasmChain extends ConnectedChain implements CosmWasmChain {
 
     const options: InstantiateOptions = {
       funds: funds ? [coin(funds, this.gasPrice.denom)] : undefined,
-      admin
+      admin,
     };
 
     const initResult = await this.cwClient.instantiate(
@@ -269,14 +267,8 @@ class ConnectedCosmWasmChain extends ConnectedChain implements CosmWasmChain {
     return [contract, initResult];
   }
 
-  existingContract(
-    address: string
-  ): Contract {
-    return new CosmWasmContract(
-      address,
-      this.cwClient,
-      this.gasPrice,
-    );
+  existingContract(address: string): Contract {
+    return new CosmWasmContract(address, this.cwClient, this.gasPrice);
   }
 }
 
@@ -284,10 +276,7 @@ class DisconnectedChain {
   wallet: DirectSecp256k1HdWallet;
   gasPrice: GasPrice;
 
-  constructor(
-    wallet: DirectSecp256k1HdWallet,
-    gasPrice: GasPrice,
-  ) {
+  constructor(wallet: DirectSecp256k1HdWallet, gasPrice: GasPrice) {
     this.wallet = wallet;
     this.gasPrice = gasPrice;
   }
@@ -316,17 +305,11 @@ export class HostChain extends DisconnectedChain implements Connect {
   }
 
   async connect(endpoint: string): Promise<ConnectedCosmWasmChain> {
-    const cwClient: SigningCosmWasmClient = await SigningCosmWasmClient
-      .connectWithSigner(
-        endpoint,
-        this.wallet,
-      );
+    const cwClient: SigningCosmWasmClient =
+      await SigningCosmWasmClient.connectWithSigner(endpoint, this.wallet);
 
-    const sgClient: SigningStargateClient = await SigningStargateClient
-      .connectWithSigner(
-        endpoint,
-        this.wallet,
-      );
+    const sgClient: SigningStargateClient =
+      await SigningStargateClient.connectWithSigner(endpoint, this.wallet);
 
     await sgClient.getBlock();
 
@@ -349,15 +332,11 @@ export class RemoteChain extends DisconnectedChain implements Connect {
   }
 
   async connect(endpoint: string): Promise<ConnectedChain> {
-    const client: SigningStargateClient = await SigningStargateClient
-      .connectWithSigner(
-        endpoint,
-        this.wallet,
-      );
+    const client: SigningStargateClient =
+      await SigningStargateClient.connectWithSigner(endpoint, this.wallet);
 
     await client.getBlock();
 
     return new ConnectedChain(this.wallet, client, this.gasPrice);
   }
 }
-
