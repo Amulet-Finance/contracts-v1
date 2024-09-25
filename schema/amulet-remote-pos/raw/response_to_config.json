@@ -11,6 +11,7 @@
     "interchain_tx_timeout_seconds",
     "max_fee_bps",
     "max_unbonding_entries",
+    "max_validators_per_delegations_icq",
     "remote_denom",
     "remote_denom_decimals",
     "transfer_in_channel",
@@ -56,6 +57,11 @@
     "max_unbonding_entries": {
       "type": "integer",
       "format": "uint64",
+      "minimum": 0.0
+    },
+    "max_validators_per_delegations_icq": {
+      "type": "integer",
+      "format": "uint8",
       "minimum": 0.0
     },
     "remote_denom": {

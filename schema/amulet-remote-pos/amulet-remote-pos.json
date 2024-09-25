@@ -17,6 +17,7 @@
       "interchain_tx_timeout_seconds",
       "max_fee_bps",
       "max_unbonding_entries",
+      "max_validators_per_delegations_icq",
       "remote_denom",
       "remote_denom_decimals",
       "transfer_in_channel",
@@ -76,6 +77,11 @@
       "max_unbonding_entries": {
         "type": "integer",
         "format": "uint64",
+        "minimum": 0.0
+      },
+      "max_validators_per_delegations_icq": {
+        "type": "integer",
+        "format": "uint8",
         "minimum": 0.0
       },
       "remote_denom": {
@@ -842,6 +848,7 @@
         "interchain_tx_timeout_seconds",
         "max_fee_bps",
         "max_unbonding_entries",
+        "max_validators_per_delegations_icq",
         "remote_denom",
         "remote_denom_decimals",
         "transfer_in_channel",
@@ -887,6 +894,11 @@
         "max_unbonding_entries": {
           "type": "integer",
           "format": "uint64",
+          "minimum": 0.0
+        },
+        "max_validators_per_delegations_icq": {
+          "type": "integer",
+          "format": "uint8",
           "minimum": 0.0
         },
         "remote_denom": {
@@ -957,6 +969,8 @@
       "required": [
         "available_to_claim",
         "delegated",
+        "delegations_icq_count",
+        "delegations_icqs",
         "ibc_deposit_asset",
         "inflight_delegation",
         "inflight_deposit",
@@ -967,6 +981,7 @@
         "minimum_unbond_interval",
         "msg_issued_count",
         "msg_success_count",
+        "next_delegations_icqs",
         "pending_deposit",
         "pending_unbond",
         "total_actual_unbonded",
@@ -979,13 +994,18 @@
         "delegated": {
           "$ref": "#/definitions/Uint128"
         },
-        "delegations_icq": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint64",
+        "delegations_icq_count": {
+          "type": "integer",
+          "format": "uint8",
           "minimum": 0.0
+        },
+        "delegations_icqs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
         },
         "ibc_deposit_asset": {
           "type": "string"
@@ -1063,13 +1083,13 @@
           "format": "uint",
           "minimum": 0.0
         },
-        "next_delegations_icq": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint64",
-          "minimum": 0.0
+        "next_delegations_icqs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
         },
         "pending_deposit": {
           "$ref": "#/definitions/Uint128"
