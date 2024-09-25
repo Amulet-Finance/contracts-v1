@@ -29,6 +29,7 @@ struct Context {
     delegate_start_slot: Option<DelegateStartSlot>,
     delegated: Option<Delegated>,
     delegations: BTreeMap<usize, u128>,
+    fee_recipient: Option<FeeRecipient>,
     inflight_delegation: Option<InflightDelegation>,
     inflight_deposit: Option<InflightDeposit>,
     inflight_fee_payable: Option<InflightFeePayable>,
@@ -154,6 +155,11 @@ impl Context {
             height,
             amount: RemoteBalance(amount),
         });
+        self
+    }
+
+    fn with_fee_recipient(mut self, recipient: &str) -> Self {
+        self.fee_recipient = Some(recipient.to_owned());
         self
     }
 
@@ -312,7 +318,7 @@ impl Env for Context {
     }
 
     fn fee_recipient(&self) -> Option<FeeRecipient> {
-        None
+        self.fee_recipient.clone()
     }
 
     fn delegations_report(&self) -> Option<DelegationsReport> {
@@ -467,16 +473,7 @@ fn initial_deposit() {
 fn collect_rewards() {
     let mut ctx = Context::default().with_pending_deposit(200);
 
-    // Setup Phase 1
-    progress_fsm!(ctx);
-    // Setup Phase 2
-    progress_fsm!(ctx);
-    // Transfer Deposit Phase
-    progress_fsm!(ctx);
-    // Delegate Phase
-    progress_fsm!(ctx);
-    // Complete
-    progress_fsm!(ctx);
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
 
     let mut ctx = ctx.with_rewards_balance_report(1, 100);
 
@@ -539,6 +536,223 @@ fn collect_rewards() {
               ],
               events: [
                 DelegationsIncreased(100),
+              ],
+              tx_msgs: None,
+              tx_skip_count: 0,
+            )"#]],
+    );
+}
+
+#[test]
+fn collect_rewards_with_reconcile_fee() {
+    let mut ctx = Context::default().with_pending_deposit(200);
+
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    let mut ctx = ctx
+        .with_rewards_balance_report(1, 100)
+        .with_fee_recipient("reconciler")
+        .with_current_height(1000);
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                InflightDelegation((99)),
+                InflightFeePayable((1)),
+                InflightRewardsReceivable((99)),
+                MsgIssuedCount((7)),
+                MsgSuccessCount((0)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Authz([
+                    SendRewardsReceivable((99)),
+                  ]),
+                  Delegate((0), 17),
+                  Delegate((1), 22),
+                  Delegate((2), 20),
+                  Delegate((3), 20),
+                  Delegate((4), 20),
+                  Authz([
+                    SendFee("reconciler", (1)),
+                  ]),
+                ],
+              )),
+              tx_skip_count: 4,
+            )"#]],
+    );
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((299)),
+                DelegateStartSlot((0)),
+                InflightDelegation((0)),
+                InflightDeposit((0)),
+                InflightFeePayable((0)),
+                InflightRewardsReceivable((0)),
+                MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
+                Weights(([
+                  (("0.20066889632107023411371237458193")),
+                  (("0.20066889632107023411371237458193")),
+                  (("0.19397993311036789297658862876254")),
+                  (("0.19397993311036789297658862876254")),
+                  (("0.19397993311036789297658862876254")),
+                ])),
+                LastReconcileHeight((1000)),
+                Phase(StartReconcile),
+                State(Idle),
+              ],
+              events: [
+                DelegationsIncreased(99),
+              ],
+              tx_msgs: None,
+              tx_skip_count: 0,
+            )"#]],
+    );
+}
+
+#[test]
+fn collect_rewards_with_reconcile_fee_multi_stage_delegations() {
+    let mut ctx = Context {
+        starting_weights: Some(weights(20)),
+        ..Default::default()
+    }
+    .with_pending_deposit(200);
+
+    while progress_fsm!(ctx).tx_msgs.is_some() {}
+
+    let mut ctx = ctx
+        .with_rewards_balance_report(1, 100)
+        .with_fee_recipient("reconciler")
+        .with_current_height(1000);
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                InflightDelegation((99)),
+                InflightFeePayable((1)),
+                InflightRewardsReceivable((99)),
+                MsgIssuedCount((16)),
+                MsgSuccessCount((0)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Authz([
+                    SendRewardsReceivable((99)),
+                  ]),
+                  Delegate((0), 1),
+                  Delegate((1), 8),
+                  Delegate((2), 5),
+                  Delegate((3), 5),
+                  Delegate((4), 5),
+                  Delegate((5), 5),
+                  Delegate((6), 5),
+                  Delegate((7), 5),
+                  Delegate((8), 5),
+                  Delegate((9), 5),
+                  Delegate((10), 5),
+                  Delegate((11), 5),
+                  Delegate((12), 5),
+                  Delegate((13), 5),
+                  Delegate((14), 5),
+                ],
+              )),
+              tx_skip_count: 6,
+            )"#]],
+    );
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                MsgIssuedCount((6)),
+                MsgSuccessCount((16)),
+                Phase(Delegate),
+                State(Pending),
+              ],
+              events: [],
+              tx_msgs: Some((
+                msgs: [
+                  Delegate((15), 5),
+                  Delegate((16), 5),
+                  Delegate((17), 5),
+                  Delegate((18), 5),
+                  Delegate((19), 5),
+                  Authz([
+                    SendFee("reconciler", (1)),
+                  ]),
+                ],
+              )),
+              tx_skip_count: 0,
+            )"#]],
+    );
+
+    let response = progress_fsm!(ctx);
+
+    check(
+        response,
+        expect![[r#"
+            (
+              cmds: [
+                Delegated((299)),
+                DelegateStartSlot((0)),
+                InflightDelegation((0)),
+                InflightDeposit((0)),
+                InflightFeePayable((0)),
+                InflightRewardsReceivable((0)),
+                MsgIssuedCount((0)),
+                MsgSuccessCount((0)),
+                Weights(([
+                  (("0.09698996655518394648829431438127")),
+                  (("0.05351170568561872909698996655518")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                  (("0.04347826086956521739130434782608")),
+                ])),
+                LastReconcileHeight((1000)),
+                Phase(StartReconcile),
+                State(Idle),
+              ],
+              events: [
+                DelegationsIncreased(99),
               ],
               tx_msgs: None,
               tx_skip_count: 0,

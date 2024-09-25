@@ -28,21 +28,32 @@ impl From<u8> for Kind {
 pub struct State {
     pub kind: Kind,
     pub ica: Ica,
+    pub index: u8,
 }
 
 impl From<State> for u64 {
     fn from(value: State) -> Self {
-        u64::from_be_bytes([value.kind as u8, value.ica as u8, 0, 0, 0, 0, 0, 0])
+        u64::from_be_bytes([
+            value.kind as u8,
+            value.ica as u8,
+            value.index,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ])
     }
 }
 
 impl From<u64> for State {
     fn from(value: u64) -> Self {
-        let [kind_u8, ica_u8, ..] = value.to_be_bytes();
+        let [kind_u8, ica_u8, index, ..] = value.to_be_bytes();
 
         State {
             kind: kind_u8.into(),
             ica: ica_u8.into(),
+            index,
         }
     }
 }
@@ -72,10 +83,11 @@ fn parse_icq_registration_reply(reply: Reply) -> u64 {
 pub fn handle_register_current_set_delegations_icq(
     deps: DepsMut,
     reply: Reply,
+    index: u8,
 ) -> Result<Response<NeutronMsg>> {
     let delegations_icq_id = parse_icq_registration_reply(reply);
 
-    deps.storage.set_delegations_icq(delegations_icq_id);
+    deps.storage.set_delegations_icq(index, delegations_icq_id);
 
     Ok(Response::default())
 }
@@ -83,10 +95,12 @@ pub fn handle_register_current_set_delegations_icq(
 pub fn handle_register_next_set_delegations_icq(
     deps: DepsMut,
     reply: Reply,
+    index: u8,
 ) -> Result<Response<NeutronMsg>> {
     let delegations_icq_id = parse_icq_registration_reply(reply);
 
-    deps.storage.set_next_delegations_icq(delegations_icq_id);
+    deps.storage
+        .set_next_delegations_icq(index, delegations_icq_id);
 
     Ok(Response::default())
 }

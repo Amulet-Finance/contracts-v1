@@ -1,21 +1,10 @@
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
 import { TestSuite } from "./suite";
 import { artifact, readContractFileBytes } from "./utils";
-import {
-  StakingExtension,
-  QueryClient as StargateQueryClient,
-  setupStakingExtension,
-  BankExtension,
-  setupBankExtension,
-  StdFee,
-  calculateFee,
-  SigningStargateClient,
-  MsgTransferEncodeObject,
-} from "@cosmjs/stargate";
+import { StdFee } from "@cosmjs/stargate";
 import { SigningCosmWasmClient } from "@cosmjs/cosmwasm-stargate";
-import { Tendermint37Client } from "@cosmjs/tendermint-rpc";
 import { Validator } from "cosmjs-types/cosmos/staking/v1beta1/staking";
-import { Coin, DirectSecp256k1HdWallet, coin } from "@cosmjs/proto-signing";
+import { DirectSecp256k1HdWallet, coin } from "@cosmjs/proto-signing";
 import {
   ActiveUnbondingsResponse,
   ClaimableResponse,
@@ -30,29 +19,29 @@ import {
   ValidatorSet,
 } from "../ts/AmuletRemotePos.types";
 import { GENESIS_ALLOCATION } from "./suite/constants";
-
-type Wallet = DirectSecp256k1HdWallet;
-type QueryClient = StakingExtension & BankExtension;
-type HostClient = SigningCosmWasmClient;
-type RemoteClient = SigningStargateClient;
+import {
+  QueryClient,
+  HostClient,
+  createFee,
+  createHostClient,
+  createHostWallet,
+  createQueryClient,
+  createRemoteClient,
+  createRemoteWallet,
+  ibcTransfer,
+} from "./test-helpers";
 
 const TOTAL_VALIDATOR_COUNT = 5;
+const MAX_VALIDATORS_PER_DELEGATIONS_ICQ = Math.min(
+  Math.ceil(TOTAL_VALIDATOR_COUNT / 2),
+  15,
+);
 const UNBONDING_PERIOD_SECS = 70;
 const IBC_TRANSFER_AMOUNT = Math.floor(GENESIS_ALLOCATION * 0.9); // 90% of genesis allocation
 const VALIDATOR_LIQUID_STAKE_CAP = 0.5;
 const VALIDATOR_BALANCE = GENESIS_ALLOCATION / 10;
 // last docker instance is the one that is stopped for slashing
 const LAST_VALIDATOR_MONIKER = `valgaia${TOTAL_VALIDATOR_COUNT - 1}`;
-
-async function createQueryClient(rpc: string): Promise<QueryClient> {
-  const tmClient = await Tendermint37Client.connect(`http://${rpc}`);
-  const qClient = StargateQueryClient.withExtensions(
-    tmClient,
-    setupStakingExtension,
-    setupBankExtension,
-  );
-  return qClient;
-}
 
 async function queryValidators(client: QueryClient): Promise<Validator[]> {
   const bondedValidators =
@@ -69,86 +58,6 @@ async function queryValidators(client: QueryClient): Promise<Validator[]> {
     ...unbondedValidators.validators,
     ...unbondingValidators.validators,
   ];
-}
-
-async function createWallet(mnemonic: string, prefix: string): Promise<Wallet> {
-  const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
-    prefix,
-  });
-  return wallet;
-}
-
-async function createRemoteWallet(
-  suite: ITestSuite,
-  wallet_id: string,
-): Promise<Wallet> {
-  const mnemonic = suite.getWalletMnemonics()[wallet_id];
-  const prefix = suite.getRemotePrefix();
-  return createWallet(mnemonic, prefix);
-}
-
-async function createHostWallet(
-  suite: ITestSuite,
-  wallet_id: string,
-): Promise<Wallet> {
-  const mnemonic = suite.getWalletMnemonics()[wallet_id];
-  const prefix = suite.getHostPrefix();
-  return createWallet(mnemonic, prefix);
-}
-
-async function createRemoteClient(
-  suite: ITestSuite,
-  wallet: Wallet,
-): Promise<RemoteClient> {
-  const rpc = suite.getRemoteRpc();
-  const client = await SigningStargateClient.connectWithSigner(
-    `http://${rpc}`,
-    wallet,
-  );
-  return client;
-}
-
-async function createHostClient(
-  suite: ITestSuite,
-  wallet: Wallet,
-): Promise<HostClient> {
-  const rpc = suite.getHostRpc();
-  const client = await SigningCosmWasmClient.connectWithSigner(
-    `http://${rpc}`,
-    wallet,
-  );
-  return client;
-}
-
-async function ibcTransfer(
-  suite: ITestSuite,
-  client: SigningStargateClient,
-  token: Coin,
-  sender: string,
-  receiver: string,
-): Promise<void> {
-  const timeoutTimestamp: bigint = BigInt(
-    (Date.now() + 5 * 60 * 60 * 1000) * 1e6,
-  );
-
-  const typeUrl = "/ibc.applications.transfer.v1.MsgTransfer";
-
-  const transferMsg: MsgTransferEncodeObject = {
-    typeUrl,
-    value: {
-      sender,
-      receiver,
-      sourcePort: "transfer",
-      sourceChannel: "channel-0",
-      token,
-      timeoutTimestamp,
-    },
-  };
-
-  const price = suite.getRemoteGasPrices();
-  const gas = calculateFee(500_000, price);
-
-  await client.signAndBroadcast(sender, [transferMsg], gas);
 }
 
 async function queryVaultMetadata(
@@ -189,7 +98,7 @@ async function reconcileVault(
     coin(initialState.cost, "untrn"),
   ]);
 
-  const expiry = Date.now() + 60_000;
+  const expiry = Date.now() + 180_000;
 
   while (Date.now() < expiry) {
     const state = await queryVaultReconcileState(client, vault);
@@ -271,6 +180,7 @@ async function instantiateVault(
     interchain_tx_timeout_seconds: 60 * 60 * 60,
     max_fee_bps: 200,
     max_unbonding_entries: 7,
+    max_validators_per_delegations_icq: MAX_VALIDATORS_PER_DELEGATIONS_ICQ,
     remote_denom: "stake",
     remote_denom_decimals: 6,
     transfer_in_channel: "channel-0",
@@ -280,13 +190,21 @@ async function instantiateVault(
     unbonding_period: UNBONDING_PERIOD_SECS,
   };
 
+  const icq_count =
+    2 +
+    Math.ceil(
+      initial_validator_set.length / MAX_VALIDATORS_PER_DELEGATIONS_ICQ,
+    );
+
+  const icq_deposit = icq_count * 1_000_000;
+
   const res = await client.instantiate(
     creator,
     codeId,
     initMsg,
     "amulet-remote-pos",
     gasFee,
-    { funds: [coin(5_000_000, "untrn")] },
+    { funds: [coin(2_000_000 + icq_deposit, "untrn")] },
   );
 
   const timeoutExpiry = Date.now() + 60_000;
@@ -298,7 +216,7 @@ async function instantiateVault(
     );
 
     if (
-      metadata.delegations_icq != null &&
+      metadata.delegations_icqs.length == metadata.delegations_icq_count &&
       metadata.main_ica_balance_icq != null &&
       metadata.rewards_ica_balance_icq != null
     ) {
@@ -309,11 +227,6 @@ async function instantiateVault(
   }
 
   throw new Error("timeout waiting for ICA/ICQ setup to complete");
-}
-
-function createFee(suite: ITestSuite, amount: number): StdFee {
-  const price = suite.getHostGasPrices();
-  return calculateFee(amount, price);
 }
 
 let suite: ITestSuite;
@@ -360,8 +273,8 @@ describe("Remote Proof-of-Stake Vault", () => {
       relayerOverrides: {
         hermes: {
           config: {
-            "chains.1.trusting_period": `${UNBONDING_PERIOD_SECS / 2}s`,
-            "chains.0.trusting_period": `${UNBONDING_PERIOD_SECS / 2}s`,
+            "chains.1.trusting_period": `${Math.floor(UNBONDING_PERIOD_SECS / 2)}s`,
+            "chains.0.trusting_period": `${Math.floor(UNBONDING_PERIOD_SECS / 2)}s`,
           },
         },
       },
@@ -393,7 +306,11 @@ describe("Remote Proof-of-Stake Vault", () => {
   it("should upload the amulet-remote-pos vault contract byte code", async () => {
     const wasmFilePath = artifact("amulet-remote-pos");
     const wasmBytes = await readContractFileBytes(wasmFilePath);
-    const res = await operatorClient.upload(operatorAddress, wasmBytes, gasFee);
+    const res = await operatorClient.upload(
+      operatorAddress,
+      wasmBytes,
+      createFee(suite, 7_000_000),
+    );
 
     expect(res.codeId).toBe(1);
 
@@ -697,6 +614,13 @@ describe("Remote Proof-of-Stake Vault", () => {
       );
     }
 
+    const icq_count = Math.ceil(
+      preRedelegationValSet.validators.length /
+        MAX_VALIDATORS_PER_DELEGATIONS_ICQ,
+    );
+
+    const icq_deposit = icq_count * 1_000_000;
+
     // redelegate away from the validator with no more capacity
     await operatorClient.execute(
       operatorAddress,
@@ -709,7 +633,7 @@ describe("Remote Proof-of-Stake Vault", () => {
       },
       gasFee,
       "",
-      [coin(1_000_000, "untrn")],
+      [coin(icq_deposit, "untrn")],
     );
 
     const postRedelegationValSet: ValidatorSet =
@@ -727,7 +651,9 @@ describe("Remote Proof-of-Stake Vault", () => {
       vaultOneAddress,
     );
 
-    expect(postRedelegationMetadata.next_delegations_icq).toBeNumber();
+    expect(postRedelegationMetadata.next_delegations_icqs.length).toBe(
+      postRedelegationMetadata.delegations_icq_count,
+    );
 
     // wait for 10 blocks to allow for delegations icq to update
     const targetHeight = (await operatorClient.getBlock()).header.height + 10;

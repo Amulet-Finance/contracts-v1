@@ -41,6 +41,7 @@ pub fn ica_balance_registration_msg(storage: &dyn Storage, ica: Ica) -> SubMsg<N
         ReplyState {
             kind: ReplyKind::RegisterBalanceIcq,
             ica,
+            index: 0,
         }
         .into(),
     )
@@ -48,8 +49,9 @@ pub fn ica_balance_registration_msg(storage: &dyn Storage, ica: Ica) -> SubMsg<N
 
 fn delegations_registration_msg(
     storage: &dyn Storage,
-    validator_set: Vec<String>,
+    validators: &[String],
     kind: ReplyKind,
+    index: u8,
 ) -> SubMsg<NeutronMsg> {
     let connection_id = storage.connection_id();
 
@@ -62,7 +64,7 @@ fn delegations_registration_msg(
     let msg = new_register_delegator_delegations_query_msg(
         connection_id,
         ica_address,
-        validator_set,
+        validators.to_owned(),
         icq_update_period,
     )
     .expect("infallible message construction");
@@ -72,27 +74,56 @@ fn delegations_registration_msg(
         ReplyState {
             kind,
             ica: Ica::Main,
+            index,
         }
         .into(),
     )
 }
 
-pub fn main_ica_current_delegations_registration_msg(
+// // Max keys:
+// // https://github.com/neutron-org/neutron/blob/v4.2.3/x/interchainqueries/types/tx.go#L15
+// // N keys used per delegations ICQ:
+// // https://github.com/neutron-org/neutron-sdk/blob/v0.9.0/packages/neutron-sdk/src/interchain_queries/v047/register_queries.rs#L33
+// const MAX_VALIDATORS_PER_ICQ: usize = 15;
+
+// pub fn delegations_icq_count(validator_set_size: usize) -> u8 {
+//     validator_set_size
+//         .div_ceil(MAX_VALIDATORS_PER_ICQ)
+//         .try_into()
+//         .expect("validator set size never larger than 255 * MAX_VALIDATORS_PER_ICQ")
+// }
+
+fn delegations_registration_msgs(
     storage: &dyn Storage,
     validator_set: Vec<String>,
-) -> SubMsg<NeutronMsg> {
-    delegations_registration_msg(
+    kind: ReplyKind,
+) -> Vec<SubMsg<NeutronMsg>> {
+    let icq_count = storage.delegations_icq_count();
+
+    let max_validators_per_delegations_icq = storage.max_validators_per_delegations_icq().into();
+
+    (0..icq_count)
+        .zip(validator_set.chunks(max_validators_per_delegations_icq))
+        .map(|(index, validators)| delegations_registration_msg(storage, validators, kind, index))
+        .collect()
+}
+
+pub fn main_ica_current_delegations_registration_msgs(
+    storage: &dyn Storage,
+    validator_set: Vec<String>,
+) -> Vec<SubMsg<NeutronMsg>> {
+    delegations_registration_msgs(
         storage,
         validator_set,
         ReplyKind::RegisterCurrentSetDelegationsIcq,
     )
 }
 
-pub fn main_ica_next_delegations_registration_msg(
+pub fn main_ica_next_delegations_registration_msgs(
     storage: &dyn Storage,
     validator_set: Vec<String>,
-) -> SubMsg<NeutronMsg> {
-    delegations_registration_msg(
+) -> Vec<SubMsg<NeutronMsg>> {
+    delegations_registration_msgs(
         storage,
         validator_set,
         ReplyKind::RegisterNextSetDelegationsIcq,

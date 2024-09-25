@@ -4,6 +4,7 @@ use anyhow::{bail, ensure, Result};
 use bech32::{Bech32, Hrp};
 use cosmwasm_std::{
     coins, BankMsg, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Response, Storage, Timestamp,
+    Uint128,
 };
 
 use amulet_core::{
@@ -387,15 +388,16 @@ pub fn handle_receive_undelegated(
         .add_attribute("total_expected", total_expected_unbonded.to_string()))
 }
 
-fn must_pay_icq_deposit(deps: Deps<NeutronQuery>, info: &MessageInfo) -> Result<()> {
+fn must_pay_icq_deposit(deps: Deps<NeutronQuery>, info: &MessageInfo, icq_count: u8) -> Result<()> {
     let icq_deposit = deps.querier.interchain_query_deposit()?;
 
     let sender_deposit = must_pay(info, &icq_deposit.denom)?;
 
-    if sender_deposit != icq_deposit.amount {
+    let expected_deposit_amount = Uint128::from(icq_count) * icq_deposit.amount;
+
+    if sender_deposit != expected_deposit_amount {
         bail!(
-            "insufficient ICQ deposit: received '{sender_deposit}{denom}', expected '{expected_deposit}{denom}'",
-            expected_deposit = icq_deposit.amount,
+            "insufficient ICQ deposit: received '{sender_deposit}{denom}', expected '{expected_deposit_amount}{denom}'",
             denom = icq_deposit.denom,
         )
     }
@@ -421,7 +423,7 @@ pub fn handle_redelegate_slot(
         }
     }
 
-    must_pay_icq_deposit(deps.as_ref(), &info)?;
+    must_pay_icq_deposit(deps.as_ref(), &info, deps.storage.delegations_icq_count())?;
 
     let mut validators = deps.storage.validators();
 
@@ -434,9 +436,9 @@ pub fn handle_redelegate_slot(
 
     *slot_validator = validator;
 
-    let msg = icq::main_ica_next_delegations_registration_msg(deps.storage, validators);
+    let msgs = icq::main_ica_next_delegations_registration_msgs(deps.storage, validators);
 
-    Ok(Response::default().add_submessage(msg))
+    Ok(Response::default().add_submessages(msgs))
 }
 
 pub fn handle_restore_ica(
@@ -472,16 +474,24 @@ pub fn handle_restore_icq(
     info: MessageInfo,
     icq: Icq,
 ) -> Result<Response<NeutronMsg>> {
-    must_pay_icq_deposit(deps.as_ref(), &info)?;
+    let count = match icq {
+        Icq::MainBalance | Icq::RewardsBalance => 1,
+        Icq::MainDelegations => deps.storage.delegations_icq_count(),
+    };
 
-    let msg = match icq {
-        Icq::MainBalance => icq::ica_balance_registration_msg(deps.storage, Ica::Main),
-        Icq::RewardsBalance => icq::ica_balance_registration_msg(deps.storage, Ica::Rewards),
-        Icq::MainDelegations => icq::main_ica_current_delegations_registration_msg(
+    must_pay_icq_deposit(deps.as_ref(), &info, count)?;
+
+    let msgs = match icq {
+        Icq::MainBalance => vec![icq::ica_balance_registration_msg(deps.storage, Ica::Main)],
+        Icq::RewardsBalance => vec![icq::ica_balance_registration_msg(
+            deps.storage,
+            Ica::Rewards,
+        )],
+        Icq::MainDelegations => icq::main_ica_current_delegations_registration_msgs(
             deps.storage,
             deps.storage.validators(),
         ),
     };
 
-    Ok(Response::default().add_submessage(msg))
+    Ok(Response::default().add_submessages(msgs))
 }

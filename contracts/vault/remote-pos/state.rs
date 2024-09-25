@@ -28,7 +28,8 @@ mod key {
     pub const AVAILABLE_TO_CLAIM: &str                    = key!("available_to_claim");
     pub const CONNECTION_ID: &str                         = key!("connection_id");
     pub const DELEGATED: &str                             = key!("delegated");
-    pub const DELEGATIONS_ICQ: &str                       = key!("delegations_icq");
+    pub const DELEGATIONS_ICQ: MapKey                     = map_key!("delegations_icq");
+    pub const DELEGATIONS_ICQ_COUNT: &str                  = key!("delegations_icq_count");
     pub const DELEGATE_START_SLOT: &str                   = key!("delegate_start_slot");
     pub const ESTIMATED_BLOCK_INTERVAL_SECONDS: &str      = key!("estimated_block_interval_seconds");
     pub const FEE_BPS_BLOCK_INCREMENT: &str               = key!("fee_bps_block_increment");
@@ -50,10 +51,11 @@ mod key {
     pub const MAX_FEE_BPS: &str                           = key!("max_fee_bps");
     pub const MAX_IBC_MSG_COUNT: &str                     = key!("max_ibc_msg_count");
     pub const MAX_UNBONDING_ENTRIES: &str                 = key!("max_unbonding_entries");
+    pub const MAX_VALIDATORS_PER_DELEGATIONS_ICQ: &str    = key!("max_validators_per_delegations_icq");
     pub const MINIMUM_UNBOND_INTERVAL: &str               = key!("minimum_unbond_interval");
     pub const MSG_ISSUED_COUNT: &str                      = key!("msg_issued_count");
     pub const MSG_SUCCESS_COUNT: &str                     = key!("msg_success_count");
-    pub const NEXT_DELEGATIONS_ICQ: &str                  = key!("next_delegations_icq");
+    pub const NEXT_DELEGATIONS_ICQ: MapKey                = map_key!("next_delegations_icq");
     pub const PENDING_BATCH_SLASHED_AMOUNT: &str          = key!("pending_batch_slashed_amount");
     pub const PENDING_DEPOSIT: &str                       = key!("pending_deposit");
     pub const PENDING_UNBOND: &str                        = key!("pending_unbond");
@@ -113,12 +115,29 @@ pub trait StorageExt: Storage {
         self.set_u128(key::DELEGATED, delegated)
     }
 
-    fn delegations_icq(&self) -> Option<u64> {
-        self.u64_at(key::DELEGATIONS_ICQ)
+    fn delegations_icq(&self, idx: u8) -> Option<u64> {
+        self.u64_at(key::DELEGATIONS_ICQ.with(idx))
     }
 
-    fn set_delegations_icq(&mut self, icq: u64) {
-        self.set_u64(key::DELEGATIONS_ICQ, icq)
+    fn set_delegations_icq(&mut self, idx: u8, icq: u64) {
+        self.set_u64(key::DELEGATIONS_ICQ.with(idx), icq)
+    }
+
+    fn delegations_icq_count(&self) -> u8 {
+        self.u8_at(key::DELEGATIONS_ICQ_COUNT)
+            .expect("set during initialisation")
+    }
+
+    fn set_delegations_icq_count(&mut self, count: u8) {
+        self.set_u8(key::DELEGATIONS_ICQ_COUNT, count)
+    }
+
+    fn delegations_icqs(&self) -> Vec<u64> {
+        let icq_count = self.delegations_icq_count();
+
+        (0..icq_count)
+            .filter_map(|idx| self.delegations_icq(idx))
+            .collect()
     }
 
     fn delegate_start_slot(&self) -> DelegateStartSlot {
@@ -345,6 +364,18 @@ pub trait StorageExt: Storage {
         self.set_u64(key::MAX_UNBONDING_ENTRIES, max_unbonding_entries);
     }
 
+    fn max_validators_per_delegations_icq(&self) -> u8 {
+        self.u8_at(key::MAX_VALIDATORS_PER_DELEGATIONS_ICQ)
+            .expect("set during initialisation")
+    }
+
+    fn set_max_validators_per_delegations_icq(&mut self, max_validators_per_delegations_icq: u8) {
+        self.set_u8(
+            key::MAX_VALIDATORS_PER_DELEGATIONS_ICQ,
+            max_validators_per_delegations_icq,
+        );
+    }
+
     fn minimum_unbond_interval(&self) -> u64 {
         self.u64_at(key::MINIMUM_UNBOND_INTERVAL)
             .expect("set during initialisation")
@@ -374,12 +405,20 @@ pub trait StorageExt: Storage {
         self.set_usize(key::MSG_SUCCESS_COUNT, count);
     }
 
-    fn next_delegations_icq(&self) -> Option<u64> {
-        self.u64_at(key::NEXT_DELEGATIONS_ICQ)
+    fn next_delegations_icq(&self, idx: u8) -> Option<u64> {
+        self.u64_at(key::NEXT_DELEGATIONS_ICQ.with(idx))
     }
 
-    fn set_next_delegations_icq(&mut self, icq: u64) {
-        self.set_u64(key::NEXT_DELEGATIONS_ICQ, icq)
+    fn set_next_delegations_icq(&mut self, idx: u8, icq: u64) {
+        self.set_u64(key::NEXT_DELEGATIONS_ICQ.with(idx), icq)
+    }
+
+    fn next_delegations_icqs(&self) -> Vec<u64> {
+        let icq_count = self.delegations_icq_count();
+
+        (0..icq_count)
+            .filter_map(|idx| self.next_delegations_icq(idx))
+            .collect()
     }
 
     fn pending_batch_slashed_amount(&self) -> u128 {
