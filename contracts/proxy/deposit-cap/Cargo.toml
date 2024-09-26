@@ -1,6 +1,6 @@
 [package]
 name       = "deposit-cap-proxy"
-version    = "1.0.0"
+version    = "1.0.2"
 edition    = "2021"
 
 [[bin]]
@@ -22,3 +22,4 @@ cosmwasm-schema.workspace = true
 cw-utils.workspace        = true
 
 amulet-cw.workspace       = true
+amulet-core.workspace     = true

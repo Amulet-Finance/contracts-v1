@@ -2,21 +2,18 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 
 use cosmwasm_std::Uint128;
 
+use amulet_cw::admin::{ExecuteMsg as AdminExecuteMsg, QueryMsg as AdminQueryMsg};
+
 #[cw_serde]
 pub struct InstantiateMsg {
     pub admin: Option<String>,
     pub hub_address: String,
-    pub individual_deposit_cap: Uint128,
-    pub total_deposit_cap: Uint128,
-    pub total_mint_cap: Uint128,
 }
 
 #[cw_serde]
-pub enum ExecuteMsg {
-    SetAdmin {
-        address: String,
-    },
+pub enum ProxyMsg {
     SetConfig {
+        vault: String,
         individual_deposit_cap: Option<Uint128>,
         total_deposit_cap: Option<Uint128>,
         total_mint_cap: Option<Uint128>,
@@ -30,8 +27,14 @@ pub enum ExecuteMsg {
 }
 
 #[cw_serde]
+#[serde(untagged)]
+pub enum ExecuteMsg {
+    Admin(AdminExecuteMsg),
+    Proxy(ProxyMsg),
+}
+
+#[cw_serde]
 pub struct ConfigResponse {
-    pub admin: String,
     pub hub_address: String,
     pub individual_deposit_cap: Uint128,
     pub total_deposit_cap: Uint128,
@@ -51,11 +54,20 @@ pub struct DepositAmountResponse {
 
 #[cw_serde]
 #[derive(QueryResponses)]
-pub enum QueryMsg {
+pub enum ProxyQueryMsg {
     #[returns(ConfigResponse)]
-    Config {},
+    Config { vault: String },
     #[returns(MetadataResponse)]
     VaultMetadata { vault: String },
     #[returns(DepositAmountResponse)]
     DepositAmount { vault: String, account: String },
+}
+
+#[cw_serde]
+#[derive(QueryResponses)]
+#[serde(untagged)]
+#[query_responses(nested)]
+pub enum QueryMsg {
+    Admin(AdminQueryMsg),
+    Proxy(ProxyQueryMsg),
 }

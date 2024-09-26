@@ -1,101 +1,118 @@
 pub mod msg;
 
-use anyhow::{bail, Error};
+use anyhow::{anyhow, bail, Error};
 use cosmwasm_std::{
     entry_point, to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, Storage,
     Uint128, WasmMsg,
 };
 
-use amulet_cw::{hub::UserMsg as HubMsg, StorageExt as _};
-use msg::{ConfigResponse, DepositAmountResponse, MetadataResponse};
+use amulet_core::admin::AdminRole;
+use amulet_cw::{
+    admin::{self, Repository as AdminRepository},
+    hub::UserMsg as HubMsg,
+    StorageExt as _,
+};
 
-use self::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use self::msg::{
+    ConfigResponse, DepositAmountResponse, ExecuteMsg, InstantiateMsg, MetadataResponse, ProxyMsg,
+    ProxyQueryMsg, QueryMsg,
+};
 
-fn address_key(prefix: &str, address: &str) -> String {
-    format!("{prefix}:{address}")
+fn vault_not_found(vault: &str) -> Error {
+    anyhow!("vault {vault} not found")
+}
+
+#[rustfmt::skip]
+mod key {
+    use amulet_cw::MapKey;
+
+    macro_rules! key {
+        ($k:literal) => {
+            concat!("deposit_cap::", $k)
+        };
+    }
+
+    macro_rules! map_key {
+        ($k:literal) => {
+            MapKey::new(key!($k))
+        };
+    }
+
+    pub const HUB                       : &str   = key!("hub");
+    pub const TOTAL_DEPOSIT_CAP         : MapKey = map_key!("total_deposit_cap");
+    pub const INDIVIDUAL_DEPOSIT_CAP    : MapKey = map_key!("individual_deposit_cap");
+    pub const TOTAL_MINT_CAP            : MapKey = map_key!("total_mint_cap");
+    pub const TOTAL_DEPOSIT_AMOUNT      : MapKey = map_key!("total_deposit_amount");
+    pub const INDIVIDUAL_DEPOSIT_AMOUNT : MapKey = map_key!("individual_deposit_amount");
+    pub const TOTAL_MINT_AMOUNT         : MapKey = map_key!("total_mint_amount");
 }
 
 trait StorageExt: Storage {
-    fn set_admin(&mut self, admin: &str) {
-        self.set_string("admin", admin)
-    }
-
-    fn admin(&self) -> String {
-        self.string_at("admin")
-            .expect("always: set during initialisation")
-    }
-
     fn set_hub(&mut self, address: &str) {
-        self.set_string("hub", address)
+        self.set_string(key::HUB, address)
     }
 
     fn hub(&self) -> String {
-        self.string_at("hub")
+        self.string_at(key::HUB)
             .expect("always: set during initialisation")
     }
 
-    fn set_total_deposit_cap(&mut self, amount: Uint128) {
-        self.set_u128("total_deposit_cap", amount.u128())
+    fn set_total_deposit_cap(&mut self, _: AdminRole, vault: &str, amount: Uint128) {
+        self.set_u128(key::TOTAL_DEPOSIT_CAP.with(vault), amount.u128())
     }
 
-    fn total_deposit_cap(&self) -> Uint128 {
-        self.u128_at("total_deposit_cap")
+    fn total_deposit_cap(&self, vault: &str) -> Option<Uint128> {
+        self.u128_at(key::TOTAL_DEPOSIT_CAP.with(vault))
             .map(Uint128::new)
-            .expect("always: set during initialisation")
     }
 
-    fn set_individual_deposit_cap(&mut self, amount: Uint128) {
-        self.set_u128("individual_deposit_cap", amount.u128())
+    fn set_individual_deposit_cap(&mut self, _: AdminRole, vault: &str, amount: Uint128) {
+        self.set_u128(key::INDIVIDUAL_DEPOSIT_CAP.with(vault), amount.u128())
     }
 
-    fn individual_deposit_cap(&self) -> Uint128 {
-        self.u128_at("individual_deposit_cap")
+    fn individual_deposit_cap(&self, vault: &str) -> Option<Uint128> {
+        self.u128_at(key::INDIVIDUAL_DEPOSIT_CAP.with(vault))
             .map(Uint128::new)
-            .expect("always: set during initialisation")
     }
 
-    fn set_total_mint_cap(&mut self, amount: Uint128) {
-        self.set_u128("total_mint_cap", amount.u128())
+    fn set_total_mint_cap(&mut self, _: AdminRole, vault: &str, amount: Uint128) {
+        self.set_u128(key::TOTAL_MINT_CAP.with(vault), amount.u128())
     }
 
-    fn total_mint_cap(&self) -> Uint128 {
-        self.u128_at("total_mint_cap")
+    fn total_mint_cap(&self, vault: &str) -> Option<Uint128> {
+        self.u128_at(key::TOTAL_MINT_CAP.with(vault))
             .map(Uint128::new)
-            .expect("always: set during initialisation")
     }
 
     fn set_total_deposit_amount(&mut self, vault: &str, amount: Uint128) {
-        self.set_u128(address_key("total_deposit_amount", vault), amount.u128())
+        self.set_u128(key::TOTAL_DEPOSIT_AMOUNT.with(vault), amount.u128())
     }
 
     fn total_deposit_amount(&self, vault: &str) -> Uint128 {
-        self.u128_at(address_key("total_deposit_amount", vault))
+        self.u128_at(key::TOTAL_DEPOSIT_AMOUNT.with(vault))
             .map(Uint128::new)
             .unwrap_or_default()
     }
 
     fn set_individual_deposit_amount(&mut self, vault: &str, account: &str, amount: Uint128) {
         self.set_u128(
-            address_key(&address_key("individual_deposit_amount", vault), account),
+            key::INDIVIDUAL_DEPOSIT_AMOUNT.multi([&vault, &account]),
             amount.u128(),
         )
     }
 
     fn individual_deposit_amount(&self, vault: &str, account: &str) -> Uint128 {
-        self.u128_at(address_key(
-            &address_key("individual_deposit_amount", vault),
-            account,
-        ))
-        .map(Uint128::new)
-        .unwrap_or_default()
+        self.u128_at(key::INDIVIDUAL_DEPOSIT_AMOUNT.multi([&vault, &account]))
+            .map(Uint128::new)
+            .unwrap_or_default()
     }
 
     fn set_total_mint_amount(&mut self, vault: &str, amount: Uint128) {
-        self.set_u128(address_key("total_mint_amount", vault), amount.u128())
+        self.set_u128(key::TOTAL_MINT_AMOUNT.with(vault), amount.u128())
     }
 
     fn total_mint_amount(&self, vault: &str) -> Uint128 {
-        self.u128_at(address_key("total_mint_amount", vault))
+        self.u128_at(key::TOTAL_MINT_AMOUNT.with(vault))
             .map(Uint128::new)
             .unwrap_or_default()
     }
@@ -110,34 +127,11 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, Error> {
-    if let Some(admin) = msg.admin {
-        deps.storage.set_admin(&admin);
-    } else {
-        deps.storage.set_admin(info.sender.as_str());
-    }
+    admin::init(deps.storage, &info);
+
+    deps.api.addr_validate(&msg.hub_address)?;
 
     deps.storage.set_hub(&msg.hub_address);
-
-    deps.storage.set_total_deposit_cap(msg.total_deposit_cap);
-
-    deps.storage
-        .set_individual_deposit_cap(msg.individual_deposit_cap);
-
-    deps.storage.set_total_mint_cap(msg.total_mint_cap);
-
-    Ok(Response::default())
-}
-
-pub fn handle_set_admin(
-    deps: DepsMut,
-    info: MessageInfo,
-    address: &str,
-) -> Result<Response, Error> {
-    if info.sender != deps.storage.admin() {
-        bail!("unauthorized")
-    }
-
-    deps.storage.set_admin(address);
 
     Ok(Response::default())
 }
@@ -145,30 +139,35 @@ pub fn handle_set_admin(
 pub fn handle_set_config(
     deps: DepsMut,
     info: MessageInfo,
+    vault: &str,
     individual_deposit_cap: Option<Uint128>,
     total_deposit_cap: Option<Uint128>,
     total_mint_cap: Option<Uint128>,
 ) -> Result<Response, Error> {
-    if info.sender != deps.storage.admin() {
-        bail!("unauthorized")
-    }
+    deps.api.addr_validate(vault)?;
+
+    let admin_role = admin::get_admin_role(&AdminRepository::new(deps.storage), &info)?;
 
     if let Some(amount) = individual_deposit_cap {
-        deps.storage.set_individual_deposit_cap(amount)
+        deps.storage
+            .set_individual_deposit_cap(admin_role, vault, amount)
     }
 
     if let Some(amount) = total_deposit_cap {
-        deps.storage.set_total_deposit_cap(amount)
+        deps.storage
+            .set_total_deposit_cap(admin_role, vault, amount)
     }
 
     if let Some(amount) = total_mint_cap {
-        deps.storage.set_total_mint_cap(amount)
+        deps.storage.set_total_mint_cap(admin_role, vault, amount)
     }
 
     Ok(Response::default())
 }
 
 pub fn handle_deposit(deps: DepsMut, info: MessageInfo, vault: String) -> Result<Response, Error> {
+    deps.api.addr_validate(&vault)?;
+
     let coin = cw_utils::one_coin(&info)?;
 
     let total_deposit_amount = deps
@@ -176,7 +175,13 @@ pub fn handle_deposit(deps: DepsMut, info: MessageInfo, vault: String) -> Result
         .total_deposit_amount(&vault)
         .strict_add(coin.amount);
 
-    if total_deposit_amount > deps.storage.total_deposit_cap() {
+    let (total_deposit_cap, individual_deposit_cap) = deps
+        .storage
+        .total_deposit_cap(&vault)
+        .zip(deps.storage.individual_deposit_cap(&vault))
+        .ok_or_else(|| vault_not_found(&vault))?;
+
+    if total_deposit_amount > total_deposit_cap {
         bail!("total deposit cap exceeded");
     }
 
@@ -185,7 +190,7 @@ pub fn handle_deposit(deps: DepsMut, info: MessageInfo, vault: String) -> Result
         .individual_deposit_amount(&vault, info.sender.as_str())
         .strict_add(coin.amount);
 
-    if individual_deposit_amount > deps.storage.individual_deposit_cap() {
+    if individual_deposit_amount > individual_deposit_cap {
         bail!("individual deposit cap exceeded");
     }
 
@@ -216,7 +221,12 @@ pub fn handle_mint(deps: DepsMut, info: MessageInfo, vault: String) -> Result<Re
         .total_mint_amount(&vault)
         .strict_add(coin.amount);
 
-    if total_mint_amount > deps.storage.total_mint_cap() {
+    let total_mint_cap = deps
+        .storage
+        .total_mint_cap(&vault)
+        .ok_or_else(|| vault_not_found(&vault))?;
+
+    if total_mint_amount > total_mint_cap {
         bail!("total mint cap exceeded");
     }
 
@@ -241,45 +251,74 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, Error> {
     match msg {
-        ExecuteMsg::SetAdmin { address } => handle_set_admin(deps, info, &address),
+        ExecuteMsg::Admin(msg) => {
+            let cmd = admin::handle_execute_msg(
+                deps.api,
+                &AdminRepository::new(deps.storage),
+                info,
+                msg,
+            )?;
 
-        ExecuteMsg::SetConfig {
+            admin::handle_cmd(deps.storage, cmd);
+
+            Ok(Response::default())
+        }
+
+        ExecuteMsg::Proxy(ProxyMsg::SetConfig {
+            vault,
             individual_deposit_cap,
             total_deposit_cap,
             total_mint_cap,
-        } => handle_set_config(
+        }) => handle_set_config(
             deps,
             info,
+            &vault,
             individual_deposit_cap,
             total_deposit_cap,
             total_mint_cap,
         ),
 
-        ExecuteMsg::Deposit { vault } => handle_deposit(deps, info, vault),
+        ExecuteMsg::Proxy(ProxyMsg::Deposit { vault }) => handle_deposit(deps, info, vault),
 
-        ExecuteMsg::Mint { vault } => handle_mint(deps, info, vault),
+        ExecuteMsg::Proxy(ProxyMsg::Mint { vault }) => handle_mint(deps, info, vault),
     }
 }
 
 #[entry_point]
 pub fn query(deps: Deps, _: Env, msg: QueryMsg) -> Result<Binary, Error> {
     let binary = match msg {
-        QueryMsg::Config {} => to_json_binary(&ConfigResponse {
-            admin: deps.storage.admin(),
-            hub_address: deps.storage.hub(),
-            individual_deposit_cap: deps.storage.individual_deposit_cap(),
-            total_deposit_cap: deps.storage.total_deposit_cap(),
-            total_mint_cap: deps.storage.total_mint_cap(),
-        })?,
+        QueryMsg::Admin(query) => {
+            admin::handle_query_msg(&AdminRepository::new(deps.storage), query)?
+        }
 
-        QueryMsg::VaultMetadata { vault } => to_json_binary(&MetadataResponse {
-            total_deposit: deps.storage.total_deposit_amount(&vault),
-            total_mint: deps.storage.total_mint_amount(&vault),
-        })?,
+        QueryMsg::Proxy(ProxyQueryMsg::Config { vault }) => {
+            let ((individual_deposit_cap, total_deposit_cap), total_mint_cap) = deps
+                .storage
+                .individual_deposit_cap(&vault)
+                .zip(deps.storage.total_deposit_cap(&vault))
+                .zip(deps.storage.total_mint_cap(&vault))
+                .ok_or_else(|| vault_not_found(&vault))?;
 
-        QueryMsg::DepositAmount { vault, account } => to_json_binary(&DepositAmountResponse {
-            amount: deps.storage.individual_deposit_amount(&vault, &account),
-        })?,
+            to_json_binary(&ConfigResponse {
+                hub_address: deps.storage.hub(),
+                individual_deposit_cap,
+                total_deposit_cap,
+                total_mint_cap,
+            })?
+        }
+
+        QueryMsg::Proxy(ProxyQueryMsg::VaultMetadata { vault }) => {
+            to_json_binary(&MetadataResponse {
+                total_deposit: deps.storage.total_deposit_amount(&vault),
+                total_mint: deps.storage.total_mint_amount(&vault),
+            })?
+        }
+
+        QueryMsg::Proxy(ProxyQueryMsg::DepositAmount { vault, account }) => {
+            to_json_binary(&DepositAmountResponse {
+                amount: deps.storage.individual_deposit_amount(&vault, &account),
+            })?
+        }
     };
 
     Ok(binary)
