@@ -13,6 +13,7 @@ import {
   InstantiateMsg as ProxyInstantiateMsg,
   MetadataResponse,
   DepositAmountResponse,
+  ExecuteMsg as ProxyExecuteMsg,
 } from "../ts/DepositCapProxy.types";
 import {
   HostClient,
@@ -168,10 +169,8 @@ describe("Deposit Cap Proxy", () => {
   it("should deploy the deposit-cap-proxy", async () => {
     const msg: ProxyInstantiateMsg = {
       hub_address: hubAddress,
-      total_deposit_cap: String(TOTAL_DEPOSIT_CAP),
-      individual_deposit_cap: String(INDIVIDUAL_DEPOSIT_CAP),
-      total_mint_cap: String(TOTAL_MINT_CAP),
     };
+
     const res = await operatorClient.instantiate(
       operatorAddress,
       proxyCodeId,
@@ -181,6 +180,19 @@ describe("Deposit Cap Proxy", () => {
     );
 
     proxyAddress = res.contractAddress;
+  });
+
+  it("should configure deposit-cap-proxy caps for the vault", async () => {
+    const msg: ProxyExecuteMsg = {
+      set_config: {
+        vault: vaultAddress,
+        total_deposit_cap: String(TOTAL_DEPOSIT_CAP),
+        individual_deposit_cap: String(INDIVIDUAL_DEPOSIT_CAP),
+        total_mint_cap: String(TOTAL_MINT_CAP),
+      },
+    };
+
+    await operatorClient.execute(operatorAddress, proxyAddress, msg, gasFee);
   });
 
   it("should create the amNTRN synthetic", async () => {
@@ -368,6 +380,21 @@ describe("Deposit Cap Proxy", () => {
         "",
         [coin(depositAmount, depositAssetDenom)],
       );
+    }).toThrow("unauthorized");
+  });
+
+  it("non-admin cannot alter config", async () => {
+    const msg: ProxyExecuteMsg = {
+      set_config: {
+        vault: vaultAddress,
+        total_deposit_cap: String(TOTAL_DEPOSIT_CAP * 2),
+        individual_deposit_cap: String(INDIVIDUAL_DEPOSIT_CAP * 2),
+        total_mint_cap: String(TOTAL_MINT_CAP * 2),
+      },
+    };
+
+    expect(async () => {
+      await aliceClient.execute(aliceAddress, proxyAddress, msg, gasFee);
     }).toThrow("unauthorized");
   });
 });
