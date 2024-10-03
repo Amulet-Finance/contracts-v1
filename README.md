@@ -17,6 +17,7 @@
 | `amulet-generic-lst` (stATOM)                  | `neutron1p2dxu3axa3hfwjqn957edlc5vaz687d6wctjywkqetzwmps6xfcqa3pfqk` | `v1.0.0`
 | `drop-redemption-rate-oracle-proxy`            | `neutron1qv67m3fxhwyl3y3xw3qzyw78fk3w5hq0jpmsm9fusz6zvkaus5uq48wr5m` | `v1.0.0`
 | `stride-redemption-rate-oracle-proxy` (stATOM) | `neutron1lkgu7nqmvkdxxkp6x7yql03t9clggq95ascumgw802t7gv59d2qsnvuz9e` | `v1.0.1`
+| `stride-redemption-rate-oracle-proxy` (stTIA)  | `neutron1rcxpvd3zfh3afgng0r39f3sxve0nkgvzy044l3ws6h8fpls44wmq0eqhy5` | `v1.0.1`
 
 ## Building
 
