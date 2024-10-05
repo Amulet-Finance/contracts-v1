@@ -39,7 +39,7 @@ pub struct TotalSharesIssued(pub u128);
 /// The total value of deposits in terms of the *underlying* asset
 pub struct TotalDepositsValue(pub u128);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnbondReadyStatus {
     /// Unbonding is ready to be started
     Ready {
