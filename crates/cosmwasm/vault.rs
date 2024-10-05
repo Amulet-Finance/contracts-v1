@@ -457,7 +457,7 @@ pub fn account_active_unbondings(
         }
 
         let Some(previously_entered_batch) =
-            storage.previously_entered_batch(account, last_entered_batch)
+            storage.previously_entered_batch(account, current_batch)
         else {
             break;
         };
