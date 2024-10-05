@@ -573,3 +573,275 @@ pub fn handle_query_msg(
         }),
     }
 }
+
+#[cfg(test)]
+mod test {
+    use cosmwasm_std::{coins, testing, Empty};
+
+    use amulet_core::vault::Strategy as CoreStategy;
+    use test_utils::prelude::*;
+
+    use crate::mint::TokenFactory;
+
+    use super::*;
+
+    const DEPOSIT_ASSET: &str = "deposit_asset";
+
+    struct MockStrategy<'a> {
+        env: &'a Env,
+        deposits: u128,
+        unbonds: u64,
+    }
+
+    impl<'a> CoreStategy for MockStrategy<'a> {
+        fn now(&self) -> amulet_core::vault::Now {
+            self.env.block.time.seconds()
+        }
+
+        fn deposit_asset(&self) -> amulet_core::Asset {
+            DEPOSIT_ASSET.to_owned().into()
+        }
+
+        fn underlying_asset_decimals(&self) -> Decimals {
+            6
+        }
+
+        fn total_deposits_value(&self) -> amulet_core::vault::TotalDepositsValue {
+            amulet_core::vault::TotalDepositsValue(self.deposits)
+        }
+
+        fn deposit_value(&self, DepositAmount(amount): DepositAmount) -> DepositValue {
+            DepositValue(amount)
+        }
+
+        fn unbond(
+            &self,
+            DepositValue(value): DepositValue,
+        ) -> amulet_core::vault::UnbondReadyStatus {
+            amulet_core::vault::UnbondReadyStatus::Ready {
+                amount: ClaimAmount(value),
+                epoch: amulet_core::vault::UnbondEpoch {
+                    start: self.env.block.time.seconds() + self.unbonds,
+                    end: self.env.block.time.seconds() + self.unbonds + 1,
+                },
+            }
+        }
+    }
+
+    struct MockTokenFactory;
+
+    fn handle_strategy_cmd(strategy: &mut MockStrategy, cmd: StrategyCmd) {
+        match cmd {
+            StrategyCmd::Deposit {
+                amount: DepositAmount(amount),
+            } => strategy.deposits += amount,
+            StrategyCmd::Unbond {
+                value: DepositValue(value),
+            } => {
+                strategy.deposits -= value;
+                strategy.unbonds += 1;
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_cmds(storage: &mut dyn Storage, strategy: &mut MockStrategy, cmds: Vec<Cmd>) {
+        for cmd in cmds {
+            match cmd {
+                Cmd::Strategy(cmd) => handle_strategy_cmd(strategy, cmd),
+                Cmd::UnbondingLog(cmd) => unbonding_log::handle_cmd(storage, cmd),
+                Cmd::Mint(cmd) => {
+                    mint::handle_cmd(storage, MockTokenFactory, cmd);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn active_unbondings_query() {
+        let mut deps = testing::mock_dependencies();
+
+        let env = testing::mock_env();
+
+        let mut strategy = MockStrategy {
+            env: &env,
+            deposits: 0,
+            unbonds: 0,
+        };
+
+        let (cmds, _) = handle_execute_msg::<Empty>(
+            &strategy,
+            &unbonding_log::UnbondingLog::new(&deps.storage),
+            &mint::SharesMint::new(&deps.storage, &env),
+            testing::mock_info("account", &coins(1_000_000_000, DEPOSIT_ASSET)),
+            ExecuteMsg::Deposit {},
+        )
+        .unwrap();
+
+        handle_cmds(&mut deps.storage, &mut strategy, cmds);
+
+        let shares_asset = mint::SharesMint::new(&deps.storage, &env).shares_asset();
+
+        let (cmds, _) = handle_execute_msg::<Empty>(
+            &strategy,
+            &unbonding_log::UnbondingLog::new(&deps.storage),
+            &mint::SharesMint::new(&deps.storage, &env),
+            testing::mock_info(
+                "account",
+                &coins(250_000_000_000_000_000_000, shares_asset.as_str()),
+            ),
+            ExecuteMsg::Redeem {
+                recipient: "bob".to_owned(),
+            },
+        )
+        .unwrap();
+
+        handle_cmds(&mut deps.storage, &mut strategy, cmds);
+        let (cmds, _) = handle_execute_msg::<Empty>(
+            &strategy,
+            &unbonding_log::UnbondingLog::new(&deps.storage),
+            &mint::SharesMint::new(&deps.storage, &env),
+            testing::mock_info(
+                "account",
+                &coins(250_000_000_000_000_000_000, shares_asset.as_str()),
+            ),
+            ExecuteMsg::Redeem {
+                recipient: "bob".to_owned(),
+            },
+        )
+        .unwrap();
+
+        handle_cmds(&mut deps.storage, &mut strategy, cmds);
+
+        let (cmds, _) = handle_execute_msg::<Empty>(
+            &strategy,
+            &unbonding_log::UnbondingLog::new(&deps.storage),
+            &mint::SharesMint::new(&deps.storage, &env),
+            testing::mock_info(
+                "account",
+                &coins(250_000_000_000_000_000_000, shares_asset.as_str()),
+            ),
+            ExecuteMsg::Redeem {
+                recipient: "bob".to_owned(),
+            },
+        )
+        .unwrap();
+
+        handle_cmds(&mut deps.storage, &mut strategy, cmds);
+
+        let all_active_unbondings: ActiveUnbondingsResponse = handle_query_msg(
+            &deps.storage,
+            &strategy,
+            &unbonding_log::UnbondingLog::new(&deps.storage),
+            &mint::SharesMint::new(&deps.storage, &env),
+            &env,
+            QueryMsg::ActiveUnbondings {
+                address: None,
+                limit: None,
+            },
+        )
+        .and_then(cosmwasm_std::from_json)
+        .unwrap();
+
+        assert_eq!(all_active_unbondings.unbondings.len(), 3);
+
+        check(
+            all_active_unbondings,
+            expect![[r#"
+                (
+                  unbondings: [
+                    (
+                      amount: "250000000",
+                      start: 1571797421,
+                      end: 1571797422,
+                    ),
+                    (
+                      amount: "250000000",
+                      start: 1571797420,
+                      end: 1571797421,
+                    ),
+                    (
+                      amount: "250000000",
+                      start: 1571797419,
+                      end: 1571797420,
+                    ),
+                  ],
+                )"#]],
+        );
+
+        let bob_active_unbondings: ActiveUnbondingsResponse = handle_query_msg(
+            &deps.storage,
+            &strategy,
+            &unbonding_log::UnbondingLog::new(&deps.storage),
+            &mint::SharesMint::new(&deps.storage, &env),
+            &env,
+            QueryMsg::ActiveUnbondings {
+                address: Some("bob".to_owned()),
+                limit: Some(4),
+            },
+        )
+        .and_then(cosmwasm_std::from_json)
+        .unwrap();
+
+        assert_eq!(bob_active_unbondings.unbondings.len(), 3);
+
+        check(
+            bob_active_unbondings,
+            expect![[r#"
+                (
+                  unbondings: [
+                    (
+                      amount: "250000000",
+                      start: 1571797421,
+                      end: 1571797422,
+                    ),
+                    (
+                      amount: "250000000",
+                      start: 1571797420,
+                      end: 1571797421,
+                    ),
+                    (
+                      amount: "250000000",
+                      start: 1571797419,
+                      end: 1571797420,
+                    ),
+                  ],
+                )"#]],
+        )
+    }
+
+    impl TokenFactory<Empty> for MockTokenFactory {
+        fn denom(&self, ticker: &amulet_core::mint::Ticker) -> String {
+            format!("factory/mint/{}", ticker.as_str())
+        }
+
+        fn create(&self, _ticker: amulet_core::mint::Ticker) -> cosmwasm_std::CosmosMsg<Empty> {
+            cosmwasm_std::CosmosMsg::Custom(Empty {})
+        }
+
+        fn set_metadata(
+            &self,
+            _ticker: &amulet_core::mint::Ticker,
+            _decimals: Decimals,
+        ) -> cosmwasm_std::CosmosMsg<Empty> {
+            cosmwasm_std::CosmosMsg::Custom(Empty {})
+        }
+
+        fn mint(
+            &self,
+            _denom: amulet_core::mint::Synthetic,
+            _amount: amulet_core::mint::SyntheticAmount,
+            _recipient: amulet_core::Recipient,
+        ) -> cosmwasm_std::CosmosMsg<Empty> {
+            cosmwasm_std::CosmosMsg::Custom(Empty {})
+        }
+
+        fn burn(
+            &self,
+            _denom: amulet_core::mint::Synthetic,
+            _amount: amulet_core::mint::SyntheticAmount,
+        ) -> cosmwasm_std::CosmosMsg<Empty> {
+            cosmwasm_std::CosmosMsg::Custom(Empty {})
+        }
+    }
+}
