@@ -1,19 +1,14 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "InstantiateMsg",
+  "title": "PendingAdminResponse",
   "type": "object",
-  "required": [
-    "hub_address"
-  ],
   "properties": {
-    "admin": {
+    "pending_admin": {
+      "description": "The pending admin, they will become admin if they claim the role",
       "type": [
         "string",
         "null"
       ]
-    },
-    "hub_address": {
-      "type": "string"
     }
   },
   "additionalProperties": false

@@ -4,23 +4,26 @@
 * and run the @cosmwasm/ts-codegen generate command to regenerate this file.
 */
 
-export type Uint128 = string;
 export interface InstantiateMsg {
   admin?: string | null;
   hub_address: string;
-  individual_deposit_cap: Uint128;
-  total_deposit_cap: Uint128;
-  total_mint_cap: Uint128;
 }
-export type ExecuteMsg = {
-  set_admin: {
-    address: string;
+export type ExecuteMsg = ExecuteMsg1 | ProxyMsg;
+export type ExecuteMsg1 = {
+  transfer_admin_role: {
+    next_admin: string;
   };
 } | {
+  claim_admin_role: {};
+} | {
+  cancel_role_transfer: {};
+};
+export type ProxyMsg = {
   set_config: {
     individual_deposit_cap?: Uint128 | null;
     total_deposit_cap?: Uint128 | null;
     total_mint_cap?: Uint128 | null;
+    vault: string;
   };
 } | {
   deposit: {
@@ -31,8 +34,17 @@ export type ExecuteMsg = {
     vault: string;
   };
 };
-export type QueryMsg = {
-  config: {};
+export type Uint128 = string;
+export type QueryMsg = QueryMsg1 | ProxyQueryMsg;
+export type QueryMsg1 = {
+  current_admin: {};
+} | {
+  pending_admin: {};
+};
+export type ProxyQueryMsg = {
+  config: {
+    vault: string;
+  };
 } | {
   vault_metadata: {
     vault: string;
@@ -44,14 +56,19 @@ export type QueryMsg = {
   };
 };
 export interface ConfigResponse {
-  admin: string;
   hub_address: string;
   individual_deposit_cap: Uint128;
   total_deposit_cap: Uint128;
   total_mint_cap: Uint128;
 }
+export interface CurrentAdminResponse {
+  current_admin?: string | null;
+}
 export interface DepositAmountResponse {
   amount: Uint128;
+}
+export interface PendingAdminResponse {
+  pending_admin?: string | null;
 }
 export interface MetadataResponse {
   total_deposit: Uint128;

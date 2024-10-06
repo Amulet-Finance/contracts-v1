@@ -3,16 +3,12 @@
   "title": "ConfigResponse",
   "type": "object",
   "required": [
-    "admin",
     "hub_address",
     "individual_deposit_cap",
     "total_deposit_cap",
     "total_mint_cap"
   ],
   "properties": {
-    "admin": {
-      "type": "string"
-    },
     "hub_address": {
       "type": "string"
     },
