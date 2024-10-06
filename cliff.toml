@@ -1,0 +1,4 @@
+[git]
+commit_parsers = [
+  { message = "^repo", skip = true },
+]

@@ -65,6 +65,9 @@ unit-test-coverage *LLVM_COV_OPTS:
 # ci task pipeline
 ci: check-formatting lint unit-tests dist setup-on-chain-test-suite fetch-node-modules integration-tests
 
+update-changelog tag:
+	git cliff v1.0.0..HEAD --tag {{tag}} > CHANGELOG.md
+
 # build all contracts and optimize WASM artifacts
 build-contracts:
 	#!/usr/bin/env nu

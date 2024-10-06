@@ -31,6 +31,7 @@
         pkgs.jq
         pkgs.docker-compose
         pkgs.go
+        pkgs.git-cliff
     ];
   in {
     devShells.${system} = {
