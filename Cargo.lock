@@ -44,6 +44,7 @@ dependencies = [
  "cw-utils",
  "num",
  "strum 0.26.3",
+ "test-utils",
  "thiserror",
 ]
 

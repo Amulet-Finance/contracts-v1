@@ -16,3 +16,6 @@ thiserror.workspace       = true
 
 amulet-core.workspace     = true
 num.workspace             = true
+
+[dev-dependencies]
+test-utils = { workspace = true }
