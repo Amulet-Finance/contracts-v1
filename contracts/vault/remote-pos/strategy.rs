@@ -102,7 +102,7 @@ impl<'a> CoreStrategy for Strategy<'a> {
         let elapsed = self.now.seconds() - last_unbond_timestamp;
 
         if elapsed < minimun_unbond_interval {
-            return UnbondReadyStatus::Later(Some(elapsed.abs_diff(minimun_unbond_interval)));
+            return UnbondReadyStatus::Later(Some(last_unbond_timestamp + minimun_unbond_interval));
         }
 
         let PendingUnbond(pending_unbond) = self.storage.pending_unbond();

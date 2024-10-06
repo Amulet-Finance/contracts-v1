@@ -1,3 +1,4 @@
+use amulet_core::vault::{DepositValue, Strategy as _, UnbondReadyStatus};
 use cosmwasm_std::{
     coins, from_json,
     testing::{mock_dependencies, mock_env, MockQuerier},
@@ -12,7 +13,9 @@ use amulet_ntrn::query::{
 
 use test_utils::{check, prelude::expect};
 
-use crate::{execute, instantiate, msg::Config, InstantiateMsg};
+use crate::{
+    execute, instantiate, msg::Config, state::StorageExt, strategy::Strategy, InstantiateMsg,
+};
 
 macro_rules! info {
     ($sender:literal) => {
@@ -167,5 +170,49 @@ fn redelegate_to_existing_validator_fails() {
     check(
         err.to_string(),
         expect![[r#""val4 already exists in the set""#]],
+    )
+}
+
+#[test]
+fn strategy_unbond_start_hint() {
+    let mut deps = mock_dependencies();
+
+    let mut env = mock_env();
+
+    instantiate(
+        DepsMut {
+            storage: &mut deps.storage,
+            api: &deps.api,
+            querier: QuerierWrapper::new(&QueryWrapper::default()),
+        },
+        env.clone(),
+        info!("creator", 3_200_000, "untrn"),
+        InstantiateMsg {
+            config: config(),
+            initial_validator_set: vec![
+                "val1".to_owned(),
+                "val2".to_owned(),
+                "val3".to_owned(),
+                "val4".to_owned(),
+            ],
+            initial_validator_weights: vec![2500, 2500, 2500, 2500],
+        },
+    )
+    .unwrap();
+
+    let minimum_unbond_interval = config().unbonding_period / config().max_unbonding_entries;
+
+    deps.storage
+        .set_last_unbond_timestamp(env.block.time.seconds());
+
+    env.block.time = env.block.time.plus_seconds(minimum_unbond_interval / 2);
+
+    let unbond_status = Strategy::new(&deps.storage, &env).unbond(DepositValue(1_000_000_000));
+
+    assert_eq!(
+        unbond_status,
+        UnbondReadyStatus::Later(Some(
+            deps.storage.last_unbond_timestamp().unwrap() + minimum_unbond_interval
+        ))
     )
 }
