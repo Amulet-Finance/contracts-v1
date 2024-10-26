@@ -617,15 +617,19 @@ fn redeem_first_time_unbond_later() {
 
 #[test]
 fn multiple_redemptions_in_one_batch() {
+    const INITIAL_DEPOSITS: u128 = 1000;
+    const BOB_REDEEM: u128 = 100;
+    const ALICE_REDEEM: u128 = 100;
+
     let world = World::default()
-        .total_deposits(1_000)
-        .total_shares(shares_amount(1_000))
+        .total_deposits(INITIAL_DEPOSITS)
+        .total_shares(shares_amount(INITIAL_DEPOSITS))
         .unbond_later();
 
     let cmds = vault(&world, &world, &world)
         .redeem(
             SHARES_ASSET.into(),
-            SharesAmount(shares_amount(100)),
+            SharesAmount(shares_amount(BOB_REDEEM)),
             BOB.into(),
         )
         .unwrap();
@@ -661,17 +665,19 @@ fn multiple_redemptions_in_one_batch() {
             ]"#]],
     );
 
+    let world = world.handle_cmds(cmds).unbond_ready();
+
+    let cmds = world
+        .vault()
+        .redeem(
+            SHARES_ASSET.into(),
+            SharesAmount(shares_amount(ALICE_REDEEM)),
+            ALICE.into(),
+        )
+        .unwrap();
+
     check(
-        world
-            .handle_cmds(cmds)
-            .unbond_ready()
-            .vault()
-            .redeem(
-                SHARES_ASSET.into(),
-                SharesAmount(shares_amount(100)),
-                ALICE.into(),
-            )
-            .unwrap(),
+        &cmds,
         expect![[r#"
             [
               UnbondingLog(BatchTotalUnbondValue(
@@ -707,10 +713,17 @@ fn multiple_redemptions_in_one_batch() {
                 ),
               )),
               Strategy(Unbond(
-                value: (100),
+                value: (200),
               )),
             ]"#]],
     );
+
+    let world = world.handle_cmds(cmds);
+
+    assert_eq!(
+        world.total_deposits,
+        INITIAL_DEPOSITS - BOB_REDEEM - ALICE_REDEEM
+    )
 }
 
 #[test]

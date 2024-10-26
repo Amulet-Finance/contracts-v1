@@ -795,7 +795,7 @@ impl<'a> Vault for VaultImpl<'a> {
                         epoch,
                     })
                     .add_cmd(StrategyCmd::Unbond {
-                        value: DepositValue(unbond_value),
+                        value: DepositValue(total_unbond_value),
                     });
             }
 
