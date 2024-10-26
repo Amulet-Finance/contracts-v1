@@ -403,6 +403,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cw20-silo-metavault"
+version = "1.0.2"
+dependencies = [
+ "amulet-core",
+ "amulet-cw",
+ "amulet-ntrn",
+ "anyhow",
+ "cosmwasm-schema",
+ "cosmwasm-std",
+ "neutron-sdk",
+ "test-utils",
+]
+
+[[package]]
 name = "deposit-cap-proxy"
 version = "1.0.2"
 dependencies = [

@@ -7,6 +7,7 @@ import { coin } from "@cosmjs/proto-signing";
 import {
   StateResponse as VaultStateResponse,
   ClaimableResponse as VaultClaimableResponse,
+  StateResponse,
 } from "../ts/AmuletGenericLst.types";
 import { ExecuteMsg as MintExecuteMsg } from "../ts/AmuletMint.types";
 import {
@@ -276,7 +277,14 @@ describe("Mint, Hub & Vault Integration", () => {
       { position: { account: aliceAddress, vault: vaultAddress } },
     );
 
+    const vaultState: StateResponse = await operatorClient.queryContractSmart(
+      vaultAddress,
+      { state: {} },
+    );
+
     expect(+position.collateral).toBe(depositAmount);
+    expect(+vaultState.total_deposits).toBe(depositAmount);
+    expect(+vaultState.total_issued_shares).toBe(depositAmount * 10 ** 12);
   });
 
   it("alice takes an advance while the redemption rate is still 1.0", async () => {

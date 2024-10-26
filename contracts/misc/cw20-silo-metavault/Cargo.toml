@@ -1,0 +1,22 @@
+[package]
+name       = "cw20-silo-metavault"
+version    = "1.0.2"
+edition    = "2021"
+
+[lib]
+path       = "contract.rs"
+crate-type = ["cdylib", "rlib"]
+doctest    = false
+
+[dependencies]
+anyhow.workspace          = true
+cosmwasm-std.workspace    = true
+cosmwasm-schema.workspace = true
+neutron-sdk.workspace     = true
+
+amulet-core.workspace     = true
+amulet-cw.workspace       = true
+amulet-ntrn.workspace     = true
+
+[dev-dependencies]
+test-utils = { workspace = true }
