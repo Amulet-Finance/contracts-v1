@@ -1,3 +1,18 @@
+## [1.0.3] - 2024-10-26
+
+### Chore
+
+- Bump contract crate versions for vaults
+- Artifacts
+
+### Fix
+
+- Unbond total batch amount
+
+### Test
+
+- Multiple redemptions in one batch amounts
+
 ## [1.0.2] - 2024-10-06
 
 ### Add
@@ -7,6 +22,11 @@
 ### Build
 
 - Add git-cliff to flake & update-changelog recipe
+
+### Chore
+
+- Bump vault contract crate versions
+- Artifacts
 
 ### Fix
 
