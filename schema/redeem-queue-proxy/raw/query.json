@@ -1,0 +1,172 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QueryMsg",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/QueryMsg"
+    },
+    {
+      "$ref": "#/definitions/ProxyQueryMsg"
+    }
+  ],
+  "definitions": {
+    "ProxyQueryMsg": {
+      "oneOf": [
+        {
+          "description": "Returns the current configuration of the contract, including the hub address.",
+          "type": "object",
+          "required": [
+            "config"
+          ],
+          "properties": {
+            "config": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Retrieves all redemption queue entries for the specified vault. Supports optional pagination via `start_index` and `limit`. Returns a `QueueEntriesResponse` containing the requested entries.",
+          "type": "object",
+          "required": [
+            "all_queue_entries"
+          ],
+          "properties": {
+            "all_queue_entries": {
+              "type": "object",
+              "required": [
+                "vault"
+              ],
+              "properties": {
+                "limit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "start_index": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Retrieves the redemption queue entries owned by a particular address for the specified vault. Supports optional pagination via `start` and `limit`. Returns a `QueueEntriesResponse` containing the matching entries.",
+          "type": "object",
+          "required": [
+            "owner_queue_entries"
+          ],
+          "properties": {
+            "owner_queue_entries": {
+              "type": "object",
+              "required": [
+                "address",
+                "vault"
+              ],
+              "properties": {
+                "address": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "start": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Provides detailed information about a specific queue entry in the specified vault, identified by its `index`. Returns a `QueueEntryResponse` that includes the entry's position in the queue and the total amount of pending redemptions \"in front\" of it.",
+          "type": "object",
+          "required": [
+            "queue_entry"
+          ],
+          "properties": {
+            "queue_entry": {
+              "type": "object",
+              "required": [
+                "index",
+                "vault"
+              ],
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "QueryMsg": {
+      "oneOf": [
+        {
+          "description": "Returns the current admin role holder",
+          "type": "object",
+          "required": [
+            "current_admin"
+          ],
+          "properties": {
+            "current_admin": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Returns the pending admin role holder",
+          "type": "object",
+          "required": [
+            "pending_admin"
+          ],
+          "properties": {
+            "pending_admin": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
