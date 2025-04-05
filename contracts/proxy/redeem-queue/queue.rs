@@ -162,8 +162,13 @@ impl<'a> RedemptionQueue<'a> {
             self.storage.set_queue_head(self.vault, index);
             self.storage.set_queue_tail(self.vault, index);
         } else {
-            // Append to tail
-            let tail = self.storage.queue_tail(self.vault).unwrap();
+            // Append to tail - we know the tail exists since count > 0
+            // This is safe because we've already checked count > 0, which means
+            // queue_tail must return Some value
+            let tail = match self.storage.queue_tail(self.vault) {
+                Some(t) => t,
+                None => bail!("Queue tail not found but count is {}", count),
+            };
 
             // Link tail -> new entry
             self.storage.set_queue_index_next(self.vault, tail, index);
@@ -184,7 +189,10 @@ impl<'a> RedemptionQueue<'a> {
             self.storage.set_user_tail(address, index);
         } else {
             // Append to user's tail
-            let user_tail = self.storage.user_tail(address).unwrap();
+            let user_tail = match self.storage.user_tail(address) {
+                Some(t) => t,
+                None => bail!("User tail not found but user_head exists"),
+            };
 
             // Link user tail -> new entry
             self.storage.set_user_index_next(address, user_tail, index);
@@ -202,7 +210,16 @@ impl<'a> RedemptionQueue<'a> {
         Ok(index)
     }
 
-    /// Removes an entry from the queue by its index
+    /// Removes an entry from the queue by its index and returns the address and amount.
+    ///
+    /// This function updates the queue links (both main queue and user-specific links)
+    /// to disconnect the entry from the queue. The entry's underlying storage data is
+    /// not deleted to minimize gas costs, but it becomes inaccessible through normal
+    /// queue operations.
+    ///
+    /// WARN: Always check if the queue is empty before calling this function.
+    /// It's possible to call this function twice with the same index: `address` and `amount`
+    /// will still exist, but now `count == 0` and the function will bail.
     pub fn remove_entry(&mut self, index: u64) -> Result<(String, Uint128)> {
         // Get entry data
         let address = match self.storage.index_address(self.vault, index) {
@@ -305,6 +322,10 @@ impl<'a> RedemptionQueue<'a> {
 
         // Process entries until we run out of funds or queue is empty
         while remaining > Uint128::zero() {
+            if self.entry_count() == 0 {
+                break; // Empty queue
+            }
+
             match self.storage.queue_head(self.vault) {
                 Some(head) => {
                     match self.get_entry(head) {
@@ -329,13 +350,10 @@ impl<'a> RedemptionQueue<'a> {
                                 break;
                             }
                         }
-                        None => {
-                            // Corrupted queue state, remove invalid head
-                            let _ = self.remove_entry(head).ok();
-                        }
+                        None => break, // Entry not found for head index
                     }
                 }
-                None => break, // Empty queue
+                None => break, // Empty or uninitialized queue
             }
         }
 
