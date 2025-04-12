@@ -67,21 +67,12 @@ pub fn handle_process_head(deps: DepsMut, vault: String) -> Result<Response, Err
     let reserve_balance = vault_reserve_balance(deps.as_ref(), &hub, &vault)?;
     let synthetic = synthetic_for_vault(deps.as_ref(), &hub, &vault)?;
 
-    if reserve_balance == 0 {
-        return Ok(Response::default());
-    }
-
     let mut queue = RedemptionQueue::new(deps.storage, &vault);
     let available_amount = Uint128::new(reserve_balance);
 
     let (processed, used_amount) = queue.process_head(available_amount)?;
 
-    // TODO: Should we return an empty Response, or the "process_head" response with
-    // "processed_entries" and "used_amount" set to "0"?
-    if processed.is_empty() {
-        return Ok(Response::default());
-    }
-
+    // NOTE: If no entries are processed, these response attributes will still exist.
     let mut response = Response::default()
         .add_attribute("kind", "process_head")
         .add_attribute("vault", &vault)
@@ -123,20 +114,10 @@ pub fn handle_redeem(
         );
     }
 
-    let reserve_balance = vault_reserve_balance(deps.as_ref(), &hub, &vault)?;
-    let available_amount = Uint128::new(reserve_balance);
-
-    let entry_count = deps.storage.entry_count(&vault).unwrap_or(0);
-
-    // If the queue is not empty, the existing queue is processed first before adding the new entry.
-    let process_head_response = if entry_count > 0 {
-        handle_process_head(deps.branch(), vault.clone())?
-    } else {
-        Response::default()
-    };
+    let process_head_response = handle_process_head(deps.branch(), vault.clone())?;
 
     let mut queue = RedemptionQueue::new(deps.storage, &vault);
-    let index = queue.enqueue(&info.sender.to_string(), coin.amount)?;
+    let index = queue.enqueue(info.sender.as_ref(), coin.amount)?;
 
     let mut response = Response::default()
         .add_attribute("kind", "redeem")
@@ -149,15 +130,20 @@ pub fn handle_redeem(
         response = response.add_submessage(msg);
     }
 
-    if !available_amount.is_zero() {
-        let (processed, used_amount) = queue.process_head(available_amount)?;
+    let vault_metadata: VaultMetadata = deps.querier.query_wasm_smart(
+        &hub,
+        &HubQueryMsg::VaultMetadata {
+            vault: vault.to_owned(),
+        },
+    )?;
+    let reserve_balance = vault_metadata.reserve_balance.u128();
+    let available_amount = Uint128::new(reserve_balance);
+
+    // NOTE: Using 1 instead of 0 to accommodate precision errors
+    if available_amount > Uint128::one() {
+        let (processed, _used_amount) = queue.process_head(available_amount)?;
 
         if !processed.is_empty() {
-            response = response
-                // TODO: are these attributes wanted?
-                .add_attribute("immediate_processed", processed.len().to_string())
-                .add_attribute("immediate_amount", used_amount);
-
             for (address, amount) in processed {
                 let msg = redeem_on_behalf(&hub, &vault, &synthetic, address, amount.u128());
                 response = response.add_message(msg);
@@ -179,7 +165,7 @@ pub fn handle_cancel_entry(
     let mut queue = RedemptionQueue::new(deps.storage, &vault);
 
     match queue.get_entry(index) {
-        Some(entry) if entry.address == info.sender.to_string() => {
+        Some(entry) if entry.address == info.sender => {
             let (_, amount) = queue.remove_entry(index)?;
 
             let hub = deps.storage.hub();
@@ -215,7 +201,7 @@ pub fn handle_cancel_all(
     deps.api.addr_validate(&vault)?;
 
     let mut queue = RedemptionQueue::new(deps.storage, &vault);
-    let cancelled = queue.cancel_user_entries(&info.sender.to_string())?;
+    let cancelled = queue.cancel_user_entries(info.sender.as_ref())?;
 
     if cancelled.is_empty() {
         return Ok(Response::default()
