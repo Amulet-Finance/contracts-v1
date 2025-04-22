@@ -64,11 +64,16 @@ pub fn handle_process_head(deps: DepsMut, vault: String) -> Result<Response, Err
     deps.api.addr_validate(&vault)?;
 
     let hub = deps.storage.hub();
-    let reserve_balance = vault_reserve_balance(deps.as_ref(), &hub, &vault)?;
-    let synthetic = synthetic_for_vault(deps.as_ref(), &hub, &vault)?;
-
+    let vault_metadata: VaultMetadata = deps.querier.query_wasm_smart(
+        &hub,
+        &HubQueryMsg::VaultMetadata {
+            vault: vault.to_owned(),
+        },
+    )?;
+    let synthetic = vault_metadata.synthetic;
+    let available_amount = vault_metadata.reserve_balance;
+    
     let mut queue = RedemptionQueue::new(deps.storage, &vault);
-    let available_amount = Uint128::new(reserve_balance);
 
     let (processed, used_amount) = queue.process_head(available_amount)?;
 
