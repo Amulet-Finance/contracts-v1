@@ -109,7 +109,7 @@ fn bank_metadata(denom: Denom, display: &str, decimals: u32) -> Metadata {
 }
 
 impl Flavour {
-    pub const fn factory(self, env: &Env) -> TokenFactory {
+    pub const fn into_factory(self, env: &Env) -> TokenFactory {
         TokenFactory { flavour: self, env }
     }
 
