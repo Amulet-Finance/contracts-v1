@@ -1,0 +1,582 @@
+{
+  "contract_name": "redeem-queue-proxy",
+  "contract_version": "1.0.0",
+  "idl_version": "1.0.0",
+  "instantiate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InstantiateMsg",
+    "type": "object",
+    "required": [
+      "hub_address"
+    ],
+    "properties": {
+      "hub_address": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "execute": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecuteMsg",
+    "anyOf": [
+      {
+        "$ref": "#/definitions/ExecuteMsg"
+      },
+      {
+        "$ref": "#/definitions/ProxyUserMsg"
+      },
+      {
+        "$ref": "#/definitions/ProxyAdminMsg"
+      }
+    ],
+    "definitions": {
+      "ExecuteMsg": {
+        "oneOf": [
+          {
+            "description": "Transfer admin role to a new address",
+            "type": "object",
+            "required": [
+              "transfer_admin_role"
+            ],
+            "properties": {
+              "transfer_admin_role": {
+                "type": "object",
+                "required": [
+                  "next_admin"
+                ],
+                "properties": {
+                  "next_admin": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Complete admin role transferral",
+            "type": "object",
+            "required": [
+              "claim_admin_role"
+            ],
+            "properties": {
+              "claim_admin_role": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Cancel admin role transferral",
+            "type": "object",
+            "required": [
+              "cancel_role_transfer"
+            ],
+            "properties": {
+              "cancel_role_transfer": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ProxyAdminMsg": {
+        "oneOf": [
+          {
+            "description": "Forcefully cancels a specific queue entry for the given vault, returning the associated balance to the entry's owner.",
+            "type": "object",
+            "required": [
+              "force_cancel_entry"
+            ],
+            "properties": {
+              "force_cancel_entry": {
+                "type": "object",
+                "required": [
+                  "index",
+                  "vault"
+                ],
+                "properties": {
+                  "index": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0.0
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ProxyUserMsg": {
+        "oneOf": [
+          {
+            "description": "Attempts to process the redemption queue for the specified vault. Redeems pending amounts from the head of the queue while there is sufficient redeemable balance or until the queue is empty.",
+            "type": "object",
+            "required": [
+              "process_head"
+            ],
+            "properties": {
+              "process_head": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Enters the redemption queue for a given vault by sending one non-zero token, which must be the vault's associated synthetic token. If the final queue entry (tail) belongs to the same sender, the sent amount is appended to that entry; otherwise, a new tail entry is created.\n\nIf the queue is empty, redemption is attempted immediately using any available redeemable balance, with any leftover amount forming the new head entry. If the queue is not empty, the existing queue is processed first (similar to `ProcessHead`) before adding the new entry.",
+            "type": "object",
+            "required": [
+              "redeem"
+            ],
+            "properties": {
+              "redeem": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Cancels a specific queue entry in the specified vault’s redemption queue, which must be owned by the sender. The associated balance is returned to the sender.",
+            "type": "object",
+            "required": [
+              "cancel_entry"
+            ],
+            "properties": {
+              "cancel_entry": {
+                "type": "object",
+                "required": [
+                  "index",
+                  "vault"
+                ],
+                "properties": {
+                  "index": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0.0
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Cancels all redemption queue entries for the specified vault that belong to the sender. The total associated balance is returned to the sender.",
+            "type": "object",
+            "required": [
+              "cancel_all"
+            ],
+            "properties": {
+              "cancel_all": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "query": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "QueryMsg",
+    "anyOf": [
+      {
+        "$ref": "#/definitions/QueryMsg"
+      },
+      {
+        "$ref": "#/definitions/ProxyQueryMsg"
+      }
+    ],
+    "definitions": {
+      "ProxyQueryMsg": {
+        "oneOf": [
+          {
+            "description": "Returns the current configuration of the contract, including the hub address.",
+            "type": "object",
+            "required": [
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Retrieves all redemption queue entries for the specified vault. Supports optional pagination via `start_index` and `limit`. Returns a `QueueEntriesResponse` containing the requested entries.",
+            "type": "object",
+            "required": [
+              "all_queue_entries"
+            ],
+            "properties": {
+              "all_queue_entries": {
+                "type": "object",
+                "required": [
+                  "vault"
+                ],
+                "properties": {
+                  "limit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0.0
+                  },
+                  "start_index": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0.0
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Retrieves the redemption queue entries owned by a particular address for the specified vault. Supports optional pagination via `start` and `limit`. Returns a `QueueEntriesResponse` containing the matching entries.",
+            "type": "object",
+            "required": [
+              "owner_queue_entries"
+            ],
+            "properties": {
+              "owner_queue_entries": {
+                "type": "object",
+                "required": [
+                  "address",
+                  "vault"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0.0
+                  },
+                  "start": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0.0
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Provides detailed information about a specific queue entry in the specified vault, identified by its `index`. Returns a `QueueEntryResponse` that includes the entry's position in the queue and the total amount of pending redemptions \"in front\" of it.",
+            "type": "object",
+            "required": [
+              "queue_entry"
+            ],
+            "properties": {
+              "queue_entry": {
+                "type": "object",
+                "required": [
+                  "index",
+                  "vault"
+                ],
+                "properties": {
+                  "index": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0.0
+                  },
+                  "vault": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "QueryMsg": {
+        "oneOf": [
+          {
+            "description": "Returns the current admin role holder",
+            "type": "object",
+            "required": [
+              "current_admin"
+            ],
+            "properties": {
+              "current_admin": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns the pending admin role holder",
+            "type": "object",
+            "required": [
+              "pending_admin"
+            ],
+            "properties": {
+              "pending_admin": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "migrate": null,
+  "sudo": null,
+  "responses": {
+    "all_queue_entries": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "QueueEntriesResponse",
+      "type": "object",
+      "required": [
+        "entries"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QueueEntry"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "QueueEntry": {
+          "type": "object",
+          "required": [
+            "address",
+            "amount",
+            "index"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "index": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "config": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ConfigResponse",
+      "type": "object",
+      "required": [
+        "hub_address"
+      ],
+      "properties": {
+        "hub_address": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "current_admin": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "CurrentAdminResponse",
+      "type": "object",
+      "properties": {
+        "current_admin": {
+          "description": "The current admin, if None the contract creator is the admin",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "owner_queue_entries": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "QueueEntriesResponse",
+      "type": "object",
+      "required": [
+        "entries"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QueueEntry"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "QueueEntry": {
+          "type": "object",
+          "required": [
+            "address",
+            "amount",
+            "index"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "index": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "pending_admin": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PendingAdminResponse",
+      "type": "object",
+      "properties": {
+        "pending_admin": {
+          "description": "The pending admin, they will become admin if they claim the role",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "queue_entry": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "QueueEntryResponse",
+      "type": "object",
+      "required": [
+        "amount_in_front",
+        "entry",
+        "position_in_queue"
+      ],
+      "properties": {
+        "amount_in_front": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "entry": {
+          "$ref": "#/definitions/QueueEntry"
+        },
+        "position_in_queue": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "QueueEntry": {
+          "type": "object",
+          "required": [
+            "address",
+            "amount",
+            "index"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "index": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

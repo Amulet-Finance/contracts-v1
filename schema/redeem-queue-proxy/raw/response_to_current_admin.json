@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CurrentAdminResponse",
+  "type": "object",
+  "properties": {
+    "current_admin": {
+      "description": "The current admin, if None the contract creator is the admin",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false
+}
