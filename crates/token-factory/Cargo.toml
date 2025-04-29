@@ -1,0 +1,16 @@
+[package]
+name    = "amulet-token-factory"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+path    = "lib.rs"
+doctest = false
+
+[dependencies]
+cosmwasm-std               = { workspace = true, features = [ "stargate" ]}
+cosmwasm-schema.workspace  = true
+cosmos-sdk-proto.workspace = true
+prost.workspace            = true
+amulet-cw.workspace        = true
+amulet-core.workspace      = true
