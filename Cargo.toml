@@ -11,51 +11,54 @@ members = [
   "crates/neutron",
   "crates/num",
   "crates/test-utils",
+  "crates/token-factory",
   "crates/pos-reconcile-fsm",
 ]
 resolver = "2"
 
 [workspace.dependencies]
 # external
-anyhow            = "1.0.87"
-bech32            = "0.11.0"
-cosmos-sdk-proto  = { version = "0.20.0", default-features = false }
-cosmwasm-schema   = "1.5.7"
-cosmwasm-std      = "1.5.7"
-cw-utils          = "1.0.3"
-derive_more       = "0.99.18"
-hex               = "0.4.3"
-hmac-sha256       = "1.1.7"
-neutron-sdk       = "0.9.0"
-prost             = "0.12.6"
-prost-types       = "0.12.6"
-serde             = "1.0.210"
-static_assertions = "1.1.0"
-strum             = { version = "0.26.3", features = ["derive"] }
-thiserror         = "1.0.63"
-uint              = { version = "0.9.5", default-features = false }
+anyhow               = "1.0.87"
+bech32               = "0.11.0"
+cosmos-sdk-proto     = { version = "0.20.0", default-features = false }
+cosmwasm-schema      = "1.5.7"
+cosmwasm-std         = "1.5.7"
+cw-utils             = "1.0.3"
+derive_more          = "0.99.18"
+hex                  = "0.4.3"
+hmac-sha256          = "1.1.7"
+neutron-sdk          = "0.9.0"
+prost                = "0.12.6"
+prost-types          = "0.12.6"
+rustc-hash           = "2.1.1"
+serde                = "1.0.210"
+static_assertions    = "1.1.0"
+strum                = { version = "0.26.3", features = ["derive"] }
+thiserror            = "1.0.63"
+uint                 = { version = "0.9.5", default-features = false }
 
 # internal
-num               = { path = "crates/num" }
-pos-reconcile-fsm = { path = "crates/pos-reconcile-fsm" }
+num                  = { path = "crates/num" }
+pos-reconcile-fsm    = { path = "crates/pos-reconcile-fsm" }
 
-amulet-core       = { path = "crates/core" }
-amulet-cw         = { path = "crates/cosmwasm" }
-amulet-ntrn       = { path = "crates/neutron" }
+amulet-core          = { path = "crates/core" }
+amulet-cw            = { path = "crates/cosmwasm" }
+amulet-ntrn          = { path = "crates/neutron" }
+amulet-token-factory = { path = "crates/token-factory" }
 
 # dev-deps
-expect-test       = "1.5.0"
-ron               = { version = "0.8.1", features = [ "integer128" ] }
-rstest            = { version = "0.18.2", default-features = false }
-test-utils        = { path = "crates/test-utils" }
+expect-test          = "1.5.0"
+ron                  = { version = "0.8.1", features = [ "integer128" ] }
+rstest               = { version = "0.18.2", default-features = false }
+test-utils           = { path = "crates/test-utils" }
 
 [profile.release]
-codegen-units     = 1
-debug             = false
-debug-assertions  = false
-incremental       = false
-lto               = true
-overflow-checks   = true
-opt-level         = 's'
-panic             = "abort"
-rpath             = false
+codegen-units        = 1
+debug                = false
+debug-assertions     = false
+incremental          = false
+lto                  = true
+overflow-checks      = true
+opt-level            = 's'
+panic                = "abort"
+rpath                = false

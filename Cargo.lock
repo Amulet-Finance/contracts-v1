@@ -90,6 +90,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "amulet-native-pos"
+version = "1.0.3"
+dependencies = [
+ "amulet-core",
+ "amulet-cw",
+ "amulet-token-factory",
+ "anyhow",
+ "cosmos-sdk-proto",
+ "cosmwasm-schema",
+ "cosmwasm-std",
+ "cw-utils",
+ "hex",
+ "num",
+ "prost",
+ "rustc-hash",
+ "test-utils",
+]
+
+[[package]]
 name = "amulet-ntrn"
 version = "0.0.0"
 dependencies = [
@@ -122,6 +141,18 @@ dependencies = [
  "prost",
  "prost-types",
  "test-utils",
+]
+
+[[package]]
+name = "amulet-token-factory"
+version = "0.0.0"
+dependencies = [
+ "amulet-core",
+ "amulet-cw",
+ "cosmos-sdk-proto",
+ "cosmwasm-schema",
+ "cosmwasm-std",
+ "prost",
 ]
 
 [[package]]
@@ -947,6 +978,15 @@ name = "relative-path"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
+
+[[package]]
+name = "rewards-sink"
+version = "1.0.0"
+dependencies = [
+ "amulet-cw",
+ "cosmwasm-schema",
+ "cosmwasm-std",
+]
 
 [[package]]
 name = "rfc6979"
