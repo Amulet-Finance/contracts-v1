@@ -59,8 +59,8 @@ unit-tests *NEXTEST_OPTS:
 	cargo nextest run {{NEXTEST_OPTS}}
 
 # generate a coverage report for unit-tests (see `cargo llvm-cov --help` for options)
-unit-test-coverage *LLVM_COV_OPTS:
-	cargo llvm-cov {{LLVM_COV_OPTS}}
+unit-test-coverage *OPTS:
+	cargo tarpaulin {{OPTS}}
 
 # ci task pipeline
 ci: check-formatting lint unit-tests dist setup-on-chain-test-suite fetch-node-modules integration-tests
