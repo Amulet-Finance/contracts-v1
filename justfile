@@ -9,7 +9,7 @@ menu:
 
 # remove all build artifacts
 dist-clean:
-	rm -rf arifacts schema ts
+	rm -rf artifacts schema ts
 
 # deploy a contract on a network (see scripts/deploy.ts for details)
 deploy-contract contract *FLAGS:

@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PendingAdminResponse",
+  "type": "object",
+  "properties": {
+    "pending_admin": {
+      "description": "The pending admin, they will become admin if they claim the role",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

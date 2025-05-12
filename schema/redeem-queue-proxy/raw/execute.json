@@ -1,0 +1,201 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecuteMsg",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/ExecuteMsg"
+    },
+    {
+      "$ref": "#/definitions/ProxyUserMsg"
+    },
+    {
+      "$ref": "#/definitions/ProxyAdminMsg"
+    }
+  ],
+  "definitions": {
+    "ExecuteMsg": {
+      "oneOf": [
+        {
+          "description": "Transfer admin role to a new address",
+          "type": "object",
+          "required": [
+            "transfer_admin_role"
+          ],
+          "properties": {
+            "transfer_admin_role": {
+              "type": "object",
+              "required": [
+                "next_admin"
+              ],
+              "properties": {
+                "next_admin": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Complete admin role transferral",
+          "type": "object",
+          "required": [
+            "claim_admin_role"
+          ],
+          "properties": {
+            "claim_admin_role": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Cancel admin role transferral",
+          "type": "object",
+          "required": [
+            "cancel_role_transfer"
+          ],
+          "properties": {
+            "cancel_role_transfer": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ProxyAdminMsg": {
+      "oneOf": [
+        {
+          "description": "Forcefully cancels a specific queue entry for the given vault, returning the associated balance to the entry's owner.",
+          "type": "object",
+          "required": [
+            "force_cancel_entry"
+          ],
+          "properties": {
+            "force_cancel_entry": {
+              "type": "object",
+              "required": [
+                "index",
+                "vault"
+              ],
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ProxyUserMsg": {
+      "oneOf": [
+        {
+          "description": "Attempts to process the redemption queue for the specified vault. Redeems pending amounts from the head of the queue while there is sufficient redeemable balance or until the queue is empty.",
+          "type": "object",
+          "required": [
+            "process_head"
+          ],
+          "properties": {
+            "process_head": {
+              "type": "object",
+              "required": [
+                "vault"
+              ],
+              "properties": {
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Enters the redemption queue for a given vault by sending one non-zero token, which must be the vault's associated synthetic token. If the final queue entry (tail) belongs to the same sender, the sent amount is appended to that entry; otherwise, a new tail entry is created.\n\nIf the queue is empty, redemption is attempted immediately using any available redeemable balance, with any leftover amount forming the new head entry. If the queue is not empty, the existing queue is processed first (similar to `ProcessHead`) before adding the new entry.",
+          "type": "object",
+          "required": [
+            "redeem"
+          ],
+          "properties": {
+            "redeem": {
+              "type": "object",
+              "required": [
+                "vault"
+              ],
+              "properties": {
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Cancels a specific queue entry in the specified vault’s redemption queue, which must be owned by the sender. The associated balance is returned to the sender.",
+          "type": "object",
+          "required": [
+            "cancel_entry"
+          ],
+          "properties": {
+            "cancel_entry": {
+              "type": "object",
+              "required": [
+                "index",
+                "vault"
+              ],
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Cancels all redemption queue entries for the specified vault that belong to the sender. The total associated balance is returned to the sender.",
+          "type": "object",
+          "required": [
+            "cancel_all"
+          ],
+          "properties": {
+            "cancel_all": {
+              "type": "object",
+              "required": [
+                "vault"
+              ],
+              "properties": {
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
