@@ -13,6 +13,7 @@ members = [
   "crates/test-utils",
   "crates/token-factory",
   "crates/pos-reconcile-fsm",
+  "integration-tests",
 ]
 resolver = "2"
 
@@ -48,6 +49,8 @@ amulet-token-factory = { path = "crates/token-factory" }
 
 # dev-deps
 expect-test          = "1.5.0"
+osmosis-test-tube    = "27.0.1"
+# osmosis-test-tube    = { path = "../../test-tube/packages/osmosis-test-tube" }
 ron                  = { version = "0.8.1", features = [ "integer128" ] }
 rstest               = { version = "0.18.2", default-features = false }
 test-utils           = { path = "crates/test-utils" }

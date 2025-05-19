@@ -1,0 +1,21 @@
+[package]
+name = "integration-tests"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+amulet-cw.workspace = true
+amulet-token-factory.workspace = true
+# osmosis-test-tube requires cosmwasm-std 2.2 types as arguments
+# but we do not want to migrate the contracts (yet)
+# so use non-workspace cosmwasm-std
+cosmwasm-std = "2.2"
+hex.workspace = true
+hmac-sha256.workspace = true
+osmosis-test-tube.workspace = true
+serde.workspace = true
+
+amulet-hub = { path = "../contracts/hub" }
+amulet-mint = { path = "../contracts/mint" }
+amulet-native-pos = { path = "../contracts/vault/native-pos" }
