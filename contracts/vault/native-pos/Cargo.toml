@@ -1,0 +1,33 @@
+[package]
+name       = "amulet-native-pos"
+version    = "1.0.3"
+edition    = "2021"
+
+[[bin]]
+name       = "schema"
+path       = "schema.rs"
+doctest    = false
+test       = false
+
+[lib]
+path       = "contract.rs"
+crate-type = ["cdylib", "rlib"]
+doctest    = false
+
+[dependencies]
+anyhow.workspace               = true
+cosmos-sdk-proto.workspace     = true
+cosmwasm-schema.workspace      = true
+cosmwasm-std                   = { workspace = true, features = ["staking", "stargate", "cosmwasm_1_2", "cosmwasm_1_4"] }
+cw-utils.workspace             = true
+rustc-hash.workspace           = true
+prost.workspace                = true
+hex.workspace                  = true
+
+amulet-core.workspace          = true
+amulet-cw.workspace            = true
+amulet-token-factory.workspace = true
+num.workspace                  = true
+
+[dev-dependencies]
+test-utils = { workspace = true }
