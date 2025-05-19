@@ -35,7 +35,9 @@ fn init() -> MockDeps {
         deps.as_mut(),
         mock_env(),
         info!("creator"),
-        InstantiateMsg {},
+        InstantiateMsg {
+            token_factory_flavour: amulet_token_factory::Flavour::Osmosis,
+        },
     )
     .unwrap();
 

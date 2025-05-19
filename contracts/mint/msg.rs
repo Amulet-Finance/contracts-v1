@@ -4,9 +4,12 @@ pub use amulet_cw::{
     admin::{ExecuteMsg as AdminExecuteMsg, QueryMsg as AdminQueryMsg},
     mint::{ExecuteMsg as MintExecuteMsg, QueryMsg as MintQueryMsg},
 };
+use amulet_token_factory::Flavour as TokenFactoryFlavour;
 
 #[cw_serde]
-pub struct InstantiateMsg {}
+pub struct InstantiateMsg {
+    pub token_factory_flavour: TokenFactoryFlavour,
+}
 
 #[cw_serde]
 #[serde(untagged)]
