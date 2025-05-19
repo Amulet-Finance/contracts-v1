@@ -15,14 +15,13 @@ crate-type = ["cdylib", "rlib"]
 doctest    = false
 
 [dependencies]
-anyhow.workspace          = true
-cosmwasm-std.workspace    = true
-cosmwasm-schema.workspace = true
-neutron-sdk.workspace     = true
+anyhow.workspace               = true
+cosmwasm-std.workspace         = true
+cosmwasm-schema.workspace      = true
 
-amulet-core.workspace     = true
-amulet-cw.workspace       = true
-amulet-ntrn.workspace     = true
+amulet-core.workspace          = true
+amulet-cw.workspace            = true
+amulet-token-factory.workspace = true
 
 [dev-dependencies]
 test-utils = { workspace = true }
