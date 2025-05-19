@@ -76,14 +76,13 @@ build-contracts:
 	rg --files contracts --glob Cargo.toml
 	| lines
 	| par-each {
-		open
-		| get package.name
-		| do {
+		do {
+			let package = (open $in | get package.name)
 			# compile wasm artifact
-			RUSTFLAGS="-C link-arg=-s" cargo build --package $in --lib --release --target wasm32-unknown-unknown;
+			RUSTFLAGS="-C link-arg=-s" cargo build --package $package --lib --release --target wasm32-unknown-unknown;
 			# optimise wasm artifact
-			let opt_in = $"target/wasm32-unknown-unknown/release/($in | str replace --all '-' '_').wasm";
-			let opt_out = $"artifacts/($in).wasm";
+			let opt_in = $"target/wasm32-unknown-unknown/release/($package | str snake-case).wasm";
+			let opt_out = $"artifacts/($package).wasm";
 			wasm-opt -Os --signext-lowering $opt_in -o $opt_out;
 			$opt_out
 		}
