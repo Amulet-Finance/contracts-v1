@@ -1,13 +1,25 @@
+use amulet_native_pos::msg::Metadata as VaultMetadata;
 use anyhow::{anyhow, Result};
 use cosmwasm_std::coins;
 use integration_tests::{
     execute_contract, init_accounts, instantiate_contract, query_bank_balance, query_contract,
-    query_staking_delegations, query_staking_unbondings, store_contract_artifact,
+    query_contract_info, query_staking_delegations, query_staking_unbondings,
+    store_contract_artifact,
 };
 use osmosis_test_tube::{osmosis_std, Account, OsmosisTestApp, Runner};
 
 const TOTAL_VALIDATOR_COUNT: usize = 1;
 const INITIAL_VAULT_SET_SIZE: usize = 1;
+
+fn query_vault_metadata(app: &OsmosisTestApp, vault_address: &str) -> Result<VaultMetadata> {
+    let metadata = query_contract(
+        app,
+        vault_address,
+        &amulet_native_pos::msg::StrategyQueryMsg::Metadata {},
+    )?;
+
+    Ok(metadata)
+}
 
 #[test]
 fn works() -> Result<()> {
@@ -92,6 +104,18 @@ fn works() -> Result<()> {
         },
         &[],
     )?;
+
+    // check that pre-determined reward-sink address is correct
+    let native_pos_metadata = query_vault_metadata(&app, &native_pos_address)?;
+
+    let rewards_sink_contract_info =
+        query_contract_info(&app, &native_pos_metadata.rewards_sink_address)?;
+
+    assert_eq!(rewards_sink_contract_info.code_id, rewards_sink_code_id);
+    assert_eq!(
+        rewards_sink_contract_info.creator.as_str(),
+        &native_pos_address
+    );
 
     // configure mint
     execute_contract(
@@ -387,11 +411,7 @@ fn works() -> Result<()> {
 
     assert!(alice_post_claim_balance > alice_pre_claim_balance);
 
-    let native_pos_metadata: amulet_native_pos::msg::Metadata = query_contract(
-        &app,
-        &native_pos_address,
-        &amulet_native_pos::msg::StrategyQueryMsg::Metadata {},
-    )?;
+    let native_pos_metadata = query_vault_metadata(&app, &native_pos_address)?;
 
     assert_eq!(native_pos_metadata.available_to_claim.u128(), 0);
     assert_eq!(native_pos_metadata.last_acknowledged_batch, Some(0));

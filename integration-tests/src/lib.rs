@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Context, Result};
 use cosmwasm_std::Coin;
 use osmosis_test_tube::{
-    osmosis_std, Account, Module, OsmosisTestApp as TestApp, Runner, SigningAccount, Wasm,
+    osmosis_std::{self, types::cosmwasm::wasm::v1::ContractInfo},
+    Account, Module, OsmosisTestApp as TestApp, Runner, SigningAccount, Wasm,
 };
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -68,6 +69,18 @@ pub fn query_contract<Msg: Serialize, Response: DeserializeOwned>(
 ) -> Result<Response> {
     let res = Wasm::new(app).query(contract, msg)?;
     Ok(res)
+}
+
+pub fn query_contract_info(app: &TestApp, contract: &str) -> Result<ContractInfo> {
+    let res: osmosis_std::types::cosmwasm::wasm::v1::QueryContractInfoResponse = app.query(
+        "/cosmwasm.wasm.v1.Query/ContractInfo",
+        &osmosis_std::types::cosmwasm::wasm::v1::QueryContractInfoRequest {
+            address: contract.to_owned(),
+        },
+    )?;
+
+    res.contract_info
+        .ok_or_else(|| anyhow!("no contract info for {contract}"))
 }
 
 pub fn query_staking_delegations(app: &TestApp, delegator: &str) -> Result<Vec<(String, u128)>> {
