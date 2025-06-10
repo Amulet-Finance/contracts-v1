@@ -15,8 +15,8 @@ use amulet_core::vault::{Cmd as VaultCmd, UnbondingLog as CoreUnbondingLog};
 use amulet_cw::{
     admin::{self, get_admin_role, ExecuteMsg as AdminExecuteMsg, Repository as AdminRepository},
     vault::{
-        self, handle_mint_cmd, handle_unbonding_log_cmd, init_mint_msg,
-        ExecuteMsg as VaultExecuteMsg, SharesMint, UnbondingLog,
+        self, handle_mint_cmd, handle_unbonding_log_cmd, init_mint_msg, ClaimableResponse,
+        ExecuteMsg as VaultExecuteMsg, QueryMsg as VaultQueryMsg, SharesMint, UnbondingLog,
     },
     MigrateMsg,
 };
@@ -337,6 +337,14 @@ pub fn handle_strategy_query(deps: Deps, query: StrategyQueryMsg) -> Result<Bina
     Ok(response)
 }
 
+fn intercept_vault_claimable_query(deps: Deps, env: Env, address: &str) -> Result<Binary> {
+    let amount = strategy::simulate_claim(deps.storage, deps.querier, &env, address)?;
+
+    let response = to_json_binary(&ClaimableResponse { amount })?;
+
+    Ok(response)
+}
+
 #[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary> {
     let binary = match msg {
@@ -344,6 +352,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary> {
             let repository = AdminRepository::new(deps.storage);
 
             admin::handle_query_msg(&repository, admin_query)?
+        }
+
+        // intercept `Claimable` query to simulate slashing acknowledgement
+        QueryMsg::Vault(VaultQueryMsg::Claimable { address }) => {
+            intercept_vault_claimable_query(deps, env, &address)?
         }
 
         QueryMsg::Vault(vault_query) => vault::handle_query_msg(

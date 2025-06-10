@@ -15,6 +15,7 @@ use amulet_core::{
     },
     Asset, Decimals, Identifier,
 };
+use rustc_hash::FxHashMap;
 
 use crate::state::{StorageExt, ValidatorSet};
 
@@ -350,6 +351,71 @@ fn completed_batches(storage: &dyn Storage, env: &Env) -> Vec<(BatchId, ClaimAmo
 
         batch_id += 1
     }
+}
+
+pub fn simulate_claim(
+    storage: &dyn Storage,
+    querier: QuerierWrapper,
+    env: &Env,
+    address: &str,
+) -> Result<Uint128> {
+    let completed_batches = completed_batches(storage, env);
+
+    let bond_denom = storage.bond_denom();
+
+    let current_balance = querier
+        .query_balance(env.contract.address.as_str(), &bond_denom)?
+        .amount
+        .u128();
+
+    let total_expected: u128 = completed_batches
+        .iter()
+        .map(|(_, ClaimAmount(amount))| amount)
+        .sum();
+
+    let total_received = current_balance
+        .checked_sub(storage.available_to_claim())
+        .expect("balance always >= available to claim");
+
+    let mut adjusted_claimable_amounts_in_memory: FxHashMap<BatchId, u128> = FxHashMap::default();
+
+    if total_received < total_expected {
+        for (batch, ClaimAmount(expected_claimable_amount)) in completed_batches {
+            let adjusted_claimbale_amount = Uint128::new(total_received)
+                .multiply_ratio(expected_claimable_amount, total_expected)
+                .u128();
+
+            adjusted_claimable_amounts_in_memory.insert(batch, adjusted_claimbale_amount);
+        }
+    }
+
+    let prev_last_claimed_batch = UnbondingLog::new(storage).last_claimed_batch(address);
+
+    let batches_being_claimed =
+        batches_being_claimed(storage, env, address, prev_last_claimed_batch);
+
+    let mut total_actual_claim = Uint128::zero();
+
+    for ClaimedBatch {
+        id,
+        total_expected_unbond,
+        expected_claim_amount,
+    } in batches_being_claimed
+    {
+        match storage
+            .batch_adjusted_claimable(id)
+            .or_else(|| adjusted_claimable_amounts_in_memory.get(&id).copied())
+        {
+            Some(total_actual_unbond) => {
+                let actual_claim_amount = Uint128::new(total_actual_unbond)
+                    .multiply_ratio(expected_claim_amount, total_expected_unbond);
+                total_actual_claim += actual_claim_amount;
+            }
+            None => total_actual_claim += Uint128::new(expected_claim_amount),
+        }
+    }
+
+    Ok(total_actual_claim)
 }
 
 fn acknowledge_completed_batches(
