@@ -13,7 +13,7 @@ use amulet_core::{
 };
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
-    to_json_binary, Binary, Env, MessageInfo, Response, StdError, Storage, Uint128,
+    to_json_binary, Api, Binary, Env, MessageInfo, Response, StdError, Storage, Uint128,
 };
 use cw_utils::{nonpayable, one_coin, PaymentError};
 use strum::IntoStaticStr;
@@ -216,11 +216,14 @@ fn handle_vault_donation(info: MessageInfo, vault: &dyn Vault) -> Result<Vec<Cmd
 }
 
 fn handle_vault_redemption(
+    api: &dyn Api,
     info: MessageInfo,
     vault: &dyn Vault,
     recipient: String,
 ) -> Result<Vec<Cmd>, Error> {
     let redemption_asset_coin = one_coin(&info)?;
+
+    api.addr_validate(&recipient)?;
 
     let cmds = vault.redeem(
         redemption_asset_coin.denom.into(),
@@ -348,6 +351,7 @@ fn add_cmd_attrs<Msg>(cmds: &[Cmd], response: &mut Response<Msg>) {
 }
 
 pub fn handle_execute_msg<Msg>(
+    api: &dyn Api,
     strategy: &dyn Strategy,
     unbonding_log: &dyn CoreUnbondingLog,
     mint: &dyn CoreSharesMint,
@@ -363,7 +367,7 @@ pub fn handle_execute_msg<Msg>(
     let cmds = match msg {
         ExecuteMsg::Deposit {} => handle_vault_deposit(info, &vault, &mut response)?,
         ExecuteMsg::Donate {} => handle_vault_donation(info, &vault)?,
-        ExecuteMsg::Redeem { recipient } => handle_vault_redemption(info, &vault, recipient)?,
+        ExecuteMsg::Redeem { recipient } => handle_vault_redemption(api, info, &vault, recipient)?,
         ExecuteMsg::StartUnbond {} => handle_vault_start_unbond(info, &vault)?,
         ExecuteMsg::Claim {} => handle_vault_claim(info, &vault)?,
     };
@@ -670,6 +674,7 @@ mod test {
         };
 
         let (cmds, _) = handle_execute_msg::<Empty>(
+            &deps.api,
             &strategy,
             &unbonding_log::UnbondingLog::new(&deps.storage),
             &mint::SharesMint::new(&deps.storage, &env),
@@ -683,6 +688,7 @@ mod test {
         let shares_asset = mint::SharesMint::new(&deps.storage, &env).shares_asset();
 
         let (cmds, _) = handle_execute_msg::<Empty>(
+            &deps.api,
             &strategy,
             &unbonding_log::UnbondingLog::new(&deps.storage),
             &mint::SharesMint::new(&deps.storage, &env),
@@ -698,6 +704,7 @@ mod test {
 
         handle_cmds(&mut deps.storage, &mut strategy, cmds);
         let (cmds, _) = handle_execute_msg::<Empty>(
+            &deps.api,
             &strategy,
             &unbonding_log::UnbondingLog::new(&deps.storage),
             &mint::SharesMint::new(&deps.storage, &env),
@@ -714,6 +721,7 @@ mod test {
         handle_cmds(&mut deps.storage, &mut strategy, cmds);
 
         let (cmds, _) = handle_execute_msg::<Empty>(
+            &deps.api,
             &strategy,
             &unbonding_log::UnbondingLog::new(&deps.storage),
             &mint::SharesMint::new(&deps.storage, &env),
@@ -808,6 +816,33 @@ mod test {
                   ],
                 )"#]],
         )
+    }
+
+    #[test]
+    fn redeem_with_invalid_recipient_errs() {
+        let deps = testing::mock_dependencies();
+
+        let env = testing::mock_env();
+
+        let strategy = MockStrategy {
+            env: &env,
+            deposits: 0,
+            unbonds: 0,
+        };
+
+        let err = handle_execute_msg::<Empty>(
+            &deps.api,
+            &strategy,
+            &unbonding_log::UnbondingLog::new(&deps.storage),
+            &mint::SharesMint::new(&deps.storage, &env),
+            testing::mock_info("account", &coins(1_000_000_000, DEPOSIT_ASSET)),
+            ExecuteMsg::Redeem {
+                recipient: "0".to_owned(),
+            },
+        )
+        .unwrap_err();
+
+        check_err(err, expect!["Generic error: Invalid input: human address too short for this mock implementation (must be >= 3)."]);
     }
 
     impl TokenFactory<Empty> for MockTokenFactory {

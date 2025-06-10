@@ -240,7 +240,7 @@ pub fn execute_vault_msg(
     let mint = SharesMint::new(deps.storage, &env);
 
     let (cmds, mut response) =
-        vault::handle_execute_msg(&strategy, &unbonding_log, &mint, info, msg)?;
+        vault::handle_execute_msg(deps.api, &strategy, &unbonding_log, &mint, info, msg)?;
 
     for cmd in cmds {
         match cmd {
