@@ -75,7 +75,7 @@ pub fn instantiate(
 
     admin::init(deps.storage, &info);
 
-    let mininum_unbond_interval = msg.unbonding_period / msg.max_unbonding_entries;
+    let minimum_unbond_interval = msg.unbonding_period / msg.max_unbonding_entries;
 
     deps.storage.set_bond_denom(&msg.bond_denom);
     deps.storage
@@ -83,7 +83,7 @@ pub fn instantiate(
     deps.storage
         .set_max_unbonding_entries(msg.max_unbonding_entries);
     deps.storage
-        .set_minimum_unbond_interval(mininum_unbond_interval);
+        .set_minimum_unbond_interval(minimum_unbond_interval);
     deps.storage.set_unbonding_period(msg.unbonding_period);
     deps.storage
         .set_validator_set_size(msg.initial_validator_set.len());
@@ -138,8 +138,8 @@ pub fn instantiate(
             msg.max_unbonding_entries.to_string(),
         )
         .add_attribute(
-            "mininum_unbond_interval",
-            mininum_unbond_interval.to_string(),
+            "minimum_unbond_interval",
+            minimum_unbond_interval.to_string(),
         )
         .add_attribute("unbonding_period", msg.unbonding_period.to_string())
         .add_attribute("validator_set", msg.initial_validator_set.join(","))
