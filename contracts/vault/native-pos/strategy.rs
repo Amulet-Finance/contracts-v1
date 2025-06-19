@@ -2,7 +2,7 @@ use amulet_cw::vault::UnbondingLog;
 use anyhow::{anyhow, bail, ensure, Result};
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
-    coin, to_json_binary, Attribute, BankMsg, Coin, CosmosMsg, DelegationTotalRewardsResponse,
+    coin, coins, to_json_binary, Attribute, BankMsg, CosmosMsg, DelegationTotalRewardsResponse,
     DistributionMsg, Env, QuerierWrapper, Response, StakingMsg, Storage, Uint128, WasmMsg,
 };
 
@@ -563,20 +563,17 @@ fn send_claimed(
         }
     }
 
-    assert!(
-        total_actual_claim.u128() <= total_expected_claim,
-        "total_actual_claim should never be > total_expected_claim"
-    );
+    let amount_to_claim = total_actual_claim.u128().min(total_expected_claim);
 
     let available_to_claim = storage.available_to_claim();
 
-    if total_actual_claim.u128() > storage.available_to_claim() {
-        bail!("claimable amount is greater than received unbondings: {total_actual_claim} > {available_to_claim}")
+    if amount_to_claim > available_to_claim {
+        bail!("claimable amount is greater than received unbondings: {amount_to_claim} > {available_to_claim}")
     }
 
-    storage.set_available_to_claim(available_to_claim - total_actual_claim.u128());
+    storage.set_available_to_claim(available_to_claim - amount_to_claim);
 
-    let slashed_amount = total_expected_claim.abs_diff(total_actual_claim.u128());
+    let slashed_amount = total_expected_claim.abs_diff(amount_to_claim);
 
     attributes.push(Attribute::new(
         "claim_slashed_amount",
@@ -585,10 +582,7 @@ fn send_claimed(
 
     let send_msg = BankMsg::Send {
         to_address: recipient.into_string(),
-        amount: vec![Coin {
-            denom: bond_denom,
-            amount: total_actual_claim,
-        }],
+        amount: coins(amount_to_claim, bond_denom),
     }
     .into();
 
